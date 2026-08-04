@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle } from 'lucide-react';
+import { Music2, Sun, Moon, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, Activity } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
+import ChordTimeline from './components/ChordTimeline';
 
 function App() {
   const appWindow = getCurrentWindow();
@@ -57,6 +58,11 @@ function App() {
   }, []);
 
   const [audioSpectrum, setAudioSpectrum] = useState(new Array(24).fill(0));
+  const [currentChord, setCurrentChord] = useState('-');
+  const [visualizerMode, setVisualizerMode] = useState('bars');
+  const [chordTimeline, setChordTimeline] = useState([]);
+  const stableChordRef = useRef({ chord: '-', since: 0, committed: true });
+  const timelineStartRef = useRef(null);
 
   useEffect(() => {
     let interval;
@@ -65,19 +71,56 @@ function App() {
         try {
           const spectrum = await invoke('get_audio_spectrum');
           setAudioSpectrum(spectrum);
+          const chord = await invoke('get_current_chord');
+          setCurrentChord(chord);
         } catch (e) {}
       }, 50);
     } else {
       setAudioSpectrum(new Array(24).fill(0));
+      setCurrentChord('-');
     }
     return () => clearInterval(interval);
   }, [isAudioPlaying]);
+
+  // Debounced chord timeline: only commit a chord after it's been stable for 400ms
+  useEffect(() => {
+    if (currentChord === '-') {
+      stableChordRef.current = { chord: '-', since: 0, committed: true };
+      return;
+    }
+
+    const now = Date.now();
+    const stable = stableChordRef.current;
+
+    if (currentChord !== stable.chord) {
+      // New chord detected — start tracking it
+      stableChordRef.current = { chord: currentChord, since: now, committed: false };
+      // Set a timer to commit it if it stays stable
+      const timer = setTimeout(() => {
+        const current = stableChordRef.current;
+        if (current.chord === currentChord && !current.committed) {
+          if (!timelineStartRef.current) timelineStartRef.current = current.since;
+          const relativeTime = (current.since - timelineStartRef.current) / 1000;
+          setChordTimeline(prev => [...prev, { chord: currentChord, time: relativeTime }]);
+          stableChordRef.current.committed = true;
+        }
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [currentChord]);
 
   const toggleTheme = () => {
     setTheme(t => (t === 'dark' ? 'light' : 'dark'));
   };
 
   const currentSong = playlist[currentIndex] || null;
+
+  useEffect(() => {
+    setChordTimeline([]);
+    timelineStartRef.current = null;
+    stableChordRef.current = { chord: '-', since: 0, committed: true };
+    setCurrentChord('-');
+  }, [currentSong?.id]);
 
   useEffect(() => {
     if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless) {
@@ -158,13 +201,17 @@ function App() {
     }
   };
 
-const Visualizer = ({ isPlaying, spectrum }) => {
+const Visualizer = ({ isPlaying, spectrum, mode, chord, chordTimeline }) => {
   return (
     <div className={`visualizer ${isPlaying ? 'playing' : ''}`}>
-      {spectrum.map((val, i) => {
-        const h = 4 + (val * 36);
-        return <div key={i} className="bar" style={{ height: isPlaying ? `${h}px` : '4px' }}></div>;
-      })}
+      {mode === 'bars' ? (
+        spectrum.map((val, i) => {
+          const h = 4 + (val * 36);
+          return <div key={i} className="bar" style={{ height: isPlaying ? `${h}px` : '4px' }}></div>;
+        })
+      ) : (
+        <ChordTimeline chordHistory={chordTimeline} currentChord={chord} />
+      )}
     </div>
   );
 };
@@ -217,10 +264,13 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
       {/* Top Section: Player & Controls */}
       <div className="top-section glass-panel" style={{ margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px', position: 'relative' }}>
         <header className="header" style={{ paddingBottom: '12px', display: 'flex', alignItems: 'center' }}>
-          <div style={{ flex: 1, display: 'flex', paddingRight: '16px' }}>
-            <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
+          <div style={{ flex: 1, display: 'flex', paddingRight: '16px', minWidth: 0 }}>
+            <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} mode={visualizerMode} chord={currentChord} chordTimeline={chordTimeline} />
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0, display: 'flex', gap: '4px' }}>
+            <button className="btn btn-icon" onClick={() => setVisualizerMode(prev => prev === 'bars' ? 'chords' : 'bars')} title="Toggle Visualizer" style={{ background: 'transparent', boxShadow: 'none' }}>
+              {visualizerMode === 'bars' ? <Activity size={20} /> : <Music2 size={20} />}
+            </button>
             <button className="btn btn-icon" onClick={toggleTheme} title="Toggle Theme" style={{ background: 'transparent', boxShadow: 'none' }}>
               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>

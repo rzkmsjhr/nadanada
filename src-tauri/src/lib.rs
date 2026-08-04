@@ -10,6 +10,7 @@ use tauri::{Manager, WindowEvent, Emitter, tray::{TrayIconBuilder, MouseButton, 
 
 lazy_static! {
     static ref CURRENT_SPECTRUM: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.0; 24]));
+    static ref CURRENT_CHORD: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("-")));
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -116,6 +117,12 @@ fn get_audio_spectrum() -> Vec<f32> {
     spectrum.clone()
 }
 
+#[tauri::command]
+fn get_current_chord() -> String {
+    let chord = CURRENT_CHORD.lock().unwrap();
+    chord.clone()
+}
+
 pub fn start_audio_monitor() {
     std::thread::spawn(|| {
         let host = cpal::default_host();
@@ -161,7 +168,29 @@ where
 {
     let channels = config.channels as usize;
     let sample_rate = config.sample_rate.0 as u32;
-    let mut sample_buffer: Vec<f32> = Vec::with_capacity(2048);
+    let mut sample_buffer: Vec<f32> = Vec::with_capacity(4096);
+
+    let chord_names = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+        "Cm", "C#m", "Dm", "D#m", "Em", "Fm", "F#m", "Gm", "G#m", "Am", "A#m", "Bm"
+    ];
+    
+    let mut templates = [[0.0_f32; 12]; 24];
+    for root in 0..12 {
+        // Major: root, major 3rd, perfect 5th
+        templates[root][root] = 1.0;
+        templates[root][(root + 4) % 12] = 1.0;
+        templates[root][(root + 7) % 12] = 1.0;
+
+        // Minor: root, minor 3rd, perfect 5th
+        templates[12 + root][root] = 1.0;
+        templates[12 + root][(root + 3) % 12] = 1.0;
+        templates[12 + root][(root + 7) % 12] = 1.0;
+    }
+
+    let mut smoothed_chroma = [0.0_f32; 12];
+    let mut smoothed_bass = [0.0_f32; 12];
+    let mut current_chord_index = 24; // 24 = silence/none
 
     device.build_input_stream(
         config,
@@ -176,7 +205,10 @@ where
                 
                 sample_buffer.push(mono_sample);
 
-                if sample_buffer.len() == 2048 {
+                if sample_buffer.len() == 4096 {
+                    // Calculate RMS energy for silence detection
+                    let rms: f32 = (sample_buffer.iter().map(|s| s * s).sum::<f32>() / sample_buffer.len() as f32).sqrt();
+
                     let windowed_samples = hann_window(&sample_buffer);
                     if let Ok(spectrum) = samples_fft_to_spectrum(
                         &windowed_samples,
@@ -186,13 +218,29 @@ where
                     ) {
                         let data = spectrum.data();
                         let mut bins = vec![0.0; 24];
-                        // Tighten the frequency range to focus on active musical frequencies
-                        // (YouTube compression often cuts off audio above 15kHz, leaving dead bars on the right)
+                        let mut chroma = [0.0_f32; 12];
+                        let mut bass_chroma = [0.0_f32; 12];
+
                         let min_freq = 40.0_f32;
                         let max_freq = 14000.0_f32;
                         
                         for (freq_val, fr_value) in data {
                             let f = freq_val.val();
+                            // Use linear magnitude to keep tonal peaks sharp against broadband noise
+                            let mag = fr_value.val();
+
+                            if f >= 27.5 && f <= 4000.0 {
+                                let pitch = 12.0 * (f / 440.0).log2() + 69.0;
+                                let pitch_class = (pitch.round() as usize).rem_euclid(12);
+                                chroma[pitch_class] += mag;
+
+                                // Isolate bass frequencies (C2 to C4 ~ 65Hz to 261Hz)
+                                // We use 65Hz as the bottom cutoff to completely ignore 50Hz/60Hz mains electrical hum and sub-bass rumble!
+                                if f >= 65.0 && f <= 261.0 {
+                                    bass_chroma[pitch_class] += mag;
+                                }
+                            }
+
                             if f < min_freq || f > max_freq { continue; }
                             
                             let log_f = f.log10();
@@ -215,21 +263,169 @@ where
                             }
                         }
                         
+                        // Harmonic suppression: the 3rd harmonic of a note leaks into
+                        // the pitch class 7 semitones above (perfect fifth), and the 
+                        // 5th harmonic leaks into +4 semitones (major third).
+                        // Subtract estimated leakage to clean up the chroma.
+                        let raw_chroma = chroma.clone();
+                        for pc in 0..12 {
+                            if raw_chroma[pc] > 0.0 {
+                                let h3 = (pc + 7) % 12;
+                                chroma[h3] = (chroma[h3] - raw_chroma[pc] * 0.15).max(0.0);
+                                let h5 = (pc + 4) % 12;
+                                chroma[h5] = (chroma[h5] - raw_chroma[pc] * 0.10).max(0.0);
+                            }
+                        }
+
                         // Fill any gaps caused by low FFT resolution at low frequencies
                         for i in 1..24 {
                             if bins[i] == 0.0 {
                                 bins[i] = bins[i - 1] * 0.8;
                             }
                         }
+
+                        // Apply Exponential Moving Average (EMA) for temporal smoothing
+                        // We use a fast alpha (0.30) so chords don't bleed into each other during transitions!
+                        let alpha = 0.30_f32;
+                        for i in 0..12 {
+                            smoothed_chroma[i] = (alpha * chroma[i]) + ((1.0 - alpha) * smoothed_chroma[i]);
+                            smoothed_bass[i] = (alpha * bass_chroma[i]) + ((1.0 - alpha) * smoothed_bass[i]);
+                        }
+
+                        // Find the dominant bass note
+                        let mut dominant_bass = 24;
+                        let mut max_bass = 0.0_f32;
+                        for i in 0..12 {
+                            if smoothed_bass[i] > max_bass {
+                                max_bass = smoothed_bass[i];
+                                dominant_bass = i;
+                            }
+                        }
+
+                        // Noise floor removal: subtract the median chroma value
+                        // In a full mix, drums/vocals/harmonics raise ALL pitch classes.
+                        // The median represents this broadband floor. Subtracting it
+                        // isolates the actual pitched content (the chord tones).
+                        let mut norm_chroma = smoothed_chroma.clone();
+                        let mut sorted_chroma = norm_chroma.clone();
+                        sorted_chroma.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        let noise_floor = sorted_chroma[5]; // lower median of 12 values
+                        for val in &mut norm_chroma {
+                            *val = (*val - noise_floor).max(0.0);
+                        }
+
+                        // Apply same noise floor removal to bass for cleaner root detection
+                        let mut clean_bass = smoothed_bass.clone();
+                        let mut sorted_bass = clean_bass.clone();
+                        sorted_bass.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        let bass_floor = sorted_bass[5];
+                        for val in &mut clean_bass {
+                            *val = (*val - bass_floor).max(0.0);
+                        }
+
+                        // Re-find dominant bass after noise floor removal
+                        dominant_bass = 24;
+                        max_bass = 0.0;
+                        for i in 0..12 {
+                            if clean_bass[i] > max_bass {
+                                max_bass = clean_bass[i];
+                                dominant_bass = i;
+                            }
+                        }
+
+                        // Normalize the cleaned chroma for scoring
+                        let mut max_chroma = 0.0_f32;
+                        for &val in &norm_chroma {
+                            if val > max_chroma { max_chroma = val; }
+                        }
+                        if max_chroma > 0.0 {
+                            for val in &mut norm_chroma {
+                                *val /= max_chroma;
+                            }
+                        }
+
+                        // Guess chord
+                        let mut best_chord = "-";
+                        let mut best_score = 0.0_f32;
+                        let mut best_index = 24;
+                        let mut all_scores: Vec<(usize, f32)> = Vec::new();
+                        
+                        if rms > 0.005 {
+                            for i in 0..24 {
+                                let mut dot = 0.0_f32;
+                                let mut template_sq = 0.0_f32;
+                                let mut chroma_sq = 0.0_f32;
+                                
+                                for j in 0..12 {
+                                    let c = norm_chroma[j];
+                                    let t = templates[i][j];
+                                    dot += c * t;
+                                    template_sq += t * t;
+                                    chroma_sq += c * c;
+                                }
+                                
+                                let mut score = 0.0_f32;
+                                if template_sq > 0.0 && chroma_sq > 0.0 {
+                                    score = dot / (chroma_sq.sqrt() * template_sq.sqrt());
+                                }
+                        
+                                // Bass bonus: nudge if root matches bass note
+                                if dominant_bass < 12 && (i % 12) == dominant_bass {
+                                    score *= 1.10;
+                                }
+                        
+                                // Hysteresis: reduced from 1.15 to 1.08 for less stickiness
+                                if i == current_chord_index {
+                                    score *= 1.08;
+                                }
+                        
+                                all_scores.push((i, score));
+                        
+                                if score > best_score {
+                                    best_score = score;
+                                    best_chord = chord_names[i];
+                                    best_index = i;
+                                }
+                            }
+                            if best_score < 0.5 {
+                                best_chord = "-";
+                                best_index = 24;
+                            }
+                        }
+                        
+                        // Debug log: only print when chord changes to avoid flooding
+                        if best_index != current_chord_index {
+                            all_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                            let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+                            let top5: Vec<String> = all_scores.iter().take(5)
+                                .map(|(idx, sc)| format!("{}: {:.2}", chord_names[*idx], sc))
+                                .collect();
+                            let chroma_str: Vec<String> = norm_chroma.iter().enumerate()
+                                .map(|(i, v)| format!("{}:{:.2}", note_names[i], v))
+                                .collect();
+                            let bass_str = if dominant_bass < 12 { note_names[dominant_bass] } else { "-" };
+                            println!("─────────────────────────────────────────");
+                            println!("🎵 CHORD: {} (score: {:.2}) | bass: {}", best_chord, best_score, bass_str);
+                            println!("   top5: [{}]", top5.join(", "));
+                            println!("   chroma: [{}]", chroma_str.join(", "));
+                        }
+
+                        current_chord_index = best_index;
+
+                        {
+                            let mut current = CURRENT_CHORD.lock().unwrap();
+                            *current = best_chord.to_string();
+                        }
                         
                         if let Ok(mut current) = CURRENT_SPECTRUM.lock() {
                             for i in 0..24 {
-                                // Smooth transition: 75% old, 25% new
-                                current[i] = current[i] * 0.75 + bins[i] * 0.25;
+                                current[i] = bins[i];
                             }
                         }
+
+                        // Shift buffer for 50% overlap to keep the framerate high (4096 samples = 92ms, shift by 2048 = 46ms updates)
+                        sample_buffer.drain(0..2048);
                     }
-                    sample_buffer.clear();
                 }
             }
         },
@@ -276,7 +472,7 @@ pub fn run() {
                 window.emit("close-requested", ()).unwrap();
             }
         })
-        .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_youtube_mix, quit_app])
+        .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_current_chord, get_youtube_mix, quit_app])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -290,10 +290,12 @@ body {
 /* Visualizer Animation */
 .visualizer {
   display: flex;
-  align-items: center; /* Center vertically for the symmetric waveform look */
-  justify-content: space-between; /* Perfect full-width alignment */
-  height: 40px; /* Gives enough vertical space for the waveform */
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
   width: 100%;
+  min-width: 0;
+  border-radius: 8px;
 }
 .visualizer .bar {
   flex: 1;
@@ -422,4 +424,98 @@ body {
   color: var(--text-main);
   background: transparent;
   text-decoration: underline;
+}
+
+/* Chord Timeline */
+.chord-timeline {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  gap: 3px;
+  padding: 4px 0;
+}
+
+.chord-timeline::-webkit-scrollbar {
+  height: 0px;
+}
+
+.chord-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  position: relative;
+  overflow: hidden;
+  padding: 0 6px;
+}
+
+.chord-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+  color: #fff;
+  z-index: 1;
+}
+
+/* Chord type colors */
+.chord-major {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+
+.chord-minor {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+}
+
+.chord-dom7 {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
+.chord-min7 {
+  background: linear-gradient(135deg, #ec4899, #db2777);
+}
+
+.chord-sus {
+  background: linear-gradient(135deg, #10b981, #059669);
+}
+
+.chord-silence {
+  background: rgba(255, 255, 255, 0.05);
+}
+.chord-silence .chord-label {
+  color: var(--text-muted);
+  text-shadow: none;
+}
+
+/* Current chord highlight */
+.chord-current {
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.3), inset 0 0 8px rgba(255, 255, 255, 0.15);
+}
+
+.chord-current::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+  animation: chordShimmer 2s ease-in-out infinite;
+}
+
+@keyframes chordShimmer {
+  0%, 100% { transform: translateX(-100%); }
+  50% { transform: translateX(100%); }
+}
+
+/* Light theme adjustments */
+[data-theme="light"] .chord-silence {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .chord-current {
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.15), inset 0 0 12px rgba(255, 255, 255, 0.2);
 }
