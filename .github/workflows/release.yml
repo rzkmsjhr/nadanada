@@ -2,7 +2,7 @@ name: Build All OS
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch: # Allows you to trigger the build manually
 
 permissions:
