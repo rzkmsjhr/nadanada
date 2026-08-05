@@ -278,7 +278,9 @@ const ChordDisplay = ({ data, time, isLoading, error }) => {
             color: isActive ? 'var(--accent-color)' : 'var(--text-muted)',
             transition: 'all 0.2s ease',
             fontWeight: isActive ? 'bold' : 'normal',
-            minWidth: '40px',
+            minWidth: '60px',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
             textAlign: 'center'
           }}>
             {c.chord}

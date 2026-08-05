@@ -246,7 +246,7 @@ fn quit_app(app: tauri::AppHandle) {
 #[tauri::command]
 async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) -> Result<String, String> {
     use tauri::Manager;
-    let cache_dir = app_handle.path().app_data_dir().unwrap().join("chords_cache");
+    let cache_dir = app_handle.path().app_data_dir().unwrap().join("chords_cache_v4");
     let _ = std::fs::create_dir_all(&cache_dir);
     
     let safe_id = id.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "");
@@ -266,34 +266,164 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         cleaned = cleaned.replace(&rm.to_lowercase(), "");
         cleaned = cleaned.replace(&rm.to_uppercase(), "");
     }
-    let cleaned = cleaned.trim().to_string();
+    let cleaned = title.replace("-", " ");
+    let search_url = format!("https://chordify.net/search/https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{}", id);
     
-    // Spawn python script
-    // Determine script path
-    let current_dir = std::env::current_dir().unwrap_or_default();
-    let path1 = current_dir.join("src-tauri").join("scrape_chords.py");
-    let path2 = current_dir.join("scrape_chords.py");
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    let window_label = format!("scraper_{}_{}", safe_id, ts);
     
-    let script_path = if path1.exists() {
-        path1
-    } else {
-        path2
+    let js_code = r#"
+        (function() {
+            if (!window.location.hostname.includes("chordify.net")) return;
+            
+            let attempts = 0;
+            let checkInterval = setInterval(() => {
+                attempts++;
+                if (attempts > 80) {
+                    clearInterval(checkInterval);
+                    let err = encodeURIComponent(JSON.stringify({success: false, error: "Timeout waiting for chords", data: null}));
+                    window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    return;
+                }
+                
+                if (document.body && document.body.textContent && (document.body.textContent.includes("Ribbit! Nothing here") || document.querySelectorAll('img[src*="404"]').length > 0)) {
+                    clearInterval(checkInterval);
+                    let err = encodeURIComponent(JSON.stringify({success: false, error: "Song not found or IP blocked by Chordify (404)", data: null}));
+                    window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    return;
+                }
+                
+                if (window.location.pathname.startsWith('/search/')) {
+                    let links = document.querySelectorAll('a[href^="/chords/"]');
+                    if (links.length > 0) {
+                        clearInterval(checkInterval);
+                        // Add human delay before clicking to avoid bot detection
+                        setTimeout(() => {
+                            window.location.href = links[0].href;
+                        }, 1500 + Math.random() * 1500);
+                    } else if (document.body.innerText.includes("No results found")) {
+                        clearInterval(checkInterval);
+                        let err = encodeURIComponent(JSON.stringify({success: false, error: "No chords found", data: null}));
+                        window.location.replace("https://chordify.net/?scraper_result=" + err);
+                        return;
+                    }
+                } 
+                else if (window.location.pathname.startsWith('/chords/')) {
+                    let chordElements = document.querySelectorAll('.chord');
+                    
+                    if (chordElements.length > 0) {
+                        clearInterval(checkInterval);
+                        
+                        let chords = [];
+                        let bpm = 120;
+                        let scrollEl = document.querySelector('[data-bpm]');
+                        if (scrollEl) {
+                            bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 120;
+                        } else {
+                            let match = document.body.textContent.match(/BPM\s*(\d{2,3})/i);
+                            if (match) bpm = parseFloat(match[1]) || 120;
+                        }
+                        let secondsPerBeat = 60.0 / bpm;
+                        
+                        let seenBeats = new Set();
+                        for (let el of chordElements) {
+                            if (!el.hasAttribute('data-i')) continue;
+                            
+                            let beatIdx = parseInt(el.getAttribute('data-i'));
+                            if (seenBeats.has(beatIdx)) continue;
+                            
+                            let text = el.innerText.trim();
+                            if (text && text !== '' && !el.classList.contains('nolabel')) {
+                                chords.push({
+                                    beat: beatIdx + 1,
+                                    time_sec: beatIdx * secondsPerBeat,
+                                    chord: text
+                                });
+                                seenBeats.add(beatIdx);
+                            }
+                        }
+                        
+                        chords.sort((a, b) => a.time_sec - b.time_sec);
+                        
+                        let result = {
+                            success: true,
+                            data: { bpm: bpm, chords: chords },
+                            error: null
+                        };
+                        
+                        let payload = encodeURIComponent(JSON.stringify(result));
+                        window.location.replace("https://chordify.net/?scraper_result=" + payload);
+                        return;
+                    }
+                }
+            }, 500);
+        })();
+    "#;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let tx_mutex_clone = tx_mutex.clone();
+
+    println!("Building hidden scraper window for URL: {}", search_url);
+    let window = match tauri::WebviewWindowBuilder::new(
+        &app_handle,
+        &window_label,
+        tauri::WebviewUrl::External(search_url.parse().unwrap())
+    )
+    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    .visible(false) // Hide window in production
+    .initialization_script(js_code)
+    .on_navigation(move |url| {
+        println!("Navigating to: {}", url.as_str());
+        let mut got_result = false;
+        let mut json_str = String::new();
+        
+        for (key, value) in url.query_pairs() {
+            if key == "scraper_result" {
+                got_result = true;
+                json_str = value.into_owned();
+                break;
+            }
+        }
+        
+        if got_result {
+            if let Ok(mut guard) = tx_mutex_clone.lock() {
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send(json_str);
+                }
+            }
+            return false; // Cancel navigation
+        }
+        true
+    })
+    .build() {
+        Ok(w) => w,
+        Err(e) => {
+            if let Some(w) = app_handle.get_webview_window(&window_label) {
+                w.close().ok();
+            }
+            return Err(format!("Failed to build window: {}", e));
+        }
     };
 
-    let output = std::process::Command::new("python")
-        .arg(script_path)
-        .arg(&cleaned)
-        .output()
-        .map_err(|e| format!("Failed to spawn python: {}", e))?;
-        
-    if !output.status.success() {
-        let err_str = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Python error: {}", err_str));
-    }
-        
-    let result_str = String::from_utf8_lossy(&output.stdout).to_string();
+    println!("Waiting for scraper result...");
+    // Wait for the result with a 45-second timeout
+    let result_str = match tokio::time::timeout(std::time::Duration::from_secs(45), rx).await {
+        Ok(Ok(data)) => {
+            println!("Got result from scraper!");
+            data
+        },
+        _ => {
+            println!("Scraper timed out!");
+            window.close().ok();
+            return Err("Timeout waiting for scraper".to_string());
+        }
+    };
+    
+    window.close().ok();
+
     if result_str.trim().is_empty() {
-        return Err("Python script returned empty output".to_string());
+        return Err("Scraper returned empty output".to_string());
     }
     
     if result_str.contains("\"success\": true") || result_str.contains("\"success\":true") {
@@ -330,10 +460,12 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Prevent the default close behavior
-                api.prevent_close();
-                // Tell the frontend that we want to close, so it can show our custom prompt
-                window.emit("close-requested", ()).unwrap();
+                if window.label() == "main" {
+                    // Prevent the default close behavior
+                    api.prevent_close();
+                    // Tell the frontend that we want to close, so it can show our custom prompt
+                    window.emit("close-requested", ()).unwrap();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_youtube_mix, quit_app, scrape_chords])
