@@ -134,32 +134,47 @@ function App() {
           const available = results.filter(v => !existingIds.has(v.id));
           
           if (available.length > 0) {
-            let picked = available[0];
+            let finalPicked = null;
             
-            // If the recommended song is a "video" version, try to find the audio version
-            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b)/i;
-            if (videoRegex.test(picked.title)) {
-              // Clean the title by removing bracketed stuff and the video keywords
-              const cleanTitle = picked.title
-                .replace(/\[.*?\]|\(.*?\)/g, ' ')
-                .replace(videoRegex, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-                
-              if (cleanTitle.length > 0) {
-                try {
-                  const searchResults = await invoke('search_youtube', { query: cleanTitle + ' topic' });
-                  if (searchResults && searchResults.length > 0) {
-                    picked = searchResults[0];
+            for (let item of available) {
+              let picked = item;
+              
+              // If the recommended song is a "video" version, try to find the audio version
+              const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b)/i;
+              if (videoRegex.test(picked.title)) {
+                // Clean the title by removing bracketed stuff and the video keywords
+                const cleanTitle = picked.title
+                  .replace(/\[.*?\]|\(.*?\)/g, ' ')
+                  .replace(videoRegex, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                  
+                if (cleanTitle.length > 0) {
+                  try {
+                    const searchResults = await invoke('search_youtube', { query: cleanTitle + ' topic' });
+                    if (searchResults && searchResults.length > 0) {
+                      picked = searchResults[0];
+                    }
+                  } catch (err) {
+                    console.error("Audio fallback search failed:", err);
                   }
-                } catch (err) {
-                  console.error("Audio fallback search failed:", err);
                 }
+              }
+              
+              // Check if the final ID is already in the playlist
+              if (!existingIds.has(picked.id)) {
+                finalPicked = picked;
+                break;
               }
             }
             
+            // If somehow all mapped to existing songs, fallback to the original first suggestion
+            if (!finalPicked) {
+              finalPicked = available[0];
+            }
+            
             const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-            setPlaylist(prev => [...prev, { ...picked, queueId }]);
+            setPlaylist(prev => [...prev, { ...finalPicked, queueId }]);
           }
         } catch (e) {
           console.error("Endless play fetch error:", e);
