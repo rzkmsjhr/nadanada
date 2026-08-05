@@ -134,7 +134,29 @@ function App() {
           const available = results.filter(v => !existingIds.has(v.id));
           
           if (available.length > 0) {
-            const picked = available[0];
+            let picked = available[0];
+            
+            // If the recommended song is a "video" version, try to find the audio version
+            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b)/i;
+            if (videoRegex.test(picked.title)) {
+              // Clean the title by removing bracketed stuff and the video keywords
+              const cleanTitle = picked.title
+                .replace(/\[.*?\]|\(.*?\)/g, ' ')
+                .replace(videoRegex, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+                
+              if (cleanTitle.length > 0) {
+                try {
+                  const searchResults = await invoke('search_youtube', { query: cleanTitle + ' topic' });
+                  if (searchResults && searchResults.length > 0) {
+                    picked = searchResults[0];
+                  }
+                } catch (err) {
+                  console.error("Audio fallback search failed:", err);
+                }
+              }
+            }
             
             const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
             setPlaylist(prev => [...prev, { ...picked, queueId }]);
