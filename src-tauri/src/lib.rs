@@ -244,7 +244,19 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-async fn scrape_chords(title: String) -> Result<String, String> {
+async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let cache_dir = app_handle.path().app_data_dir().unwrap().join("chords_cache");
+    let _ = std::fs::create_dir_all(&cache_dir);
+    
+    let safe_id = id.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "");
+    let cache_file = cache_dir.join(format!("{}.json", safe_id));
+    
+    if cache_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cache_file) {
+            return Ok(content);
+        }
+    }
     // Clean title
     let re = Regex::new(r"(?i)\[.*?\]|\(.*?\)").unwrap();
     let mut cleaned = re.replace_all(&title, "").to_string();
@@ -282,6 +294,10 @@ async fn scrape_chords(title: String) -> Result<String, String> {
     let result_str = String::from_utf8_lossy(&output.stdout).to_string();
     if result_str.trim().is_empty() {
         return Err("Python script returned empty output".to_string());
+    }
+    
+    if result_str.contains("\"success\": true") || result_str.contains("\"success\":true") {
+        let _ = std::fs::write(&cache_file, &result_str);
     }
     
     Ok(result_str)

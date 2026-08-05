@@ -92,7 +92,7 @@ function App() {
         setIsFetchingChords(true);
         setChordsError(null);
         try {
-          const res = await invoke('scrape_chords', { title: currentSong.title });
+          const res = await invoke('scrape_chords', { id: currentSong.id, title: currentSong.title });
           const parsed = JSON.parse(res);
           if (parsed.success) {
             setChordsData({ ...parsed.data, _songId: currentSong.id });
