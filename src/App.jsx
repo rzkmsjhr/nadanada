@@ -31,6 +31,7 @@ function App() {
   const [isFetchingChords, setIsFetchingChords] = useState(false);
   const [chordsError, setChordsError] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [syncOffset, setSyncOffset] = useState(0);
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
@@ -118,7 +119,24 @@ function App() {
   useEffect(() => {
     setChordsData(null);
     setChordsError(null);
-  }, [currentSong?.id]);
+    if (currentSong) {
+      const savedSync = localStorage.getItem(`sync_${currentSong.id}`);
+      setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
+    } else {
+      setSyncOffset(0);
+    }
+  }, [currentSong]);
+
+  // Save sync offset when changed
+  useEffect(() => {
+    if (currentSong) {
+      if (syncOffset !== 0) {
+        localStorage.setItem(`sync_${currentSong.id}`, syncOffset.toString());
+      } else {
+        localStorage.removeItem(`sync_${currentSong.id}`);
+      }
+    }
+  }, [syncOffset, currentSong]);
 
   useEffect(() => {
     if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless) {
@@ -262,26 +280,26 @@ const ChordDisplay = ({ data, time, isLoading, error }) => {
     }
   }
 
-  const windowSize = 7;
-  const halfWindow = Math.floor(windowSize / 2);
-  const startIdx = Math.max(0, activeIndex - halfWindow);
-  const visibleChords = chords.slice(startIdx, startIdx + windowSize);
+  // Show active chord on the left, and next 5 upcoming chords to the right
+  const startIndex = Math.max(0, activeIndex);
+  const visibleChords = chords.slice(startIndex, startIndex + 6);
 
   return (
-    <div style={{ display: 'flex', gap: '24px', alignItems: 'center', justifyContent: 'center', height: '100%', overflow: 'hidden', width: '100%' }}>
+    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', height: '100%', overflow: 'hidden', width: '100%', maskImage: 'linear-gradient(to right, black 70%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent 100%)' }}>
       {visibleChords.map((c, idx) => {
-        const globalIdx = startIdx + idx;
+        const globalIdx = startIndex + idx;
         const isActive = globalIdx === activeIndex;
+        
         return (
           <div key={globalIdx} style={{ 
             fontSize: isActive ? '2.5rem' : '1.5rem',
             color: isActive ? 'var(--accent-color)' : 'var(--text-muted)',
-            transition: 'all 0.2s ease',
+            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
             fontWeight: isActive ? 'bold' : 'normal',
-            minWidth: '60px',
-            flexShrink: 0,
             whiteSpace: 'nowrap',
-            textAlign: 'center'
+            flexShrink: 0,
+            opacity: isActive ? 1 : Math.max(0.2, 1 - (idx * 0.2)),
+            transform: isActive ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(2px)',
           }}>
             {c.chord}
           </div>
@@ -341,12 +359,26 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
         <header className="header" style={{ paddingBottom: '12px', display: 'flex', alignItems: 'center', height: '50px' }}>
           <div style={{ flex: 1, display: 'flex', paddingRight: '16px', height: '100%', minWidth: 0 }}>
             {showChords ? (
-              <ChordDisplay data={chordsData} time={currentTime} isLoading={isFetchingChords} error={chordsError} />
+              <ChordDisplay data={chordsData} time={currentTime + syncOffset} isLoading={isFetchingChords} error={chordsError} />
             ) : (
               <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
             )}
           </div>
-          <div style={{ flexShrink: 0, display: 'flex', gap: '8px' }}>
+          <div style={{ flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {showChords && chordsData && !isFetchingChords && !chordsError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginRight: '8px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '4px 8px', color: 'var(--text-muted)' }}>
+                <span style={{ marginRight: '4px' }}>Sync:</span>
+                <button onClick={() => setSyncOffset(s => s - 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
+                  -
+                </button>
+                <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
+                  {syncOffset > 0 ? '+' : ''}{syncOffset}s
+                </span>
+                <button onClick={() => setSyncOffset(s => s + 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
+                  +
+                </button>
+              </div>
+            )}
             <button className={`btn btn-icon ${showChords ? 'active' : ''}`} onClick={() => setShowChords(!showChords)} title="Toggle Chords" style={{ background: showChords ? 'var(--button-hover)' : 'transparent', boxShadow: 'none', color: showChords ? 'var(--accent-color)' : 'inherit' }}>
               <ListMusic size={20} />
             </button>
