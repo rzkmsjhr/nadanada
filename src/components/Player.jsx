@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX } from 'lucide-react';
 
-export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange }) {
+export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate }) {
   const playerRef = useRef(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -23,10 +23,11 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
             const time = await playerRef.current.getCurrentTime();
             const dur = await playerRef.current.getDuration();
             setCurrentTime(time || 0);
+            if (onTimeUpdate) onTimeUpdate(time || 0);
             setDuration(dur || 0);
           } catch (e) {}
         }
-      }, 500);
+      }, 100);
     }
     return () => clearInterval(interval);
   }, [isPlaying, isDragging]);
@@ -47,6 +48,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       setIsPlaying(false);
       if (onPlayStateChange) onPlayStateChange(false);
       setCurrentTime(0);
+      if (onTimeUpdate) onTimeUpdate(0);
       if (hasNext) onNext();
     } else if (event.data === 5 || event.data === -1) {
       // CUED (5) or UNSTARTED (-1)

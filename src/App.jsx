@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle } from 'lucide-react';
+import { Music2, Sun, Moon, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -24,6 +24,13 @@ function App() {
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
+  
+  // Chords state
+  const [showChords, setShowChords] = useState(false);
+  const [chordsData, setChordsData] = useState(null);
+  const [isFetchingChords, setIsFetchingChords] = useState(false);
+  const [chordsError, setChordsError] = useState(null);
+  const [currentTime, setCurrentTime] = useState(0);
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
@@ -78,6 +85,40 @@ function App() {
   };
 
   const currentSong = playlist[currentIndex] || null;
+  
+  useEffect(() => {
+    if (showChords && currentSong) {
+      const fetchChords = async () => {
+        setIsFetchingChords(true);
+        setChordsError(null);
+        try {
+          const res = await invoke('scrape_chords', { title: currentSong.title });
+          const parsed = JSON.parse(res);
+          if (parsed.success) {
+            setChordsData({ ...parsed.data, _songId: currentSong.id });
+          } else {
+            setChordsError(parsed.error);
+            setChordsData({ _songId: currentSong.id }); // Still save to prevent retry on failure
+          }
+        } catch (e) {
+          setChordsError(e.toString());
+          setChordsData({ _songId: currentSong.id });
+        } finally {
+          setIsFetchingChords(false);
+        }
+      };
+      // Only fetch if we don't have chords for this song yet
+      if (!chordsData || chordsData._songId !== currentSong.id) {
+        fetchChords();
+      }
+    }
+  }, [currentSong, showChords, chordsData]);
+
+  // Clear chords when song changes
+  useEffect(() => {
+    setChordsData(null);
+    setChordsError(null);
+  }, [currentSong?.id]);
 
   useEffect(() => {
     if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless) {
@@ -93,7 +134,29 @@ function App() {
           const available = results.filter(v => !existingIds.has(v.id));
           
           if (available.length > 0) {
-            const picked = available[0];
+            let picked = available[0];
+            
+            // If the recommended song is a "video" version, try to find the audio version
+            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b)/i;
+            if (videoRegex.test(picked.title)) {
+              // Clean the title by removing bracketed stuff and the video keywords
+              const cleanTitle = picked.title
+                .replace(/\[.*?\]|\(.*?\)/g, ' ')
+                .replace(videoRegex, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+                
+              if (cleanTitle.length > 0) {
+                try {
+                  const searchResults = await invoke('search_youtube', { query: cleanTitle + ' topic' });
+                  if (searchResults && searchResults.length > 0) {
+                    picked = searchResults[0];
+                  }
+                } catch (err) {
+                  console.error("Audio fallback search failed:", err);
+                }
+              }
+            }
             
             const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
             setPlaylist(prev => [...prev, { ...picked, queueId }]);
@@ -169,6 +232,48 @@ const Visualizer = ({ isPlaying, spectrum }) => {
   );
 };
 
+const ChordDisplay = ({ data, time, isLoading, error }) => {
+  if (isLoading) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>Scraping chords from Chordify...</div>;
+  if (error) return <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', height: '100%', fontSize: '0.9rem' }}>{error}</div>;
+  if (!data || !data.chords || data.chords.length === 0) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>No chords available.</div>;
+
+  const chords = data.chords;
+  let activeIndex = -1;
+  for (let i = 0; i < chords.length; i++) {
+    if (time >= chords[i].time_sec) {
+      activeIndex = i;
+    } else {
+      break;
+    }
+  }
+
+  const windowSize = 7;
+  const halfWindow = Math.floor(windowSize / 2);
+  const startIdx = Math.max(0, activeIndex - halfWindow);
+  const visibleChords = chords.slice(startIdx, startIdx + windowSize);
+
+  return (
+    <div style={{ display: 'flex', gap: '24px', alignItems: 'center', justifyContent: 'center', height: '100%', overflow: 'hidden', width: '100%' }}>
+      {visibleChords.map((c, idx) => {
+        const globalIdx = startIdx + idx;
+        const isActive = globalIdx === activeIndex;
+        return (
+          <div key={globalIdx} style={{ 
+            fontSize: isActive ? '2.5rem' : '1.5rem',
+            color: isActive ? 'var(--accent-color)' : 'var(--text-muted)',
+            transition: 'all 0.2s ease',
+            fontWeight: isActive ? 'bold' : 'normal',
+            minWidth: '40px',
+            textAlign: 'center'
+          }}>
+            {c.chord}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
 const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
   <div 
     style={{ position: 'absolute', zIndex: 9999, cursor, background: 'rgba(0,0,0,0.01)', ...style }}
@@ -216,11 +321,18 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
 
       {/* Top Section: Player & Controls */}
       <div className="top-section glass-panel" style={{ margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px', position: 'relative' }}>
-        <header className="header" style={{ paddingBottom: '12px', display: 'flex', alignItems: 'center' }}>
-          <div style={{ flex: 1, display: 'flex', paddingRight: '16px' }}>
-            <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
+        <header className="header" style={{ paddingBottom: '12px', display: 'flex', alignItems: 'center', height: '50px' }}>
+          <div style={{ flex: 1, display: 'flex', paddingRight: '16px', height: '100%', minWidth: 0 }}>
+            {showChords ? (
+              <ChordDisplay data={chordsData} time={currentTime} isLoading={isFetchingChords} error={chordsError} />
+            ) : (
+              <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
+            )}
           </div>
-          <div style={{ flexShrink: 0 }}>
+          <div style={{ flexShrink: 0, display: 'flex', gap: '8px' }}>
+            <button className={`btn btn-icon ${showChords ? 'active' : ''}`} onClick={() => setShowChords(!showChords)} title="Toggle Chords" style={{ background: showChords ? 'var(--button-hover)' : 'transparent', boxShadow: 'none', color: showChords ? 'var(--accent-color)' : 'inherit' }}>
+              <ListMusic size={20} />
+            </button>
             <button className="btn btn-icon" onClick={toggleTheme} title="Toggle Theme" style={{ background: 'transparent', boxShadow: 'none' }}>
               {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -235,6 +347,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           hasNext={currentIndex < playlist.length - 1}
           hasPrevious={currentIndex > 0}
           onPlayStateChange={setIsAudioPlaying}
+          onTimeUpdate={setCurrentTime}
         />
       </div>
 
