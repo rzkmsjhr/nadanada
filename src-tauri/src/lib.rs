@@ -243,6 +243,50 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+async fn scrape_chords(title: String) -> Result<String, String> {
+    // Clean title
+    let re = Regex::new(r"(?i)\[.*?\]|\(.*?\)").unwrap();
+    let mut cleaned = re.replace_all(&title, "").to_string();
+    let to_remove = ["Official Video", "Official Music Video", "Official Audio", "Lyrics", "Lyric Video"];
+    for rm in to_remove.iter() {
+        cleaned = cleaned.replace(*rm, "");
+        cleaned = cleaned.replace(&rm.to_lowercase(), "");
+        cleaned = cleaned.replace(&rm.to_uppercase(), "");
+    }
+    let cleaned = cleaned.trim().to_string();
+    
+    // Spawn python script
+    // Determine script path
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let path1 = current_dir.join("src-tauri").join("scrape_chords.py");
+    let path2 = current_dir.join("scrape_chords.py");
+    
+    let script_path = if path1.exists() {
+        path1
+    } else {
+        path2
+    };
+
+    let output = std::process::Command::new("python")
+        .arg(script_path)
+        .arg(&cleaned)
+        .output()
+        .map_err(|e| format!("Failed to spawn python: {}", e))?;
+        
+    if !output.status.success() {
+        let err_str = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Python error: {}", err_str));
+    }
+        
+    let result_str = String::from_utf8_lossy(&output.stdout).to_string();
+    if result_str.trim().is_empty() {
+        return Err("Python script returned empty output".to_string());
+    }
+    
+    Ok(result_str)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     start_audio_monitor();
@@ -276,7 +320,7 @@ pub fn run() {
                 window.emit("close-requested", ()).unwrap();
             }
         })
-        .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_youtube_mix, quit_app])
+        .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_youtube_mix, quit_app, scrape_chords])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
