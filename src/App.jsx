@@ -133,7 +133,13 @@ function App() {
               if (chordsList && chordsList.length > 0) {
                 const lastChordTime = chordsList[chordsList.length - 1].time_sec;
                 const videoDuration = parseDuration(currentSong.duration);
-                if (videoDuration > 0 && Math.abs(lastChordTime - videoDuration) > 45) {
+                
+                // Mismatch if chords extend past the video (meaning Chordify's version has a longer intro/body)
+                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 15;
+                // Mismatch if chords end suspiciously early (e.g. they only cover less than 60% of the video length)
+                const isTooShort = videoDuration > 0 && lastChordTime < videoDuration * 0.6;
+
+                if (isTooLong || isTooShort) {
                   setChordsError(`Mismatched song version. Not found on Chordify.`);
                   setChordsData({ _songId: currentSong.id });
                 } else {

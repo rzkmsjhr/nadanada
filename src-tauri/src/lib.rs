@@ -289,7 +289,7 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
                 let googleAttempts = 0;
                 let checkGoogle = setInterval(() => {
                     googleAttempts++;
-                    let link = document.querySelector('a[href*="chordify.net/chords/"]');
+                    let link = document.querySelector('a[href*="chordify.net/chords/"]:not([href*="translate"])');
                     if (link) {
                         clearInterval(checkGoogle);
                         window.location.replace(link.href);
