@@ -396,7 +396,10 @@ body {
 }
 
 .modal-content {
-  background: var(--panel-bg);
+  background: var(--bg-color);
+  background: color-mix(in srgb, var(--bg-color) 85%, transparent);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--panel-border);
   border-radius: 16px;
   padding: 32px;
