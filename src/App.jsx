@@ -342,10 +342,13 @@ function transposeChord(chord, semitones) {
 const ChordDisplay = ({ data, time, transpose, isLoading, error, onRetry }) => {
   if (isLoading) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>Scraping chords from Chordify...</div>;
   if (error) {
+    const isNotFound = error.toLowerCase().includes("not found");
     return (
       <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '12px', height: '100%', fontSize: '0.9rem' }}>
         <span>{error}</span>
-        <button onClick={onRetry} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>Retry</button>
+        {!isNotFound && (
+          <button onClick={onRetry} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>Retry</button>
+        )}
       </div>
     );
   }

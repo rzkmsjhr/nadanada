@@ -257,7 +257,9 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
             return Ok(content);
         }
     }
-    let search_url = format!("https://chordify.net/search/https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{}", id);
+    
+    let clean_title = title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "").replace(" ", "+");
+    let search_url = format!("https://www.google.com/search?q=site:chordify.net+{}", clean_title);
     
     // Close any existing scraper windows to prevent concurrent request abuse
     for (label, window) in app_handle.webview_windows() {
@@ -272,19 +274,45 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
     let counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let window_label = format!("scraper_{}_{}_{}", safe_id, ts, counter);
     
-    let user_agents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0"
-    ];
-    let ua_idx = (ts % (user_agents.len() as u128)) as usize;
-    let selected_ua = user_agents[ua_idx];
-    
     let js_code = r#"
         (function() {
+            if (window.location.hostname.includes("google.")) {
+                let checkGoogle = setInterval(() => {
+                    let link = document.querySelector('a[href*="chordify.net/chords/"]');
+                    if (link) {
+                        clearInterval(checkGoogle);
+                        window.location.replace(link.href);
+                    } else if (document.body.innerText.includes("did not match any documents")) {
+                        clearInterval(checkGoogle);
+                        let err = encodeURIComponent(JSON.stringify({success: false, error: "Not found on Chordify", data: null}));
+                        window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    }
+                }, 500);
+                return;
+            }
+
             if (!window.location.hostname.includes("chordify.net")) return;
+            
+            // Stealth overrides to bypass Cloudflare bot detection
+            try {
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.chrome = { runtime: {} };
+                if (!navigator.plugins || navigator.plugins.length === 0) {
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+                }
+                if (!navigator.languages || navigator.languages.length === 0) {
+                    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                }
+            } catch(e) {}
+
+            // Clear storage immediately to bypass Chordify's JS-based daily limits
+            try {
+                window.localStorage.clear();
+                window.sessionStorage.clear();
+                document.cookie.split(";").forEach(function(c) { 
+                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+                });
+            } catch(e) {}
             
             let attempts = 0;
             let checkInterval = setInterval(() => {
@@ -389,8 +417,7 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         tauri::WebviewUrl::External(search_url.parse().unwrap())
     )
     .incognito(true)
-    .user_agent(selected_ua)
-    .visible(false) // Hide window in production
+    .visible(false)
     .initialization_script(js_code)
     .on_navigation(move |url| {
         println!("Navigating to: {}", url.as_str());
