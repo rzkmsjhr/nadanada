@@ -18,6 +18,7 @@ pub struct Video {
     title: String,
     thumbnail: String,
     duration: String,
+    channel: String,
 }
 
 #[tauri::command]
@@ -48,9 +49,10 @@ async fn search_youtube(mut query: String) -> Result<Vec<Video>, String> {
                         let title = video.pointer("/title/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let channel = video.pointer("/ownerText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration });
+                            videos.push(Video { id, title, thumbnail, duration, channel });
                         }
                     }
                     if videos.len() >= 15 {
@@ -93,9 +95,10 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
                                          .unwrap_or("").to_string();
                         let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        let channel = video.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration });
+                            videos.push(Video { id, title, thumbnail, duration, channel });
                         }
                     }
                     if videos.len() >= 25 {
@@ -290,10 +293,18 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
                 let checkGoogle = setInterval(() => {
                     googleAttempts++;
                     let link = document.querySelector('a[href*="chordify.net/chords/"]:not([href*="translate"])');
+                    
+                    if (document.body && document.body.innerText && document.body.innerText.includes("unusual traffic")) {
+                        clearInterval(checkGoogle);
+                        let err = encodeURIComponent(JSON.stringify({success: false, error: "Google blocked search (CAPTCHA).", data: null}));
+                        window.location.replace("https://chordify.net/?scraper_result=" + err);
+                        return;
+                    }
+                    
                     if (link) {
                         clearInterval(checkGoogle);
                         window.location.replace(link.href);
-                    } else if (googleAttempts > 10) { // Timeout after 5 seconds of looking for a link
+                    } else if (googleAttempts > 20) { // Timeout after 10 seconds
                         clearInterval(checkGoogle);
                         let err = encodeURIComponent(JSON.stringify({success: false, error: "Not found on Chordify", data: null}));
                         window.location.replace("https://chordify.net/?scraper_result=" + err);
@@ -367,18 +378,24 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
                 } 
                 else if (window.location.pathname.startsWith('/chords/')) {
                     let chordElements = document.querySelectorAll('.chord');
+                    let scrollEl = document.querySelector('[data-bpm]');
+                    let bpmMatch = document.body.textContent.match(/BPM\s*(\d{2,3})/i);
                     
+                    // Wait for both chords AND BPM to load (or fallback after 5 seconds of seeing chords)
                     if (chordElements.length > 0) {
+                        if (!scrollEl && !bpmMatch && attempts < 40) {
+                            return; // Wait a bit longer for the sidebar to load asynchronously
+                        }
+                        
                         clearInterval(checkInterval);
                         
                         let chords = [];
                         let bpm = 120;
-                        let scrollEl = document.querySelector('[data-bpm]');
+                        
                         if (scrollEl) {
                             bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 120;
-                        } else {
-                            let match = document.body.textContent.match(/BPM\s*(\d{2,3})/i);
-                            if (match) bpm = parseFloat(match[1]) || 120;
+                        } else if (bpmMatch) {
+                            bpm = parseFloat(bpmMatch[1]) || 120;
                         }
                         let secondsPerBeat = 60.0 / bpm;
                         

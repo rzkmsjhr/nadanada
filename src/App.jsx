@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -21,20 +21,20 @@ const topPanelStyle = { ...basePanelStyle, position: 'relative' };
 const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 };
 
 const staticStyles = {
-  headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--panel-border)' },
+  headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', boxShadow: '0 1px 0 0 var(--panel-border)' },
   headerTitle: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
   headerLoading: { fontSize: '0.8rem', color: 'var(--accent-color)' },
   headerIcons: { display: 'flex', gap: '8px' },
   iconBtn: { padding: '6px' },
   iconBtnDanger: { padding: '6px', color: '#ef4444' },
-  separator: { width: '1px', background: 'var(--panel-border)', margin: '4px 0' },
+  separator: { width: '2px', background: 'var(--panel-border)', margin: '4px 0', borderRadius: '1px' },
   playlistContainer: { flex: 1, overflow: 'hidden' },
   searchContainer: { padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }
 };
 
 function App() {
   const appWindow = getCurrentWindow();
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'lavender-steel');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [playlist, setPlaylist] = useState(() => {
     const saved = localStorage.getItem('nadanada-session-playlist');
@@ -78,6 +78,7 @@ function App() {
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('nadanada-theme', theme);
   }, [theme]);
 
   useEffect(() => {
@@ -90,28 +91,25 @@ function App() {
     };
   }, []);
 
-  const [audioSpectrum, setAudioSpectrum] = useState(new Array(24).fill(0));
-
-  useEffect(() => {
-    let interval;
-    if (isAudioPlaying) {
-      interval = setInterval(async () => {
-        try {
-          const spectrum = await invoke('get_audio_spectrum');
-          setAudioSpectrum(spectrum);
-        } catch (e) {}
-      }, 50);
-    } else {
-      setAudioSpectrum(new Array(24).fill(0));
-    }
-    return () => clearInterval(interval);
-  }, [isAudioPlaying]);
+  // audioSpectrum state moved to Visualizer component for performance
 
   const toggleTheme = () => {
-    setTheme(t => (t === 'dark' ? 'light' : 'dark'));
+    const themes = [
+      'lavender-steel', 
+      'mahogany-dusk', 
+      'tidal-sage', 
+      'sangria-deep', 
+      'midnight-static',
+      'obsidian-root',
+      'nox-noir'
+    ];
+    const currentIndex = themes.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    setTheme(themes[nextIndex]);
   };
 
   const currentSong = playlist[currentIndex] || null;
+  const [artistFact, setArtistFact] = useState('');
   
   useEffect(() => {
     if (currentSong) {
@@ -126,7 +124,13 @@ function App() {
           setIsFetchingChords(true);
           setChordsError(null);
           try {
-            const res = await invoke('scrape_chords', { id: currentSong.id, title: currentSong.title });
+            // Append the channel/artist name to the title so Google finds the exact artist's version
+            let searchTitle = currentSong.title;
+            if (currentSong.channel) {
+              const cleanChannel = currentSong.channel.replace(/ - Topic/i, '').trim();
+              searchTitle = `${searchTitle} ${cleanChannel}`;
+            }
+            const res = await invoke('scrape_chords', { id: currentSong.id, title: searchTitle });
             const parsed = JSON.parse(res);
             if (parsed.success) {
               const chordsList = parsed.data.chords;
@@ -171,6 +175,53 @@ function App() {
       setChordsError(null);
     }
   }, [currentSong, showChords, isAudioPlaying]);
+
+  useEffect(() => {
+    if (!currentSong) {
+      setArtistFact('');
+      return;
+    }
+    
+    const fetchFact = async () => {
+      try {
+        let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic/i, '').trim() : '';
+        if (!artist) {
+            const parts = currentSong.title.split('-');
+            if (parts.length > 1) {
+                artist = parts[0].trim();
+            } else {
+                setArtistFact('');
+                return;
+            }
+        }
+        
+        // Wikipedia allows CORS. Try the band specific page first.
+        let res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + '_(band)')}`);
+        if (!res.ok) {
+            res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist)}`);
+        }
+        
+        if (res.ok) {
+            const data = await res.json();
+            if (data.extract) {
+                let firstSentence = data.extract.split('. ')[0];
+                if (!firstSentence.endsWith('.')) {
+                    firstSentence += '.';
+                }
+                setArtistFact(firstSentence);
+            } else {
+                setArtistFact('');
+            }
+        } else {
+            setArtistFact('');
+        }
+      } catch (e) {
+        setArtistFact('');
+      }
+    };
+    
+    fetchFact();
+  }, [currentSong]);
 
   // Save sync and transpose offsets when changed
   useEffect(() => {
@@ -318,16 +369,7 @@ function App() {
     }
   };
 
-const Visualizer = ({ isPlaying, spectrum }) => {
-  return (
-    <div className={`visualizer ${isPlaying ? 'playing' : ''}`}>
-      {spectrum.map((val, i) => {
-        const h = 4 + (val * 36);
-        return <div key={i} className="bar" style={{ height: isPlaying ? `${h}px` : '4px' }}></div>;
-      })}
-    </div>
-  );
-};
+
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const FLATS_TO_SHARPS = { 
@@ -478,30 +520,41 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 onRetry={() => { setChordsData(null); setChordsError(null); }}
               />
             ) : (
-              <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
+              <div style={{ display: 'flex', alignItems: 'center', height: '100%', paddingLeft: '8px', overflow: 'hidden', flex: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', minWidth: 0, paddingRight: '16px', flex: 1, width: '100%' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '2px' }}>
+                    {artistFact ? 'Artist Fact' : 'Up Next'}
+                  </div>
+                  <div className="marquee-container">
+                    <div className={artistFact ? 'running-text' : ''} style={{ fontSize: '0.85rem', fontWeight: '500', color: 'var(--text-main)', whiteSpace: 'nowrap', fontStyle: artistFact ? 'italic' : 'normal' }}>
+                      {artistFact ? `"${artistFact}"` : (playlist[currentIndex + 1] ? playlist[currentIndex + 1].title : (isFetchingEndless ? 'Loading Mix...' : 'End of Playlist'))}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
           </div>
           <div style={{ flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'center' }}>
             {showChords && chordsData && !isFetchingChords && !chordsError && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
                   <span style={{ marginRight: '4px' }}>Key:</span>
                   <button onClick={() => setTransposeOffset(s => s - 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Down">
                     -
                   </button>
-                  <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
+                  <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
                     {transposeOffset > 0 ? '+' : ''}{transposeOffset}
                   </span>
                   <button onClick={() => setTransposeOffset(s => s + 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Up">
                     +
                   </button>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
                   <span style={{ marginRight: '4px' }}>Sync:</span>
                   <button onClick={() => setSyncOffset(s => s - 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
                     -
                   </button>
-                  <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
+                  <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
                     {syncOffset > 0 ? '+' : ''}{syncOffset}s
                   </span>
                   <button onClick={() => setSyncOffset(s => s + 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
@@ -513,8 +566,8 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             <button className={`btn btn-icon ${showChords ? 'active' : ''}`} onClick={() => setShowChords(!showChords)} title="Toggle Chords" style={{ background: showChords ? 'var(--button-hover)' : 'transparent', boxShadow: 'none', color: showChords ? 'var(--accent-color)' : 'inherit' }}>
               <ListMusic size={20} />
             </button>
-            <button className="btn btn-icon" onClick={toggleTheme} title="Toggle Theme" style={{ background: 'transparent', boxShadow: 'none' }}>
-              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+            <button className="btn btn-icon" onClick={toggleTheme} title="Switch Theme" style={{ background: 'transparent', boxShadow: 'none' }}>
+              <Palette size={20} />
             </button>
           </div>
         </header>

@@ -1,23 +1,79 @@
 :root {
-  --bg-color: #f8fafc;
-  --panel-bg: rgba(255, 255, 255, 0.7);
-  --panel-border: rgba(0, 0, 0, 0.12);
-  --text-main: #0f172a;
-  --text-muted: #64748b;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
-  --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  /* Theme 1: Lavender Steel (Default) */
+  --bg-color: #FFDBED; /* Blossom Vapor */
+  --panel-bg: rgba(142, 147, 203, 0.15); /* Lavender Steel glass */
+  --panel-border: rgba(142, 147, 203, 0.25);
+  --text-main: #8E93CB; /* Lavender Steel */
+  --text-muted: rgba(142, 147, 203, 0.7);
+  --accent-color: #F8769C; /* Coral Rush */
+  --accent-hover: #e06085;
+  --glass-shadow: 0 8px 32px 0 rgba(248, 118, 156, 0.1);
 }
 
-[data-theme="dark"] {
-  --bg-color: #121212;
-  --panel-bg: rgba(30, 30, 30, 0.7);
-  --panel-border: rgba(255, 255, 255, 0.1);
-  --text-main: #f8fafc;
-  --text-muted: #94a3b8;
-  --accent-color: #60a5fa;
-  --accent-hover: #93c5fd;
-  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+[data-theme="mahogany-dusk"] {
+  --bg-color: #CAE7F7; /* Crystal Glaze */
+  --panel-bg: rgba(72, 38, 29, 0.05); /* Mahogany Dusk glass */
+  --panel-border: rgba(72, 38, 29, 0.15);
+  --text-main: #48261D; /* Mahogany Dusk */
+  --text-muted: rgba(72, 38, 29, 0.7);
+  --accent-color: #F94C00; /* Ignite Orange */
+  --accent-hover: #d84100;
+  --glass-shadow: 0 8px 32px 0 rgba(249, 76, 0, 0.1);
+}
+
+[data-theme="tidal-sage"] {
+  --bg-color: #E6D4BE; /* Toasted Sand */
+  --panel-bg: rgba(103, 159, 158, 0.15); /* Tidal Sage glass */
+  --panel-border: rgba(103, 159, 158, 0.3);
+  --text-main: #679F9E; /* Tidal Sage */
+  --text-muted: rgba(103, 159, 158, 0.8);
+  --accent-color: #7EADDB; /* Glacial Periwinkle */
+  --accent-hover: #6997c4;
+  --glass-shadow: 0 8px 32px 0 rgba(103, 159, 158, 0.15);
+}
+
+[data-theme="sangria-deep"] {
+  --bg-color: #E4EAE8; /* Pebble Mist */
+  --panel-bg: rgba(122, 18, 41, 0.05); /* Sangria Deep glass */
+  --panel-border: rgba(122, 18, 41, 0.15);
+  --text-main: #7A1229; /* Sangria Deep */
+  --text-muted: rgba(122, 18, 41, 0.7);
+  --accent-color: #479C73; /* Jade Botanical */
+  --accent-hover: #38805e;
+  --glass-shadow: 0 8px 32px 0 rgba(122, 18, 41, 0.1);
+}
+
+[data-theme="midnight-static"] {
+  --bg-color: #CF98AF; /* Dusty Orchid */
+  --panel-bg: rgba(27, 28, 32, 0.05); /* Midnight Static glass */
+  --panel-border: rgba(27, 28, 32, 0.15);
+  --text-main: #1B1C20; /* Midnight Static */
+  --text-muted: rgba(27, 28, 32, 0.7);
+  --accent-color: #144EA0; /* Regal Anchor */
+  --accent-hover: #103d7d;
+  --glass-shadow: 0 8px 32px 0 rgba(20, 78, 160, 0.15);
+}
+
+[data-theme="obsidian-root"] {
+  --bg-color: #FCFF1A; /* Electric Sun */
+  --panel-bg: rgba(12, 14, 9, 0.03); /* Obsidian Root glass */
+  --panel-border: rgba(12, 14, 9, 0.1);
+  --text-main: #0C0E09; /* Obsidian Root */
+  --text-muted: rgba(12, 14, 9, 0.6);
+  --accent-color: #FF2070; /* Hyper Neon */
+  --accent-hover: #d1175a;
+  --glass-shadow: 0 8px 32px 0 rgba(255, 32, 112, 0.2);
+}
+
+[data-theme="nox-noir"] {
+  --bg-color: #CFCFCF; /* Steel Mist */
+  --panel-bg: rgba(20, 20, 20, 0.05); /* Nox Noir glass */
+  --panel-border: rgba(20, 20, 20, 0.15);
+  --text-main: #141414; /* Nox Noir */
+  --text-muted: rgba(20, 20, 20, 0.7);
+  --accent-color: #7E49B3; /* Royal Amethyst */
+  --accent-hover: #6a3a99;
+  --glass-shadow: 0 8px 32px 0 rgba(126, 73, 179, 0.2);
 }
 
 * {
@@ -45,13 +101,11 @@ body {
 
 .glass-panel {
   background: var(--panel-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--panel-border);
   box-shadow: var(--glass-shadow);
   border-radius: 16px;
   transform: translateZ(0);
-  will-change: transform, backdrop-filter;
+  will-change: transform;
   backface-visibility: hidden;
 }
 
@@ -297,14 +351,18 @@ body {
   justify-content: space-between; /* Perfect full-width alignment */
   height: 40px; /* Gives enough vertical space for the waveform */
   width: 100%;
+  transform: translateZ(0);
+  will-change: transform;
 }
 .visualizer .bar {
   flex: 1;
   max-width: 8px;
   background-color: var(--accent-color);
   border-radius: 4px;
-  min-height: 4px;
-  transition: height 0.05s linear;
+  height: 40px;
+  transform-origin: center;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1); /* Smooth fluid easing */
+  will-change: transform;
 }
 
 /* Modal Styles */
@@ -425,4 +483,23 @@ body {
   color: var(--text-main);
   background: transparent;
   text-decoration: underline;
+}
+
+.marquee-container {
+  container-type: inline-size;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+@keyframes scrollText {
+  0% { transform: translateX(100cqw); }
+  100% { transform: translateX(-100%); }
+}
+
+.running-text {
+  display: inline-block;
+  white-space: nowrap;
+  animation: scrollText 20s linear infinite;
+  will-change: transform;
 }
