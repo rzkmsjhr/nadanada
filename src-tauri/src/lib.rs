@@ -258,8 +258,17 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         }
     }
     
-    let clean_title = title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "").replace(" ", "+");
-    let search_url = format!("https://www.google.com/search?q=site:chordify.net+{}", clean_title);
+    let mut clean_title = title.clone();
+    if let Some(idx) = clean_title.find('[') { clean_title.truncate(idx); }
+    if let Some(idx) = clean_title.find('(') { clean_title.truncate(idx); }
+    if let Some(idx) = clean_title.find('{') { clean_title.truncate(idx); }
+    if let Some(idx) = clean_title.find('|') { clean_title.truncate(idx); }
+    
+    let clean_title_alphanum = clean_title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "");
+    let words: Vec<&str> = clean_title_alphanum.split_whitespace().take(6).collect();
+    let query_str = words.join("+");
+    
+    let search_url = format!("https://www.google.com/search?q=site:chordify.net+{}", query_str);
     
     // Close any existing scraper windows to prevent concurrent request abuse
     for (label, window) in app_handle.webview_windows() {
@@ -277,12 +286,14 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
     let js_code = r#"
         (function() {
             if (window.location.hostname.includes("google.")) {
+                let googleAttempts = 0;
                 let checkGoogle = setInterval(() => {
+                    googleAttempts++;
                     let link = document.querySelector('a[href*="chordify.net/chords/"]');
                     if (link) {
                         clearInterval(checkGoogle);
                         window.location.replace(link.href);
-                    } else if (document.body.innerText.includes("did not match any documents")) {
+                    } else if (googleAttempts > 10) { // Timeout after 5 seconds of looking for a link
                         clearInterval(checkGoogle);
                         let err = encodeURIComponent(JSON.stringify({success: false, error: "Not found on Chordify", data: null}));
                         window.location.replace("https://chordify.net/?scraper_result=" + err);

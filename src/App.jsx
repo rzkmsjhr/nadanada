@@ -8,6 +8,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
 
+const parseDuration = (durationStr) => {
+  if (!durationStr) return 0;
+  const parts = durationStr.split(':').map(Number);
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return 0;
+};
+
 const basePanelStyle = { margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px' };
 const topPanelStyle = { ...basePanelStyle, position: 'relative' };
 const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 };
@@ -121,7 +129,19 @@ function App() {
             const res = await invoke('scrape_chords', { id: currentSong.id, title: currentSong.title });
             const parsed = JSON.parse(res);
             if (parsed.success) {
-              setChordsData({ ...parsed.data, _songId: currentSong.id });
+              const chordsList = parsed.data.chords;
+              if (chordsList && chordsList.length > 0) {
+                const lastChordTime = chordsList[chordsList.length - 1].time_sec;
+                const videoDuration = parseDuration(currentSong.duration);
+                if (videoDuration > 0 && Math.abs(lastChordTime - videoDuration) > 45) {
+                  setChordsError(`Mismatched song version. Not found on Chordify.`);
+                  setChordsData({ _songId: currentSong.id });
+                } else {
+                  setChordsData({ ...parsed.data, _songId: currentSong.id });
+                }
+              } else {
+                setChordsData({ ...parsed.data, _songId: currentSong.id });
+              }
             } else {
               setChordsError(parsed.error);
               setChordsData({ _songId: currentSong.id });
