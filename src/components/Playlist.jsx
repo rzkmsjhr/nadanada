@@ -30,8 +30,14 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
   };
   if (playlist.length === 0) {
     return (
-      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-        Your playlist is empty.
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', gap: '12px', padding: '20px', textAlign: 'center' }}>
+        <div style={{ background: 'rgba(255,255,255,0.05)', padding: '16px', borderRadius: '50%' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+        </div>
+        <div>
+          <h3 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: 'var(--text-color)' }}>Your playlist is empty</h3>
+          <p style={{ margin: 0, fontSize: '0.85rem' }}>Click the search icon above to find some music!</p>
+        </div>
       </div>
     );
   }

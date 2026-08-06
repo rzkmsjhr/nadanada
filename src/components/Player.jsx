@@ -117,29 +117,40 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-      <div style={{ flex: 1, position: 'relative', background: '#000', borderRadius: '12px', overflow: 'hidden', minHeight: '100px' }}>
-        
-        <div style={{ position: 'absolute', inset: 0 }}>
-          {currentSong && (
-            <YouTube
-              videoId={currentSong.id}
-              opts={opts}
-              onReady={onReady}
-              onStateChange={onStateChange}
-              style={{ width: '100%', height: '100%' }}
-              iframeClassName="youtube-iframe"
-            />
-          )}
-        </div>
-
-        {!currentSong && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
-            No song playing.<br/>Search for music to get started!
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden' }}>
+        <div style={{ 
+          width: '100%', 
+          height: 'auto', 
+          maxHeight: '100%', 
+          aspectRatio: '16 / 9', 
+          position: 'relative', 
+          background: '#000', 
+          borderRadius: '12px', 
+          overflow: 'hidden' 
+        }}>
+          
+          <div style={{ position: 'absolute', inset: 0 }}>
+            {currentSong && (
+              <YouTube
+                videoId={currentSong.id}
+                opts={opts}
+                onReady={onReady}
+                onStateChange={onStateChange}
+                style={{ width: '100%', height: '100%' }}
+                iframeClassName="youtube-iframe"
+              />
+            )}
           </div>
-        )}
-        
-        {/* Invisible overlay */}
-        {currentSong && <div style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+
+          {!currentSong && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
+              No song playing.<br/>Search for music to get started!
+            </div>
+          )}
+          
+          {/* Invisible overlay */}
+          {currentSong && <div style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+        </div>
       </div>
 
       <div style={{ padding: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '12px' }}>

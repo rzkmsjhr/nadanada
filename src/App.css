@@ -50,6 +50,9 @@ body {
   border: 1px solid var(--panel-border);
   box-shadow: var(--glass-shadow);
   border-radius: 16px;
+  transform: translateZ(0);
+  will-change: transform, backdrop-filter;
+  backface-visibility: hidden;
 }
 
 .top-section {

@@ -257,20 +257,30 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
             return Ok(content);
         }
     }
-    // Clean title
-    let re = Regex::new(r"(?i)\[.*?\]|\(.*?\)").unwrap();
-    let mut cleaned = re.replace_all(&title, "").to_string();
-    let to_remove = ["Official Video", "Official Music Video", "Official Audio", "Lyrics", "Lyric Video"];
-    for rm in to_remove.iter() {
-        cleaned = cleaned.replace(*rm, "");
-        cleaned = cleaned.replace(&rm.to_lowercase(), "");
-        cleaned = cleaned.replace(&rm.to_uppercase(), "");
-    }
-    let cleaned = title.replace("-", " ");
     let search_url = format!("https://chordify.net/search/https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{}", id);
     
+    // Close any existing scraper windows to prevent concurrent request abuse
+    for (label, window) in app_handle.webview_windows() {
+        if label.starts_with("scraper_") {
+            println!("Killing existing scraper window to prevent concurrency abuse: {}", label);
+            window.close().ok();
+        }
+    }
+    
     let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
-    let window_label = format!("scraper_{}_{}", safe_id, ts);
+    static WINDOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let window_label = format!("scraper_{}_{}_{}", safe_id, ts, counter);
+    
+    let user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3.1 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0"
+    ];
+    let ua_idx = (ts % (user_agents.len() as u128)) as usize;
+    let selected_ua = user_agents[ua_idx];
     
     let js_code = r#"
         (function() {
@@ -279,6 +289,14 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
             let attempts = 0;
             let checkInterval = setInterval(() => {
                 attempts++;
+                
+                if (window.location.pathname.startsWith('/user/signup') || window.location.pathname.startsWith('/user/login')) {
+                    clearInterval(checkInterval);
+                    let err = encodeURIComponent(JSON.stringify({success: false, error: "Chordify login required (daily limit reached). Try changing IP/VPN.", data: null}));
+                    window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    return;
+                }
+                
                 if (attempts > 80) {
                     clearInterval(checkInterval);
                     let err = encodeURIComponent(JSON.stringify({success: false, error: "Timeout waiting for chords", data: null}));
@@ -370,7 +388,8 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         &window_label,
         tauri::WebviewUrl::External(search_url.parse().unwrap())
     )
-    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    .incognito(true)
+    .user_agent(selected_ua)
     .visible(false) // Hide window in production
     .initialization_script(js_code)
     .on_navigation(move |url| {

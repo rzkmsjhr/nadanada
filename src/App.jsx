@@ -8,6 +8,22 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
 
+const basePanelStyle = { margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px' };
+const topPanelStyle = { ...basePanelStyle, position: 'relative' };
+const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 };
+
+const staticStyles = {
+  headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--panel-border)' },
+  headerTitle: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
+  headerLoading: { fontSize: '0.8rem', color: 'var(--accent-color)' },
+  headerIcons: { display: 'flex', gap: '8px' },
+  iconBtn: { padding: '6px' },
+  iconBtnDanger: { padding: '6px', color: '#ef4444' },
+  separator: { width: '1px', background: 'var(--panel-border)', margin: '4px 0' },
+  playlistContainer: { flex: 1, overflow: 'hidden' },
+  searchContainer: { padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }
+};
+
 function App() {
   const appWindow = getCurrentWindow();
   const [theme, setTheme] = useState('dark');
@@ -23,6 +39,7 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
+  const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   
   // Chords state
@@ -32,6 +49,7 @@ function App() {
   const [chordsError, setChordsError] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [syncOffset, setSyncOffset] = useState(0);
+  const [transposeOffset, setTransposeOffset] = useState(0);
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
@@ -88,46 +106,47 @@ function App() {
   const currentSong = playlist[currentIndex] || null;
   
   useEffect(() => {
-    if (showChords && currentSong) {
-      const fetchChords = async () => {
-        setIsFetchingChords(true);
-        setChordsError(null);
-        try {
-          const res = await invoke('scrape_chords', { id: currentSong.id, title: currentSong.title });
-          const parsed = JSON.parse(res);
-          if (parsed.success) {
-            setChordsData({ ...parsed.data, _songId: currentSong.id });
-          } else {
-            setChordsError(parsed.error);
-            setChordsData({ _songId: currentSong.id }); // Still save to prevent retry on failure
-          }
-        } catch (e) {
-          setChordsError(e.toString());
-          setChordsData({ _songId: currentSong.id });
-        } finally {
-          setIsFetchingChords(false);
-        }
-      };
-      // Only fetch if we don't have chords for this song yet
-      if (!chordsData || chordsData._songId !== currentSong.id) {
-        fetchChords();
-      }
-    }
-  }, [currentSong, showChords, chordsData]);
-
-  // Clear chords when song changes
-  useEffect(() => {
-    setChordsData(null);
-    setChordsError(null);
     if (currentSong) {
       const savedSync = localStorage.getItem(`sync_${currentSong.id}`);
       setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
+      
+      const savedTranspose = localStorage.getItem(`transpose_${currentSong.id}`);
+      setTransposeOffset(savedTranspose ? parseInt(savedTranspose, 10) : 0);
+      
+      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id) && !isFetchingChords) {
+        const fetchChords = async () => {
+          setIsFetchingChords(true);
+          setChordsError(null);
+          try {
+            const res = await invoke('scrape_chords', { id: currentSong.id, title: currentSong.title });
+            const parsed = JSON.parse(res);
+            if (parsed.success) {
+              setChordsData({ ...parsed.data, _songId: currentSong.id });
+            } else {
+              setChordsError(parsed.error);
+              setChordsData({ _songId: currentSong.id });
+            }
+          } catch (e) {
+            setChordsError(e.toString());
+            setChordsData({ _songId: currentSong.id });
+          } finally {
+            setIsFetchingChords(false);
+          }
+        };
+        fetchChords();
+      } else if (!showChords) {
+        setChordsData(null);
+        setChordsError(null);
+      }
     } else {
       setSyncOffset(0);
+      setTransposeOffset(0);
+      setChordsData(null);
+      setChordsError(null);
     }
-  }, [currentSong]);
+  }, [currentSong, showChords, isAudioPlaying]);
 
-  // Save sync offset when changed
+  // Save sync and transpose offsets when changed
   useEffect(() => {
     if (currentSong) {
       if (syncOffset !== 0) {
@@ -135,11 +154,17 @@ function App() {
       } else {
         localStorage.removeItem(`sync_${currentSong.id}`);
       }
+      
+      if (transposeOffset !== 0) {
+        localStorage.setItem(`transpose_${currentSong.id}`, transposeOffset.toString());
+      } else {
+        localStorage.removeItem(`transpose_${currentSong.id}`);
+      }
     }
-  }, [syncOffset, currentSong]);
+  }, [syncOffset, transposeOffset, currentSong]);
 
   useEffect(() => {
-    if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless) {
+    if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless && !failedEndlessFetch) {
       const fetchNext = async () => {
         setIsFetchingEndless(true);
         try {
@@ -191,11 +216,19 @@ function App() {
               finalPicked = available[0];
             }
             
-            const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-            setPlaylist(prev => [...prev, { ...finalPicked, queueId }]);
+            
+            if (finalPicked) {
+              const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
+              setPlaylist(prev => [...prev, { ...finalPicked, queueId }]);
+            } else {
+              setFailedEndlessFetch(true);
+            }
+          } else {
+            setFailedEndlessFetch(true);
           }
         } catch (e) {
           console.error("Endless play fetch error:", e);
+          setFailedEndlessFetch(true);
         } finally {
           setIsFetchingEndless(false);
         }
@@ -203,7 +236,12 @@ function App() {
       
       fetchNext();
     }
-  }, [currentIndex, playlist.length, isEndlessPlay, isFetchingEndless]);
+  }, [currentIndex, playlist.length, isEndlessPlay, isFetchingEndless, failedEndlessFetch]);
+
+  // Reset the failed state whenever the user manually plays a different song or adds a song
+  useEffect(() => {
+    setFailedEndlessFetch(false);
+  }, [currentIndex, playlist]);
 
   const handleNext = () => {
     if (currentIndex < playlist.length - 1) {
@@ -265,9 +303,52 @@ const Visualizer = ({ isPlaying, spectrum }) => {
   );
 };
 
-const ChordDisplay = ({ data, time, isLoading, error }) => {
+const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLATS_TO_SHARPS = { 
+  'Db': 'C#', 'Eb': 'D#', 'Gb': 'F#', 'Ab': 'G#', 'Bb': 'A#',
+  'D♭': 'C#', 'E♭': 'D#', 'G♭': 'F#', 'A♭': 'G#', 'B♭': 'A#',
+  'Cb': 'B', 'C♭': 'B', 'Fb': 'E', 'F♭': 'E'
+};
+const SHARPS_MAP = {
+  'C♯': 'C#', 'D♯': 'D#', 'E♯': 'F', 'F♯': 'F#', 'G♯': 'G#', 'A♯': 'A#', 'B♯': 'C'
+};
+
+function transposeChord(chord, semitones) {
+  if (!chord || chord === 'N.C.' || chord === '') return chord;
+  if (semitones === 0) return chord;
+  
+  const transposeSingle = (c) => {
+    const match = c.match(/^([A-G][#b♯♭]?)(.*)$/);
+    if (!match) return c;
+    let root = match[1];
+    const suffix = match[2];
+    
+    if (FLATS_TO_SHARPS[root]) root = FLATS_TO_SHARPS[root];
+    if (SHARPS_MAP[root]) root = SHARPS_MAP[root];
+    
+    let index = NOTES.indexOf(root);
+    if (index === -1) return c;
+    
+    let newIndex = (index + semitones) % 12;
+    if (newIndex < 0) newIndex += 12;
+    
+    let outRoot = NOTES[newIndex];
+    return outRoot + suffix;
+  };
+
+  return chord.split('/').map(transposeSingle).join('/');
+}
+
+const ChordDisplay = ({ data, time, transpose, isLoading, error, onRetry }) => {
   if (isLoading) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>Scraping chords from Chordify...</div>;
-  if (error) return <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', height: '100%', fontSize: '0.9rem' }}>{error}</div>;
+  if (error) {
+    return (
+      <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '12px', height: '100%', fontSize: '0.9rem' }}>
+        <span>{error}</span>
+        <button onClick={onRetry} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem' }}>Retry</button>
+      </div>
+    );
+  }
   if (!data || !data.chords || data.chords.length === 0) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>No chords available.</div>;
 
   const chords = data.chords;
@@ -301,7 +382,7 @@ const ChordDisplay = ({ data, time, isLoading, error }) => {
             opacity: isActive ? 1 : Math.max(0.2, 1 - (idx * 0.2)),
             transform: isActive ? 'scale(1) translateY(0)' : 'scale(0.9) translateY(2px)',
           }}>
-            {c.chord}
+            {transposeChord(c.chord, transpose || 0)}
           </div>
         );
       })}
@@ -317,7 +398,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
 );
 
   return (
-    <div className="app-container" style={{ position: 'relative' }}>
+    <div className="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       
       {/* Invisible Resize Borders */}
       <ResizeBorder windowObj={appWindow} cursor="n-resize" direction="Top" style={{ top: 0, left: 4, right: 4, height: '4px' }} />
@@ -355,28 +436,49 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
       </div>
 
       {/* Top Section: Player & Controls */}
-      <div className="top-section glass-panel" style={{ margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px', position: 'relative' }}>
+      <div className="top-section glass-panel" style={topPanelStyle}>
         <header className="header" style={{ paddingBottom: '12px', display: 'flex', alignItems: 'center', height: '50px' }}>
           <div style={{ flex: 1, display: 'flex', paddingRight: '16px', height: '100%', minWidth: 0 }}>
             {showChords ? (
-              <ChordDisplay data={chordsData} time={currentTime + syncOffset} isLoading={isFetchingChords} error={chordsError} />
+              <ChordDisplay 
+                data={chordsData} 
+                time={currentTime + syncOffset} 
+                transpose={transposeOffset} 
+                isLoading={isFetchingChords} 
+                error={chordsError} 
+                onRetry={() => { setChordsData(null); setChordsError(null); }}
+              />
             ) : (
               <Visualizer isPlaying={isAudioPlaying} spectrum={audioSpectrum} />
             )}
           </div>
           <div style={{ flexShrink: 0, display: 'flex', gap: '8px', alignItems: 'center' }}>
             {showChords && chordsData && !isFetchingChords && !chordsError && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginRight: '8px', fontSize: '0.75rem', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '4px 8px', color: 'var(--text-muted)' }}>
-                <span style={{ marginRight: '4px' }}>Sync:</span>
-                <button onClick={() => setSyncOffset(s => s - 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
-                  -
-                </button>
-                <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
-                  {syncOffset > 0 ? '+' : ''}{syncOffset}s
-                </span>
-                <button onClick={() => setSyncOffset(s => s + 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
-                  +
-                </button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
+                  <span style={{ marginRight: '4px' }}>Key:</span>
+                  <button onClick={() => setTransposeOffset(s => s - 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Down">
+                    -
+                  </button>
+                  <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
+                    {transposeOffset > 0 ? '+' : ''}{transposeOffset}
+                  </span>
+                  <button onClick={() => setTransposeOffset(s => s + 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Up">
+                    +
+                  </button>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
+                  <span style={{ marginRight: '4px' }}>Sync:</span>
+                  <button onClick={() => setSyncOffset(s => s - 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
+                    -
+                  </button>
+                  <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-color)' }}>
+                    {syncOffset > 0 ? '+' : ''}{syncOffset}s
+                  </span>
+                  <button onClick={() => setSyncOffset(s => s + 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
+                    +
+                  </button>
+                </div>
               </div>
             )}
             <button className={`btn btn-icon ${showChords ? 'active' : ''}`} onClick={() => setShowChords(!showChords)} title="Toggle Chords" style={{ background: showChords ? 'var(--button-hover)' : 'transparent', boxShadow: 'none', color: showChords ? 'var(--accent-color)' : 'inherit' }}>
@@ -401,29 +503,38 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
       </div>
 
       {/* Bottom Section: Playlist or Search */}
-      <div className="bottom-section glass-panel" style={{ margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid var(--panel-border)' }}>
-          <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div className="bottom-section glass-panel" style={bottomPanelStyle}>
+        <div style={staticStyles.headerBar}>
+          <div style={staticStyles.headerTitle}>
             {showSearch ? 'Search YouTube' : `Up Next (${playlist.length})`}
-            {!showSearch && isFetchingEndless && <span style={{ fontSize: '0.8rem', color: 'var(--accent-color)' }}>Loading mix...</span>}
+            {!showSearch && isFetchingEndless && <span style={staticStyles.headerLoading}>Loading mix...</span>}
+            {!showSearch && failedEndlessFetch && (
+              <button 
+                onClick={() => setFailedEndlessFetch(false)} 
+                style={{ fontSize: '0.75rem', background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                title="Click to retry loading Endless Mix"
+              >
+                <AlertTriangle size={12} /> Mix Failed (Retry)
+              </button>
+            )}
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={staticStyles.headerIcons}>
             {!showSearch && (
               <>
-                <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={{ padding: '6px' }}>
+                <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
                   <FolderOpen size={18} />
                 </button>
                 {playlist.length > 0 && (
-                  <button className="btn btn-icon" onClick={() => setShowSavePrompt(true)} title="Save Playlist" style={{ padding: '6px' }}>
+                  <button className="btn btn-icon" onClick={() => setShowSavePrompt(true)} title="Save Playlist" style={staticStyles.iconBtn}>
                     <Save size={18} />
                   </button>
                 )}
                 {playlist.length > 0 && (
-                  <button className="btn btn-icon" onClick={() => setShowClearPrompt(true)} title="Clear Playlist" style={{ padding: '6px', color: '#ef4444' }}>
+                  <button className="btn btn-icon" onClick={() => setShowClearPrompt(true)} title="Clear Playlist" style={staticStyles.iconBtnDanger}>
                     <Trash2 size={18} />
                   </button>
                 )}
-                <div style={{ width: '1px', background: 'var(--panel-border)', margin: '4px 0' }} />
+                <div style={staticStyles.separator} />
                 <button 
                   className={`btn btn-icon ${isEndlessPlay ? 'active' : ''}`} 
                   onClick={() => setIsEndlessPlay(!isEndlessPlay)} 
@@ -440,9 +551,9 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           </div>
         </div>
         
-        <div style={{ flex: 1, overflow: 'hidden' }}>
+        <div style={staticStyles.playlistContainer}>
           {showSearch ? (
-            <div style={{ padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }}>
+            <div style={staticStyles.searchContainer}>
               <Search onAdd={handleAddSong} playlist={playlist} />
             </div>
           ) : (
