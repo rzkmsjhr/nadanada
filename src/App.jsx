@@ -34,7 +34,7 @@ const staticStyles = {
 
 function App() {
   const appWindow = getCurrentWindow();
-  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'lavender-steel');
+  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'obsidian-root');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [playlist, setPlaylist] = useState(() => {
     const saved = localStorage.getItem('nadanada-session-playlist');
@@ -247,12 +247,41 @@ function App() {
         setIsFetchingEndless(true);
         try {
           const current = playlist[currentIndex];
-          
           const results = await invoke('get_youtube_mix', { videoId: current.id });
           
+          const getWords = (song) => {
+            const text = ((song.title || '') + ' ' + (song.channel || '')).toLowerCase()
+              .replace(/\[.*?\]|\(.*?\)/g, ' ') // remove brackets and parens
+              .replace(/official|music|video|audio|hd|hq|lyrics|topic/g, ' ')
+              .replace(/[^a-z0-9]/g, ' '); // keep only alphanumeric as spaces
+            const words = text.split(/\s+/).filter(w => w.length > 2); // ignore short words
+            return new Set(words);
+          };
+
+          const calculateSimilarity = (setA, setB) => {
+            if (setA.size === 0 || setB.size === 0) return 0;
+            let intersection = 0;
+            for (let word of setA) {
+              if (setB.has(word)) intersection++;
+            }
+            const union = setA.size + setB.size - intersection;
+            return intersection / union;
+          };
+
           const existingIds = new Set(playlist.map(s => s.id));
+          const existingWordSets = playlist.map(s => getWords(s));
           
-          const available = results.filter(v => !existingIds.has(v.id));
+          const available = results.filter(v => {
+            if (existingIds.has(v.id)) return false;
+            
+            const vWords = getWords(v);
+            for (let existingSet of existingWordSets) {
+              if (calculateSimilarity(vWords, existingSet) > 0.55) {
+                return false; // Semantic duplicate found
+              }
+            }
+            return true;
+          });
           
           if (available.length > 0) {
             let finalPicked = null;
@@ -282,8 +311,21 @@ function App() {
                 }
               }
               
-              // Check if the final ID is already in the playlist
-              if (!existingIds.has(picked.id)) {
+              // Check if the final ID and signature are already in the playlist
+              let isDuplicate = false;
+              if (existingIds.has(picked.id)) {
+                isDuplicate = true;
+              } else {
+                const pickedWords = getWords(picked);
+                for (let existingSet of existingWordSets) {
+                  if (calculateSimilarity(pickedWords, existingSet) > 0.55) {
+                    isDuplicate = true;
+                    break;
+                  }
+                }
+              }
+              
+              if (!isDuplicate) {
                 finalPicked = picked;
                 break;
               }
