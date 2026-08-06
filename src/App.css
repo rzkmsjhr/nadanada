@@ -76,6 +76,17 @@
   --glass-shadow: 0 8px 32px 0 rgba(126, 73, 179, 0.2);
 }
 
+[data-theme="crimson-night"] {
+  --bg-color: #080d16; /* Very Deep Navy / Tinted Black */
+  --panel-bg: rgba(16, 26, 43, 0.5); /* Deep Navy Glass */
+  --panel-border: rgba(59, 151, 151, 0.3); /* Teal (#3B9797) with opacity */
+  --text-main: #f3f4f6; /* Off-white */
+  --text-muted: #3B9797; /* Teal for muted text */
+  --accent-color: #BF092F; /* Deep Red */
+  --accent-hover: #9b0725; /* Darker Red */
+  --glass-shadow: 0 8px 32px 0 rgba(19, 36, 64, 0.5); /* Navy shadow */
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

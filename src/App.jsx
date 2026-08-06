@@ -101,7 +101,8 @@ function App() {
       'sangria-deep', 
       'midnight-static',
       'obsidian-root',
-      'nox-noir'
+      'nox-noir',
+      'crimson-night'
     ];
     const currentIndex = themes.indexOf(theme);
     const nextIndex = (currentIndex + 1) % themes.length;
