@@ -29,19 +29,17 @@ pub struct Video {
 
 #[tauri::command]
 async fn search_youtube(mut query: String, search_type: Option<String>) -> Result<Vec<Video>, String> {
-    let mut url = format!("https://www.youtube.com/results?search_query={}", query);
-    
-    if let Some(st) = search_type {
+    let url = if let Some(st) = search_type {
         if st == "album" {
-            url = format!("https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D", query);
+            format!("https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D", query)
         } else {
             query.push_str(" topic");
-            url = format!("https://www.youtube.com/results?search_query={}", query);
+            format!("https://www.youtube.com/results?search_query={}", query)
         }
     } else {
         query.push_str(" topic");
-        url = format!("https://www.youtube.com/results?search_query={}", query);
-    }
+        format!("https://www.youtube.com/results?search_query={}", query)
+    };
     let client = reqwest::Client::new();
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
