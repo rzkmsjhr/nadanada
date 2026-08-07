@@ -380,6 +380,15 @@ function App() {
     setPlaylist(prev => [...prev, { ...video, queueId }]);
   };
 
+  const handleAddMultiple = (videos) => {
+    const timestamp = Date.now();
+    const newSongs = videos.map((video, idx) => ({
+      ...video,
+      queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9)
+    }));
+    setPlaylist(prev => [...prev, ...newSongs]);
+  };
+
   const handleRemoveSong = (index) => {
     setPlaylist(prev => {
       const newPlaylist = [...prev];
@@ -679,7 +688,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
         <div style={staticStyles.playlistContainer}>
           {showSearch ? (
             <div style={staticStyles.searchContainer}>
-              <Search onAdd={handleAddSong} playlist={playlist} />
+              <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} />
             </div>
           ) : (
             <Playlist 

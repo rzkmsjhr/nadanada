@@ -292,12 +292,30 @@ body {
   display: flex;
   flex-direction: column;
 }
+.song-title-wrapper {
+  overflow: hidden;
+  container-type: inline-size;
+  width: 100%;
+}
+
 .song-title {
   font-weight: 600;
   font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.song-title.scrolling {
+  display: inline-block;
+  text-overflow: clip;
+  animation: scrollTextHover 4s linear forwards;
+  will-change: transform;
+}
+
+@keyframes scrollTextHover {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(calc(-100% + 100cqw)); }
 }
 .song-duration {
   font-size: 0.75rem;
