@@ -583,7 +583,9 @@ async fn scrape_chords(
                 }}
 
                 // ── SIGNUP MODAL POPUP (overlay on search page) → same fallback ────
-                if (document.body && document.body.innerText && document.body.innerText.includes("Please sign up to add new songs to Chordify")) {{
+                // Use form selector (structural) + textContent (not innerText, which can miss hidden elements)
+                if (document.querySelector('form[action="/user/signup"]') ||
+                    (document.body && document.body.textContent && document.body.textContent.includes("Please sign up to add new songs to Chordify"))) {{
                     clearInterval(checkInterval);
                     console.log('[NadaNada] Chordify signup modal detected – signalling Google fallback');
                     window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
@@ -606,17 +608,24 @@ async fn scrape_chords(
                 
                 // ── CHORDIFY SEARCH RESULTS PAGE ─────────────────────────────────
                 if (window.location.pathname.startsWith('/search/')) {{
-                    let links = document.querySelectorAll('a[href^="/chords/"]');
-                    if (links.length > 0) {{
+                    let chordLinks = document.querySelectorAll('a[href^="/chords/"]');
+                    let allLinks = document.querySelectorAll('a[href^="/search/"]');
+                    if (chordLinks.length > 0) {{
                         clearInterval(checkInterval);
                         // Add human delay before clicking to avoid bot detection
                         setTimeout(() => {{
-                            window.location.href = links[0].href;
+                            window.location.href = chordLinks[0].href;
                         }}, 1500 + Math.random() * 1500);
-                    }} else if (document.body.innerText.includes("No results found")) {{
+                    }} else if (document.body.textContent.includes("No results found")) {{
                         // Chordify search yielded nothing – signal Rust to open fresh Google window
                         clearInterval(checkInterval);
                         console.log('[NadaNada] Chordify search found no results – signalling Google fallback');
+                        window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
+                        return;
+                    }} else if (allLinks.length > 0 && attempts > 6) {{
+                        // Results exist but none lead to /chords/ – song is signup-gated
+                        clearInterval(checkInterval);
+                        console.log('[NadaNada] Chordify results are signup-gated – signalling Google fallback');
                         window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
                         return;
                     }}
