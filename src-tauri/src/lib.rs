@@ -906,16 +906,15 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
         || safe_artist.trim().is_empty()
     {
         music_dir
-            .join("%(artist,uploader)s - %(title)s [%(id)s].%(ext)s")
+            .join("%(artist,uploader)s - %(title)s.%(ext)s")
             .to_string_lossy()
             .to_string()
     } else {
         music_dir
             .join(format!(
-                "{} - {} [{}].%(ext)s",
+                "{} - {}.%(ext)s",
                 safe_artist.trim(),
-                safe_title.trim(),
-                id
+                safe_title.trim()
             ))
             .to_string_lossy()
             .to_string()
@@ -942,7 +941,7 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
         .arg("-f")
         .arg("bestaudio[ext=m4a]/bestaudio")
         .arg("-o")
-        .arg(out_template)
+        .arg(&out_template)
         .arg(url)
         .output()
         .map_err(|e| e.to_string())?;
@@ -950,6 +949,23 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
+
+    // Attempt to register this download mapping so we can link the YT ID to the final file
+    // We don't know the exact final filename if yt-dlp renames it, but we use out_template as a strong guess.
+    // Replace .%(ext)s with .m4a since we specified bestaudio[ext=m4a]
+    let final_guess = out_template.replace(".%(ext)s", ".m4a");
+    let registry_path = data_dir.join("youtube_downloads.json");
+    let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
+        if let Ok(content) = fs::read_to_string(&registry_path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
+    registry.insert(final_guess, id);
+    let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
 }
@@ -975,6 +991,17 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     } else {
         Vec::new()
     };
+    
+    let registry_path = data_dir.join("youtube_downloads.json");
+    let registry: std::collections::HashMap<String, String> = if registry_path.exists() {
+        if let Ok(content) = fs::read_to_string(&registry_path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        }
+    } else {
+        std::collections::HashMap::new()
+    };
 
     if music_dir.exists() {
         for entry in fs::read_dir(music_dir).map_err(|e| e.to_string())? {
@@ -988,34 +1015,21 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                 if let Some(ext) = path.extension() {
                     if ext == "m4a" || ext == "mp3" || ext == "webm" {
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
-                            // Extract YouTube ID from brackets at the end if present
-                            let (base_name, yt_id) = if file_name.ends_with(']') {
-                                if let Some(start_bracket) = file_name.rfind(" [") {
-                                    let id_str = &file_name[start_bracket + 2 .. file_name.len() - 1];
-                                    let base = &file_name[..start_bracket];
-                                    (base.to_string(), Some(id_str.to_string()))
-                                } else {
-                                    (file_name.to_string(), None)
-                                }
-                            } else {
-                                (file_name.to_string(), None)
-                            };
-
-                            let parts: Vec<&str> = base_name.splitn(2, " - ").collect();
+                            let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
                             let (artist, title) = if parts.len() == 2 {
                                 (parts[0].to_string(), parts[1].to_string())
                             } else {
-                                ("Unknown".to_string(), base_name.to_string())
+                                ("Unknown".to_string(), file_name.to_string())
                             };
 
-                            let song_id = yt_id.unwrap_or_else(|| path.to_string_lossy().to_string());
+                            let song_id = registry.get(&path_str).cloned().unwrap_or_else(|| path_str.clone());
 
                             songs.push(DownloadedSong {
                                 id: song_id,
                                 title,
                                 channel: artist,
                                 is_local: true,
-                                file_path: path.to_string_lossy().to_string(),
+                                file_path: path_str,
                             });
                         }
                     }
