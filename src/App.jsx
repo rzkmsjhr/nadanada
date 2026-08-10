@@ -52,7 +52,7 @@ const staticStyles = {
 
 function App() {
   const appWindow = getCurrentWindow();
-  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'obsidian-root');
+  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [playlist, setPlaylist] = useState(() => {
     const saved = localStorage.getItem('nadanada-session-playlist');
