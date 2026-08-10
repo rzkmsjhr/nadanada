@@ -1,12 +1,18 @@
-use reqwest;
-use regex::Regex;
-use serde::{Deserialize, Serialize};
-use lazy_static::lazy_static;
-use std::sync::{Arc, Mutex};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit, scaling::divide_by_N_sqrt};
+use lazy_static::lazy_static;
+use regex::Regex;
+use reqwest;
+use serde::{Deserialize, Serialize};
 use spectrum_analyzer::windows::hann_window;
-use tauri::{Manager, WindowEvent, Emitter, tray::{TrayIconBuilder, MouseButton, TrayIconEvent}};
+use spectrum_analyzer::{samples_fft_to_spectrum, scaling::divide_by_N_sqrt, FrequencyLimit};
+use std::fs;
+use std::path::PathBuf;
+use std::process::Command;
+use std::sync::{Arc, Mutex};
+use tauri::{
+    tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager, WindowEvent,
+};
 
 lazy_static! {
     static ref CURRENT_SPECTRUM: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.0; 24]));
@@ -28,10 +34,17 @@ pub struct Video {
 }
 
 #[tauri::command]
-async fn search_youtube(mut query: String, search_type: Option<String>) -> Result<Vec<Video>, String> {
-    let url = if let Some(st) = search_type {
+async fn search_youtube(
+    mut query: String,
+    search_type: Option<String>,
+) -> Result<Vec<Video>, String> {
+    let url = if let Some(st) = &search_type {
+        println!("search_youtube called with search_type: {}", st);
         if st == "album" {
-            format!("https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D", query)
+            format!(
+                "https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D",
+                query
+            )
         } else {
             query.push_str(" topic");
             format!("https://www.youtube.com/results?search_query={}", query)
@@ -47,14 +60,14 @@ async fn search_youtube(mut query: String, search_type: Option<String>) -> Resul
         .send()
         .await
         .map_err(|e| e.to_string())?;
-        
+
     let text = res.text().await.map_err(|e| e.to_string())?;
-    
+
     let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
     if let Some(caps) = re.captures(&text) {
         let json_str = &caps[1];
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        
+
         let mut videos = Vec::new();
         if let Some(contents) = v.pointer("/contents/twoColumnSearchResultsRenderer/primaryContents/sectionListRenderer/contents/0/itemSectionRenderer/contents") {
             if let Some(arr) = contents.as_array() {
@@ -125,7 +138,10 @@ async fn search_youtube(mut query: String, search_type: Option<String>) -> Resul
 
 #[tauri::command]
 async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
-    let url = format!("https://www.youtube.com/watch?v={}&list=RD{}", video_id, video_id);
+    let url = format!(
+        "https://www.youtube.com/watch?v={}&list=RD{}",
+        video_id, video_id
+    );
     let client = reqwest::Client::new();
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -133,29 +149,61 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
         .send()
         .await
         .map_err(|e| e.to_string())?;
-        
+
     let text = res.text().await.map_err(|e| e.to_string())?;
-    
+
     let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
     if let Some(caps) = re.captures(&text) {
         let json_str = &caps[1];
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        
+
         let mut videos = Vec::new();
-        if let Some(contents) = v.pointer("/contents/twoColumnWatchNextResults/playlist/playlist/contents") {
+        if let Some(contents) =
+            v.pointer("/contents/twoColumnWatchNextResults/playlist/playlist/contents")
+        {
             if let Some(arr) = contents.as_array() {
                 for item in arr {
                     if let Some(video) = item.get("playlistPanelVideoRenderer") {
-                        let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let title = video.pointer("/title/simpleText").and_then(|v| v.as_str())
-                                         .or_else(|| video.pointer("/title/runs/0/text").and_then(|v| v.as_str()))
-                                         .unwrap_or("").to_string();
-                        let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let channel = video.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
+                        let id = video
+                            .get("videoId")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let title = video
+                            .pointer("/title/simpleText")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| {
+                                video.pointer("/title/runs/0/text").and_then(|v| v.as_str())
+                            })
+                            .unwrap_or("")
+                            .to_string();
+                        let thumbnail = video
+                            .pointer("/thumbnail/thumbnails/0/url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let duration = video
+                            .pointer("/lengthText/simpleText")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let channel = video
+                            .pointer("/shortBylineText/runs/0/text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration, channel, is_playlist: false, track_count: None, first_video_id: None });
+                            videos.push(Video {
+                                id,
+                                title,
+                                thumbnail,
+                                duration,
+                                channel,
+                                is_playlist: false,
+                                track_count: None,
+                                first_video_id: None,
+                            });
                         }
                     }
                     if videos.len() >= 25 {
@@ -166,13 +214,19 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
         }
         return Ok(videos);
     }
-    
+
     Err("ytInitialData not found in mix".to_string())
 }
 
 #[tauri::command]
-async fn get_youtube_playlist(playlist_id: String, first_video_id: String) -> Result<Vec<Video>, String> {
-    let url = format!("https://www.youtube.com/watch?v={}&list={}", first_video_id, playlist_id);
+async fn get_youtube_playlist(
+    playlist_id: String,
+    first_video_id: String,
+) -> Result<Vec<Video>, String> {
+    let url = format!(
+        "https://www.youtube.com/watch?v={}&list={}",
+        first_video_id, playlist_id
+    );
     let client = reqwest::Client::new();
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -180,34 +234,67 @@ async fn get_youtube_playlist(playlist_id: String, first_video_id: String) -> Re
         .send()
         .await
         .map_err(|e| e.to_string())?;
-        
+
     let text = res.text().await.map_err(|e| e.to_string())?;
-    
+
     let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
     if let Some(caps) = re.captures(&text) {
         let json_str = &caps[1];
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        
+
         let mut videos = Vec::new();
         // Playlist panel rendering is same as mix
-        if let Some(contents) = v.pointer("/contents/twoColumnWatchNextResults/playlist/playlist/contents") {
+        if let Some(contents) =
+            v.pointer("/contents/twoColumnWatchNextResults/playlist/playlist/contents")
+        {
             if let Some(arr) = contents.as_array() {
                 for item in arr {
                     if let Some(video) = item.get("playlistPanelVideoRenderer") {
-                        let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let title = video.pointer("/title/simpleText").and_then(|v| v.as_str())
-                                         .or_else(|| video.pointer("/title/runs/0/text").and_then(|v| v.as_str()))
-                                         .unwrap_or("").to_string();
-                        let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let channel = video.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
+                        let id = video
+                            .get("videoId")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let title = video
+                            .pointer("/title/simpleText")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| {
+                                video.pointer("/title/runs/0/text").and_then(|v| v.as_str())
+                            })
+                            .unwrap_or("")
+                            .to_string();
+                        let thumbnail = video
+                            .pointer("/thumbnail/thumbnails/0/url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let duration = video
+                            .pointer("/lengthText/simpleText")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let channel = video
+                            .pointer("/shortBylineText/runs/0/text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
                         if !id.is_empty() && !title.is_empty() {
                             // These are individual tracks
-                            videos.push(Video { id, title, thumbnail, duration, channel, is_playlist: false, track_count: None, first_video_id: None });
+                            videos.push(Video {
+                                id,
+                                title,
+                                thumbnail,
+                                duration,
+                                channel,
+                                is_playlist: false,
+                                track_count: None,
+                                first_video_id: None,
+                            });
                         }
                     }
-                    if videos.len() >= 200 { // Max fetch 200 items for a playlist
+                    if videos.len() >= 200 {
+                        // Max fetch 200 items for a playlist
                         break;
                     }
                 }
@@ -215,7 +302,7 @@ async fn get_youtube_playlist(playlist_id: String, first_video_id: String) -> Re
         }
         return Ok(videos);
     }
-    
+
     Err("ytInitialData not found in playlist".to_string())
 }
 
@@ -263,7 +350,10 @@ pub fn start_audio_monitor() {
     });
 }
 
-fn run_stream<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<cpal::Stream, cpal::BuildStreamError>
+fn run_stream<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+) -> Result<cpal::Stream, cpal::BuildStreamError>
 where
     T: cpal::Sample + cpal::SizedSample,
     f32: cpal::FromSample<T>,
@@ -282,7 +372,7 @@ where
                     sum += val;
                 }
                 let mono_sample = sum / channels as f32;
-                
+
                 sample_buffer.push(mono_sample);
 
                 if sample_buffer.len() == 2048 {
@@ -299,38 +389,43 @@ where
                         // (YouTube compression often cuts off audio above 15kHz, leaving dead bars on the right)
                         let min_freq = 40.0_f32;
                         let max_freq = 14000.0_f32;
-                        
+
                         for (freq_val, fr_value) in data {
                             let f = freq_val.val();
-                            if f < min_freq || f > max_freq { continue; }
-                            
+                            if f < min_freq || f > max_freq {
+                                continue;
+                            }
+
                             let log_f = f.log10();
                             let log_min = min_freq.log10();
                             let log_max = max_freq.log10();
-                            
-                            let mut bin_index = ((log_f - log_min) / (log_max - log_min) * 24.0) as usize;
-                            if bin_index >= 24 { bin_index = 23; }
-                            
+
+                            let mut bin_index =
+                                ((log_f - log_min) / (log_max - log_min) * 24.0) as usize;
+                            if bin_index >= 24 {
+                                bin_index = 23;
+                            }
+
                             let mag = fr_value.val();
-                            
+
                             // Convert linear magnitude to decibels (dB)
                             let db = 20.0 * (mag + 1e-6).log10();
-                            
+
                             // Map -60dB (silence) to 0.0, and 0dB (max volume) to 1.0
                             let scaled = ((db + 60.0) / 60.0).max(0.0).min(1.0);
-                            
+
                             if scaled > bins[bin_index] {
                                 bins[bin_index] = scaled;
                             }
                         }
-                        
+
                         // Fill any gaps caused by low FFT resolution at low frequencies
                         for i in 1..24 {
                             if bins[i] == 0.0 {
                                 bins[i] = bins[i - 1] * 0.8;
                             }
                         }
-                        
+
                         if let Ok(mut current) = CURRENT_SPECTRUM.lock() {
                             for i in 0..24 {
                                 // Smooth transition: 75% old, 25% new
@@ -353,45 +448,70 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
-async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) -> Result<String, String> {
+async fn scrape_chords(
+    id: String,
+    title: String,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
     use tauri::Manager;
-    let cache_dir = app_handle.path().app_data_dir().unwrap().join("chords_cache_v4");
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .unwrap()
+        .join("chords_cache_v4");
     let _ = std::fs::create_dir_all(&cache_dir);
-    
+
     let safe_id = id.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "");
     let cache_file = cache_dir.join(format!("{}.json", safe_id));
-    
+
     if cache_file.exists() {
         if let Ok(content) = std::fs::read_to_string(&cache_file) {
             return Ok(content);
         }
     }
-    
+
     let mut clean_title = title.clone();
-    if let Some(idx) = clean_title.find('[') { clean_title.truncate(idx); }
-    if let Some(idx) = clean_title.find('(') { clean_title.truncate(idx); }
-    if let Some(idx) = clean_title.find('{') { clean_title.truncate(idx); }
-    if let Some(idx) = clean_title.find('|') { clean_title.truncate(idx); }
-    
+    if let Some(idx) = clean_title.find('[') {
+        clean_title.truncate(idx);
+    }
+    if let Some(idx) = clean_title.find('(') {
+        clean_title.truncate(idx);
+    }
+    if let Some(idx) = clean_title.find('{') {
+        clean_title.truncate(idx);
+    }
+    if let Some(idx) = clean_title.find('|') {
+        clean_title.truncate(idx);
+    }
+
     let clean_title_alphanum = clean_title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "");
     let words: Vec<&str> = clean_title_alphanum.split_whitespace().take(6).collect();
     let query_str = words.join("+");
-    
-    let search_url = format!("https://www.google.com/search?q=site:chordify.net+{}", query_str);
-    
+
+    let search_url = format!(
+        "https://www.google.com/search?q=site:chordify.net+{}",
+        query_str
+    );
+
     // Close any existing scraper windows to prevent concurrent request abuse
     for (label, window) in app_handle.webview_windows() {
         if label.starts_with("scraper_") {
-            println!("Killing existing scraper window to prevent concurrency abuse: {}", label);
+            println!(
+                "Killing existing scraper window to prevent concurrency abuse: {}",
+                label
+            );
             window.close().ok();
         }
     }
-    
-    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     static WINDOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let window_label = format!("scraper_{}_{}_{}", safe_id, ts, counter);
-    
+
     let js_code = r#"
         (function() {
             if (window.location.hostname.includes("google.")) {
@@ -548,7 +668,7 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
     let window = match tauri::WebviewWindowBuilder::new(
         &app_handle,
         &window_label,
-        tauri::WebviewUrl::External(search_url.parse().unwrap())
+        tauri::WebviewUrl::External(search_url.parse().unwrap()),
     )
     .incognito(true)
     .visible(false)
@@ -557,7 +677,7 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         println!("Navigating to: {}", url.as_str());
         let mut got_result = false;
         let mut json_str = String::new();
-        
+
         for (key, value) in url.query_pairs() {
             if key == "scraper_result" {
                 got_result = true;
@@ -565,7 +685,7 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
                 break;
             }
         }
-        
+
         if got_result {
             if let Ok(mut guard) = tx_mutex_clone.lock() {
                 if let Some(sender) = guard.take() {
@@ -576,7 +696,8 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         }
         true
     })
-    .build() {
+    .build()
+    {
         Ok(w) => w,
         Err(e) => {
             if let Some(w) = app_handle.get_webview_window(&window_label) {
@@ -592,25 +713,180 @@ async fn scrape_chords(id: String, title: String, app_handle: tauri::AppHandle) 
         Ok(Ok(data)) => {
             println!("Got result from scraper!");
             data
-        },
+        }
         _ => {
             println!("Scraper timed out!");
             window.close().ok();
             return Err("Timeout waiting for scraper".to_string());
         }
     };
-    
+
     window.close().ok();
 
     if result_str.trim().is_empty() {
         return Err("Scraper returned empty output".to_string());
     }
-    
+
     if result_str.contains("\"success\": true") || result_str.contains("\"success\":true") {
         let _ = std::fs::write(&cache_file, &result_str);
     }
-    
+
     Ok(result_str)
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DownloadedSong {
+    pub id: String,
+    pub title: String,
+    pub channel: String,
+    pub is_local: bool,
+    pub file_path: String,
+}
+
+#[tauri::command]
+async fn download_song(id: String, title: String, artist: String) -> Result<String, String> {
+    let url = format!("https://www.youtube.com/watch?v={}", id);
+
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    if !data_dir.exists() {
+        fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    }
+
+    let exe_path = data_dir.join("yt-dlp.exe");
+    if !exe_path.exists() {
+        let bytes =
+            reqwest::get("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe")
+                .await
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+        fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
+    }
+
+    let mut music_dir = dirs::audio_dir()
+        .unwrap_or_else(|| dirs::document_dir().unwrap_or_else(|| PathBuf::from(".")));
+    music_dir.push("NadaNada");
+
+    if !music_dir.exists() {
+        fs::create_dir_all(&music_dir).map_err(|e| e.to_string())?;
+    }
+
+    let safe_artist = artist.replace(
+        |c: char| {
+            c == '\\'
+                || c == '/'
+                || c == ':'
+                || c == '*'
+                || c == '?'
+                || c == '"'
+                || c == '<'
+                || c == '>'
+                || c == '|'
+        },
+        "",
+    );
+    let safe_title = title.replace(
+        |c: char| {
+            c == '\\'
+                || c == '/'
+                || c == ':'
+                || c == '*'
+                || c == '?'
+                || c == '"'
+                || c == '<'
+                || c == '>'
+                || c == '|'
+        },
+        "",
+    );
+
+    // If the frontend couldn't find a real artist (e.g. "Release - Topic" or "Unknown"),
+    // let yt-dlp extract it from deep metadata. Otherwise, trust the frontend's clean parsing!
+    let out_template = if safe_artist.trim().eq_ignore_ascii_case("release")
+        || safe_artist.trim().eq_ignore_ascii_case("unknown")
+        || safe_artist.trim().is_empty()
+    {
+        music_dir
+            .join("%(artist,uploader)s - %(title)s.%(ext)s")
+            .to_string_lossy()
+            .to_string()
+    } else {
+        music_dir
+            .join(format!(
+                "{} - {}.%(ext)s",
+                safe_artist.trim(),
+                safe_title.trim()
+            ))
+            .to_string_lossy()
+            .to_string()
+    };
+
+    let output = Command::new(&exe_path)
+        .arg("--js-runtimes")
+        .arg("node")
+        .arg("--replace-in-metadata")
+        .arg("uploader")
+        .arg(" - Topic")
+        .arg("")
+        .arg("--replace-in-metadata")
+        .arg("title")
+        .arg(r"(?i)(?:official|music|video|audio|hd|hq|lyrics|\[.*?\]|\(.*?\))")
+        .arg("")
+        .arg("-f")
+        .arg("bestaudio[ext=m4a]/bestaudio")
+        .arg("-o")
+        .arg(out_template)
+        .arg(url)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).to_string());
+    }
+
+    Ok("".to_string()) // The frontend ignores this return value and scans the directory
+}
+
+#[tauri::command]
+fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
+    let mut music_dir = dirs::audio_dir()
+        .unwrap_or_else(|| dirs::document_dir().unwrap_or_else(|| PathBuf::from(".")));
+    music_dir.push("NadaNada");
+
+    let mut songs = Vec::new();
+
+    if music_dir.exists() {
+        for entry in fs::read_dir(music_dir).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    if ext == "m4a" || ext == "mp3" || ext == "webm" {
+                        if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
+                            let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
+                            let (artist, title) = if parts.len() == 2 {
+                                (parts[0].to_string(), parts[1].to_string())
+                            } else {
+                                ("Unknown".to_string(), file_name.to_string())
+                            };
+
+                            songs.push(DownloadedSong {
+                                id: path.to_string_lossy().to_string(),
+                                title,
+                                channel: artist,
+                                is_local: true,
+                                file_path: path.to_string_lossy().to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(songs)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -618,6 +894,7 @@ pub fn run() {
     start_audio_monitor();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let _tray = TrayIconBuilder::new()
@@ -648,7 +925,16 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![search_youtube, get_audio_spectrum, get_youtube_mix, get_youtube_playlist, quit_app, scrape_chords])
+        .invoke_handler(tauri::generate_handler![
+            search_youtube,
+            get_audio_spectrum,
+            get_youtube_mix,
+            get_youtube_playlist,
+            quit_app,
+            scrape_chords,
+            download_song,
+            get_downloaded_songs
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

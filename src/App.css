@@ -262,7 +262,7 @@ body {
   display: flex;
   align-items: center;
   padding: 8px 12px;
-  gap: 12px;
+  gap: 8px;
   border-bottom: 1px solid var(--panel-border);
   cursor: pointer;
   transition: background 0.2s;
@@ -307,7 +307,8 @@ body {
 }
 
 .song-title.scrolling {
-  display: inline-block;
+  display: block;
+  width: max-content;
   text-overflow: clip;
   animation: scrollTextHover 4s linear forwards;
   will-change: transform;

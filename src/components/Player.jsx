@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError }) {
   const playerRef = useRef(null);
@@ -25,7 +26,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   // Time tracking
   useEffect(() => {
     let interval;
-    if (isPlaying && !isDragging) {
+    if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local)) {
       interval = setInterval(async () => {
         if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
           try {
@@ -39,7 +40,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isDragging]);
+  }, [isPlaying, isDragging, currentSong]);
 
   const onReady = (event) => {
     playerRef.current = event.target;
@@ -72,6 +73,15 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   };
 
   const togglePlay = () => {
+    if (currentSong && currentSong.is_local) {
+      const audioEl = document.getElementById('local-audio-player');
+      if (audioEl) {
+        if (isPlaying) audioEl.pause();
+        else audioEl.play();
+      }
+      return;
+    }
+    
     if (!playerRef.current) return;
     if (isPlaying) {
       playerRef.current.pauseVideo();
@@ -82,6 +92,12 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
+    if (currentSong && currentSong.is_local) {
+      const audioEl = document.getElementById('local-audio-player');
+      if (audioEl) audioEl.muted = !isMuted;
+      return;
+    }
+    
     if (playerRef.current) {
       if (!isMuted) playerRef.current.mute();
       else {
@@ -95,6 +111,16 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
     const val = Number(e.target.value);
     setMasterVolume(val);
     if (val > 0) setIsMuted(false);
+    
+    if (currentSong && currentSong.is_local) {
+      const audioEl = document.getElementById('local-audio-player');
+      if (audioEl) {
+        audioEl.volume = val / 100;
+        if (val > 0) audioEl.muted = false;
+      }
+      return;
+    }
+    
     if (playerRef.current) playerRef.current.setVolume(val);
   };
 
@@ -104,6 +130,14 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
 
   const handleSeekMouseUp = (e) => {
     setIsDragging(false);
+    if (currentSong && currentSong.is_local) {
+      const audioEl = document.getElementById('local-audio-player');
+      if (audioEl) {
+        audioEl.currentTime = Number(e.target.value);
+      }
+      return;
+    }
+    
     if (playerRef.current) {
       playerRef.current.seekTo(Number(e.target.value), true);
     }
@@ -145,7 +179,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
         }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
-            {currentSong && (
+            {currentSong && !currentSong.is_local && (
               <YouTube
                 videoId={currentSong.id}
                 opts={opts}
@@ -158,6 +192,44 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
                 style={{ width: '100%', height: '100%' }}
                 iframeClassName="youtube-iframe"
               />
+            )}
+            {currentSong && currentSong.is_local && (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
+                   ♪
+                </div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Playing Offline</div>
+                <audio
+                  id="local-audio-player"
+                  src={convertFileSrc(currentSong.file_path)}
+                  autoPlay
+                  onPlay={() => { setIsPlaying(true); setIsBuffering(false); if (onPlayStateChange) onPlayStateChange(true); }}
+                  onPause={() => { setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
+                  onEnded={() => {
+                    setIsPlaying(false);
+                    setCurrentTime(0);
+                    if (onTimeUpdate) onTimeUpdate(0);
+                    if (hasNext) onNext();
+                  }}
+                  onTimeUpdate={(e) => {
+                    if (!isDragging) {
+                      setCurrentTime(e.target.currentTime);
+                      if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
+                    }
+                  }}
+                  onLoadedMetadata={(e) => {
+                    setDuration(e.target.duration);
+                    e.target.volume = isMuted ? 0 : (masterVolume / 100);
+                  }}
+                  onError={(e) => {
+                    console.error("Local audio error", e);
+                    if (onError) onError("Failed to play local audio file.");
+                    setIsBuffering(false);
+                  }}
+                  onWaiting={() => setIsBuffering(true)}
+                  onCanPlay={() => setIsBuffering(false)}
+                />
+              </div>
             )}
           </div>
 

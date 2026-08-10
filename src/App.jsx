@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2 } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -22,12 +22,29 @@ const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDire
 
 const staticStyles = {
   headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', boxShadow: '0 1px 0 0 var(--panel-border)' },
-  headerTitle: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transform: 'translateY(-1px)' },
+  headerTitle: {
+    fontWeight: 'bold',
+    fontSize: '0.9rem',
+    color: 'var(--text-main)',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    whiteSpace: 'nowrap'
+  },
   headerLoading: { fontSize: '0.8rem', color: 'var(--accent-color)' },
-  headerIcons: { display: 'flex', gap: '8px' },
+  headerIcons: {
+    display: 'flex',
+    gap: '2px',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
+    justifyContent: 'flex-end',
+    flex: 1,
+    overflow: 'visible'
+  },
   iconBtn: { padding: '6px' },
   iconBtnDanger: { padding: '6px', color: '#ef4444' },
-  separator: { width: '2px', background: 'var(--panel-border)', margin: '4px 0', borderRadius: '1px' },
+  separator: { width: '2px', height: '24px', background: 'var(--panel-border)', margin: '0 2px', borderRadius: '1px', flexShrink: 0 },
+  appLayout: { display: 'flex', flex: 1, overflow: 'hidden' },
   playlistContainer: { flex: 1, overflow: 'hidden' },
   searchContainer: { padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }
 };
@@ -53,6 +70,64 @@ function App() {
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   const [globalError, setGlobalError] = useState(null);
+  
+  const [showDownloadedList, setShowDownloadedList] = useState(false);
+  const [downloadedSongs, setDownloadedSongs] = useState([]);
+  const [downloadingSongId, setDownloadingSongId] = useState(null);
+  const [downloadedIds, setDownloadedIds] = useState(new Set());
+  const [successMessage, setSuccessMessage] = useState(null);
+  
+  useEffect(() => {
+    if (showDownloadedList) {
+      loadDownloadedSongs();
+    }
+  }, [showDownloadedList]);
+
+  const loadDownloadedSongs = async () => {
+    try {
+      const songs = await invoke('get_downloaded_songs');
+      setDownloadedSongs(songs);
+      setDownloadedIds(new Set(songs.map(s => s.id)));
+    } catch (e) {
+      console.error('Failed to load downloaded songs:', e);
+    }
+  };
+
+  useEffect(() => {
+    loadDownloadedSongs();
+    const interval = setInterval(loadDownloadedSongs, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDownloadSong = async (song) => {
+    if (downloadingSongId) return; // Prevent multiple simultaneous downloads
+    setDownloadingSongId(song.id);
+    
+    try {
+      let title = song.title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
+      let artist = '';
+      
+      const parts = title.split('-');
+      if (parts.length > 1) {
+          artist = parts[0].trim();
+          title = parts[1].trim();
+      } else {
+          artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
+      }
+      await invoke('download_song', { id: song.id, title, artist });
+      
+      if (showDownloadedList) {
+        loadDownloadedSongs();
+      }
+      setDownloadedIds(prev => new Set(prev).add(song.id));
+      
+    } catch (e) {
+      console.error('Download failed:', e);
+      setGlobalError(`Failed to download song: ${e.toString()}`);
+    } finally {
+      setDownloadingSongId(null);
+    }
+  };
   
   // Chords state
   const [showChords, setShowChords] = useState(false);
@@ -400,7 +475,7 @@ function App() {
     if (isFetchingTrending) return;
     setIsFetchingTrending(true);
     try {
-      const query = region === 'global' ? 'Top 50 trending music' : 'Top 50 trending music Indonesia';
+      const query = region === 'global' ? 'Top 50 Spotify Global' : 'Top 50 Spotify Indonesia';
       const results = await invoke('search_youtube', { query, searchType: 'album' });
       const playlistItem = results.find(v => v.is_playlist);
       if (playlistItem) {
@@ -412,11 +487,15 @@ function App() {
             queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9),
             rank: idx + 1
           }));
-          setSavedPlaylist([...playlist]);
+          if (!savedPlaylist) {
+            setSavedPlaylist([...playlist]);
+          }
           setPlaylist(rankedSongs);
           setCurrentIndex(0);
           setIsAudioPlaying(true);
         }
+      } else {
+        setGlobalError("Could not find a trending playlist right now. Try again later.");
       }
     } catch (e) {
       console.error("Failed to fetch trending:", e);
@@ -593,7 +672,25 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
 
   return (
     <div className="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      
+      {globalError && (
+        <div style={staticStyles.errorToast}>
+          <AlertTriangle size={18} />
+          {globalError}
+          <button className="btn btn-icon" onClick={() => setGlobalError(null)} style={{ padding: '2px', color: 'inherit' }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {successMessage && !globalError && (
+        <div style={{...staticStyles.errorToast, background: 'var(--accent-color)', color: '#fff', borderColor: 'transparent'}}>
+          <Download size={18} />
+          {successMessage}
+          <button className="btn btn-icon" onClick={() => setSuccessMessage(null)} style={{ padding: '2px', color: 'inherit' }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
       {/* Invisible Resize Borders */}
       <ResizeBorder windowObj={appWindow} cursor="n-resize" direction="Top" style={{ top: 0, left: 4, right: 4, height: '4px' }} />
       <ResizeBorder windowObj={appWindow} cursor="s-resize" direction="Bottom" style={{ bottom: 0, left: 4, right: 4, height: '12px' }} />
@@ -714,6 +811,20 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           <div style={staticStyles.headerTitle}>
             {showSearch ? (
               'Search YouTube'
+            ) : showDownloadedList ? (
+              <button 
+                onClick={() => { 
+                  setShowDownloadedList(false); 
+                  if (savedPlaylist) {
+                    setPlaylist(savedPlaylist);
+                    setSavedPlaylist(null);
+                  }
+                }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontWeight: 'inherit', fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
+                title="Return to your original playlist"
+              >
+                <ArrowLeft size={18} style={{ marginTop: '2px' }} /> Back to My Playlist
+              </button>
             ) : isFetchingEndless ? (
               <span>Finding next song...</span>
             ) : savedPlaylist ? (
@@ -727,7 +838,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             ) : (
               `Up Next (${playlist.length})`
             )}
-            {!showSearch && failedEndlessFetch && (
+            {!showSearch && !showDownloadedList && failedEndlessFetch && (
               <button 
                 onClick={() => setFailedEndlessFetch(false)} 
                 style={{ fontSize: '0.75rem', background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -738,7 +849,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             )}
           </div>
           <div style={staticStyles.headerIcons}>
-            {!showSearch && (
+            {!showSearch && !showDownloadedList && (
               <>
                 {!savedPlaylist && (
                   <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
@@ -764,7 +875,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 >
                   {isFetchingEndless ? <Loader2 size={18} className="animate-spin" /> : <Infinity size={18} />}
                 </button>
-                <div style={{ position: 'relative' }} ref={trendingRef}>
+                <div style={{ position: 'relative', zIndex: 50 }} ref={trendingRef}>
                   <button 
                     className={`btn btn-icon ${isFetchingTrending || showTrendingDropdown ? 'active' : ''}`} 
                     onClick={() => setShowTrendingDropdown(!showTrendingDropdown)} 
@@ -810,8 +921,23 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 </div>
               </>
             )}
-            {!savedPlaylist && (
-              <button className="btn btn-icon" onClick={() => setShowSearch(!showSearch)} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>
+            <button 
+              className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`} 
+              onClick={() => {
+                if (showDownloadedList && savedPlaylist) {
+                  setPlaylist(savedPlaylist);
+                  setSavedPlaylist(null);
+                }
+                setShowDownloadedList(!showDownloadedList);
+                setShowSearch(false);
+              }} 
+              title="Downloaded Songs" 
+              style={{ padding: '6px', color: showDownloadedList ? 'var(--accent-color)' : 'inherit' }}
+            >
+              <Download size={18} />
+            </button>
+            {!savedPlaylist && !showDownloadedList && (
+              <button className="btn btn-icon" onClick={() => { setShowSearch(!showSearch); setShowDownloadedList(false); }} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>
                 {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
               </button>
             )}
@@ -823,6 +949,36 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             <div style={staticStyles.searchContainer}>
               <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} onError={setGlobalError} />
             </div>
+          ) : showDownloadedList ? (
+            <Playlist 
+              playlist={downloadedSongs} 
+              currentIndex={downloadedSongs.findIndex(s => s.id === (currentSong?.id))} 
+              onSelectIndex={(idx) => {
+                if (!savedPlaylist && playlist !== downloadedSongs) {
+                  setSavedPlaylist(playlist);
+                }
+                setPlaylist(downloadedSongs);
+                setCurrentIndex(idx);
+                setIsAudioPlaying(true);
+              }} 
+              onRemove={() => {}}
+              onReorder={(dragIndex, dropIndex) => {
+                const newPlaylist = [...downloadedSongs];
+                const [draggedItem] = newPlaylist.splice(dragIndex, 1);
+                newPlaylist.splice(dropIndex, 0, draggedItem);
+                setDownloadedSongs(newPlaylist);
+                
+                if (playlist === downloadedSongs) {
+                  setPlaylist(newPlaylist);
+                  if (currentIndex === dragIndex) setCurrentIndex(dropIndex);
+                  else if (currentIndex > dragIndex && currentIndex <= dropIndex) setCurrentIndex(currentIndex - 1);
+                  else if (currentIndex < dragIndex && currentIndex >= dropIndex) setCurrentIndex(currentIndex + 1);
+                }
+              }}
+              isTrendingMode={true}
+              isDownloadedView={true}
+              onAddSong={() => {}}
+            />
           ) : (
             <Playlist 
               playlist={playlist} 
@@ -836,6 +992,9 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                   setSavedPlaylist([...savedPlaylist, song]);
                 }
               }}
+              onDownloadSong={handleDownloadSong}
+              downloadingSongId={downloadingSongId}
+              downloadedIds={downloadedIds}
             />
           )}
         </div>

@@ -1,7 +1,140 @@
 import React, { useState, useRef } from 'react';
-import { Trash2, GripVertical, Plus, Check } from 'lucide-react';
+import { Trash2, GripVertical, Plus, Check, Download, Loader2 } from 'lucide-react';
 
-export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong }) {
+const PlaylistItem = ({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove }) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [shouldScroll, setShouldScroll] = useState(false);
+  const textRef = useRef(null);
+
+  const handleMouseEnter = () => {
+    if (textRef.current) {
+      setShouldScroll(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+    setShouldScroll(false);
+  };
+
+  return (
+    <div 
+      className={`song-item ${isActive ? 'active' : ''} ${isDragOver ? 'drag-over' : ''}`}
+      onClick={() => onSelectIndex(index)}
+      draggable={true}
+      onDragStart={(e) => handleDragStart(e, index)}
+      onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index); }}
+      onDragLeave={() => setDragOverIndex(null)}
+      onDrop={(e) => handleDrop(e, index)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <GripVertical size={16} style={{ color: 'var(--text-muted)', cursor: 'grab' }} />
+      {isTrendingMode && song.rank && (
+        <div style={{
+          minWidth: '24px', 
+          textAlign: 'center', 
+          fontSize: '0.9rem', 
+          fontWeight: 'bold', 
+          color: 'var(--accent-color)'
+        }}>
+          {song.rank}
+        </div>
+      )}
+      {!isDownloadedView && (
+        <img src={song.thumbnail} alt="" className="song-thumb" />
+      )}
+      <div className="song-info">
+        <div className="song-title-wrapper">
+          <div ref={textRef} className={`song-title ${isHovered && shouldScroll ? 'scrolling' : ''}`}>{song.title}</div>
+        </div>
+        {song.channel && (
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+            {song.channel}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: '4px' }}>
+        {isTrendingMode && onAddSong && !isDownloadedView && (
+          addedSongs.has(song.queueId) ? (
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none', cursor: 'default' }}
+              title="Added to playlist"
+              disabled
+            >
+              <Check size={18} style={{ color: 'var(--accent-color)' }} />
+            </button>
+          ) : (
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddSong(song);
+                setAddedSongs(prev => new Set(prev).add(song.queueId));
+              }}
+              title="Add to my playlist"
+            >
+              <Plus size={18} style={{ color: 'var(--accent-color)' }} />
+            </button>
+          )
+        )}
+        
+        {!isDownloadedView && onDownloadSong && (
+          downloadingSongId === song.id ? (
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none', cursor: 'default' }}
+              title="Downloading..."
+              disabled
+            >
+              <Loader2 size={18} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
+            </button>
+          ) : downloadedIds?.has(song.id) ? (
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none', cursor: 'default' }}
+              title="Downloaded successfully"
+              disabled
+            >
+              <Check size={18} style={{ color: 'var(--accent-color)' }} />
+            </button>
+          ) : (
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDownloadSong(song);
+              }}
+              title="Download for offline playing"
+            >
+              <Download size={18} style={{ color: 'var(--accent-color)' }} />
+            </button>
+          )
+        )}
+
+        {!isDownloadedView && (
+          <button 
+            className="btn btn-icon" 
+            style={{ border: 'none' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove(index);
+            }}
+            title="Remove from view"
+          >
+            <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
 
@@ -51,73 +184,26 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
           const isDragOver = dragOverIndex === index;
           
           return (
-            <div 
-              key={song.queueId || index} 
-              className={`song-item ${isActive ? 'active' : ''} ${isDragOver ? 'drag-over' : ''}`}
-              onClick={() => onSelectIndex(index)}
-              draggable={true}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDragOver={(e) => { e.preventDefault(); setDragOverIndex(index); }}
-              onDragLeave={() => setDragOverIndex(null)}
-              onDrop={(e) => handleDrop(e, index)}
-            >
-              <GripVertical size={16} style={{ color: 'var(--text-muted)', marginRight: '4px', cursor: 'grab' }} />
-              {isTrendingMode && song.rank && (
-                <div style={{
-                  minWidth: '24px', 
-                  textAlign: 'center', 
-                  fontSize: '0.9rem', 
-                  fontWeight: 'bold', 
-                  color: 'var(--accent-color)', 
-                  marginRight: '8px'
-                }}>
-                  {song.rank}
-                </div>
-              )}
-              <img src={song.thumbnail} alt="" className="song-thumb" />
-              <div className="song-info">
-                <div className="song-title">{song.title}</div>
-                <div className="song-duration">{song.duration}</div>
-              </div>
-              <div style={{ display: 'flex', gap: '4px' }}>
-                {isTrendingMode && onAddSong && (
-                  addedSongs.has(song.queueId) ? (
-                    <button 
-                      className="btn btn-icon" 
-                      style={{ border: 'none', cursor: 'default' }}
-                      title="Added to playlist"
-                      disabled
-                    >
-                      <Check size={18} style={{ color: 'var(--accent-color)' }} />
-                    </button>
-                  ) : (
-                    <button 
-                      className="btn btn-icon" 
-                      style={{ border: 'none' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddSong(song);
-                        setAddedSongs(prev => new Set(prev).add(song.queueId));
-                      }}
-                      title="Add to my playlist"
-                    >
-                      <Plus size={18} style={{ color: 'var(--accent-color)' }} />
-                    </button>
-                  )
-                )}
-                <button 
-                  className="btn btn-icon" 
-                  style={{ border: 'none' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onRemove(index);
-                  }}
-                  title="Remove from view"
-                >
-                  <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
-                </button>
-              </div>
-            </div>
+            <PlaylistItem
+               key={song.queueId || index}
+               song={song}
+               index={index}
+               isActive={isActive}
+               isDragOver={isDragOver}
+               onSelectIndex={onSelectIndex}
+               handleDragStart={handleDragStart}
+               setDragOverIndex={setDragOverIndex}
+               handleDrop={handleDrop}
+               isTrendingMode={isTrendingMode}
+               isDownloadedView={isDownloadedView}
+               onAddSong={onAddSong}
+               addedSongs={addedSongs}
+               setAddedSongs={setAddedSongs}
+               onDownloadSong={onDownloadSong}
+               downloadingSongId={downloadingSongId}
+               downloadedIds={downloadedIds}
+               onRemove={onRemove}
+            />
           );
         })}
       </div>
