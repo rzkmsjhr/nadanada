@@ -886,7 +886,82 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
         }
     }
 
+    // Now merge from local_songs.json
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    let json_path = data_dir.join("local_songs.json");
+    
+    if json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&json_path) {
+            if let Ok(mut local_paths) = serde_json::from_str::<Vec<String>>(&content) {
+                let mut valid_paths = Vec::new();
+                let mut changed = false;
+                
+                for path_str in local_paths {
+                    let path = PathBuf::from(&path_str);
+                    if path.exists() && path.is_file() {
+                        valid_paths.push(path_str.clone());
+                        
+                        if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
+                            let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
+                            let (artist, title) = if parts.len() == 2 {
+                                (parts[0].to_string(), parts[1].to_string())
+                            } else {
+                                ("Unknown".to_string(), file_name.to_string())
+                            };
+                            
+                            // Check if not already in songs to avoid duplicates if they selected the download folder
+                            let is_dup = songs.iter().any(|s| s.file_path == path_str);
+                            if !is_dup {
+                                songs.push(DownloadedSong {
+                                    id: path_str.clone(),
+                                    title,
+                                    channel: artist,
+                                    is_local: true,
+                                    file_path: path_str,
+                                });
+                            }
+                        }
+                    } else {
+                        changed = true; // A path doesn't exist anymore, we will filter it out
+                    }
+                }
+                
+                if changed {
+                    let _ = fs::write(&json_path, serde_json::to_string(&valid_paths).unwrap_or_default());
+                }
+            }
+        }
+    }
+
     Ok(songs)
+}
+
+#[tauri::command]
+fn add_local_song(file_path: String) -> Result<(), String> {
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    if !data_dir.exists() {
+        fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    }
+    
+    let json_path = data_dir.join("local_songs.json");
+    let mut local_paths: Vec<String> = if json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&json_path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    
+    if !local_paths.contains(&file_path) {
+        local_paths.push(file_path);
+        fs::write(&json_path, serde_json::to_string(&local_paths).unwrap_or_default()).map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -933,7 +1008,8 @@ pub fn run() {
             quit_app,
             scrape_chords,
             download_song,
-            get_downloaded_songs
+            get_downloaded_songs,
+            add_local_song
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

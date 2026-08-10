@@ -2,9 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
 
@@ -936,6 +937,33 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             >
               <Download size={18} />
             </button>
+            {showDownloadedList && (
+              <button 
+                className="btn btn-icon" 
+                onClick={async () => {
+                  try {
+                    const filePath = await open({
+                      multiple: false,
+                      filters: [{
+                        name: 'Audio',
+                        extensions: ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm']
+                      }]
+                    });
+                    if (filePath) {
+                      await invoke('add_local_song', { filePath });
+                      loadDownloadedSongs();
+                    }
+                  } catch (e) {
+                    console.error('Failed to add local song:', e);
+                    setGlobalError('Failed to add local song.');
+                  }
+                }} 
+                title="Add Local Audio File" 
+                style={{ padding: '6px' }}
+              >
+                <FolderPlus size={18} />
+              </button>
+            )}
             {!savedPlaylist && !showDownloadedList && (
               <button className="btn btn-icon" onClick={() => { setShowSearch(!showSearch); setShowDownloadedList(false); }} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>
                 {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
