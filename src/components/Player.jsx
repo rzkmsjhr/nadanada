@@ -1,17 +1,26 @@
 import React, { useRef, useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2 } from 'lucide-react';
 
-export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate }) {
+export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError }) {
   const playerRef = useRef(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
   const [masterVolume, setMasterVolume] = useState(100);
   const [isMuted, setIsMuted] = useState(false);
   
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    if (currentSong) {
+      setIsBuffering(true);
+    } else {
+      setIsBuffering(false);
+    }
+  }, [currentSong]);
 
   // Time tracking
   useEffect(() => {
@@ -40,18 +49,24 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   const onStateChange = (event) => {
     if (event.data === 1) { // PLAYING
       setIsPlaying(true);
+      setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(true);
     } else if (event.data === 2) { // PAUSED
       setIsPlaying(false);
+      setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(false);
     } else if (event.data === 0) { // ENDED
       setIsPlaying(false);
+      setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(false);
       setCurrentTime(0);
       if (onTimeUpdate) onTimeUpdate(0);
       if (hasNext) onNext();
+    } else if (event.data === 3) { // BUFFERING
+      setIsBuffering(true);
     } else if (event.data === 5 || event.data === -1) {
       // CUED (5) or UNSTARTED (-1)
+      setIsBuffering(true);
       event.target.playVideo();
     }
   };
@@ -136,6 +151,10 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
                 opts={opts}
                 onReady={onReady}
                 onStateChange={onStateChange}
+                onError={(e) => {
+                  console.error("YouTube Error:", e);
+                  if (onError) onError("Failed to stream track from YouTube. Please check your connection.");
+                }}
                 style={{ width: '100%', height: '100%' }}
                 iframeClassName="youtube-iframe"
               />
@@ -186,8 +205,8 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
             <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious}>
               <SkipBack size={24} />
             </button>
-            <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong} style={{ padding: '12px' }}>
-              {isPlaying ? <Pause size={24} /> : <Play size={24} />}
+            <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong || isBuffering} style={{ padding: '12px' }}>
+              {isBuffering ? <Loader2 size={24} className="animate-spin" /> : (isPlaying ? <Pause size={24} /> : <Play size={24} />)}
             </button>
             <button className="btn btn-icon" onClick={onNext} disabled={!hasNext}>
               <SkipForward size={24} />

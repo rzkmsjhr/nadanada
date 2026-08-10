@@ -67,7 +67,7 @@ const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId
   );
 };
 
-export default function Search({ onAdd, onAddMultiple, playlist }) {
+export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('song');
   const [results, setResults] = useState([]);
@@ -84,7 +84,7 @@ export default function Search({ onAdd, onAddMultiple, playlist }) {
       setResults(videos);
     } catch (err) {
       console.error(err);
-      alert('Search failed: ' + err);
+      onError('Search failed: ' + err);
     } finally {
       setIsSearching(false);
     }
@@ -92,7 +92,7 @@ export default function Search({ onAdd, onAddMultiple, playlist }) {
 
   const handleAddAlbum = async (album) => {
     if (!album.first_video_id) {
-      alert("Cannot fetch playlist without a starting video.");
+      onError("Cannot fetch playlist without a starting video.");
       return;
     }
     setLoadingAlbumId(album.id);
@@ -106,7 +106,7 @@ export default function Search({ onAdd, onAddMultiple, playlist }) {
       }
     } catch (err) {
       console.error(err);
-      alert('Failed to load album: ' + err);
+      onError('Failed to load album: ' + err);
     } finally {
       setLoadingAlbumId(null);
     }

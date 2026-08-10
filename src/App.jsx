@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -52,6 +52,7 @@ function App() {
   const [savedPlaylist, setSavedPlaylist] = useState(null);
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
+  const [globalError, setGlobalError] = useState(null);
   
   // Chords state
   const [showChords, setShowChords] = useState(false);
@@ -69,6 +70,20 @@ function App() {
     const saved = localStorage.getItem('nadanada-saved-playlists');
     return saved ? JSON.parse(saved) : [];
   });
+
+  const trendingRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (trendingRef.current && !trendingRef.current.contains(event.target)) {
+        setShowTrendingDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlist));
@@ -199,24 +214,36 @@ function App() {
             }
         }
         
-        // Wikipedia allows CORS. Try the band specific page first.
-        let res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + '_(band)')}`);
-        if (!res.ok) {
-            res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist)}`);
+        const suffixes = ['_(singer)', '_(musician)', '_(band)', ''];
+        let factFound = false;
+        
+        for (const suffix of suffixes) {
+            const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + suffix)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data.extract) {
+                    // Quick sanity check if we fell back to the raw artist name without suffix
+                    if (suffix === '') {
+                        const desc = (data.description || '').toLowerCase();
+                        const ext = data.extract.toLowerCase();
+                        if (!desc.includes('singer') && !desc.includes('band') && !desc.includes('musician') && !desc.includes('music') && 
+                            !ext.includes('singer') && !ext.includes('band') && !ext.includes('musician') && !ext.includes('music') && !ext.includes('rapper') && !ext.includes('dj')) {
+                            continue; // Likely not a musician, try next or fail
+                        }
+                    }
+
+                    let firstSentence = data.extract.split('. ')[0];
+                    if (!firstSentence.endsWith('.')) {
+                        firstSentence += '.';
+                    }
+                    setArtistFact(firstSentence);
+                    factFound = true;
+                    break;
+                }
+            }
         }
         
-        if (res.ok) {
-            const data = await res.json();
-            if (data.extract) {
-                let firstSentence = data.extract.split('. ')[0];
-                if (!firstSentence.endsWith('.')) {
-                    firstSentence += '.';
-                }
-                setArtistFact(firstSentence);
-            } else {
-                setArtistFact('');
-            }
-        } else {
+        if (!factFound) {
             setArtistFact('');
         }
       } catch (e) {
@@ -352,6 +379,7 @@ function App() {
         } catch (e) {
           console.error("Endless play fetch error:", e);
           setFailedEndlessFetch(true);
+          setGlobalError("Endless play mix failed to load. Please check your connection.");
         } finally {
           setIsFetchingEndless(false);
         }
@@ -368,6 +396,7 @@ function App() {
 
   const handleLoadTrending = async (region) => {
     setShowTrendingDropdown(false);
+    setShowSearch(false);
     if (isFetchingTrending) return;
     setIsFetchingTrending(true);
     try {
@@ -391,6 +420,7 @@ function App() {
       }
     } catch (e) {
       console.error("Failed to fetch trending:", e);
+      setGlobalError("Failed to fetch trending music. Please check your connection.");
     } finally {
       setIsFetchingTrending(false);
     }
@@ -410,7 +440,12 @@ function App() {
 
   const handleAddSong = (video) => {
     const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    setPlaylist(prev => [...prev, { ...video, queueId }]);
+    const newSong = { ...video, queueId };
+    if (savedPlaylist) {
+      setSavedPlaylist(prev => [...prev, newSong]);
+    } else {
+      setPlaylist(prev => [...prev, newSong]);
+    }
   };
 
   const handleAddMultiple = (videos) => {
@@ -420,6 +455,9 @@ function App() {
       queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9)
     }));
     setPlaylist(prev => [...prev, ...newSongs]);
+    if (savedPlaylist) {
+      setSavedPlaylist(prev => [...prev, ...newSongs]);
+    }
   };
 
   const handleRemoveSong = (index) => {
@@ -666,6 +704,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           hasPrevious={currentIndex > 0}
           onPlayStateChange={setIsAudioPlaying}
           onTimeUpdate={setCurrentTime}
+          onError={setGlobalError}
         />
       </div>
 
@@ -683,7 +722,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontWeight: 'inherit', fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
                 title="Return to your original playlist"
               >
-                <ArrowLeft size={18} style={{ marginTop: '2px' }} /> My Playlist
+                <ArrowLeft size={18} style={{ marginTop: '2px' }} /> Back to My Playlist
               </button>
             ) : (
               `Up Next (${playlist.length})`
@@ -701,15 +740,17 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           <div style={staticStyles.headerIcons}>
             {!showSearch && (
               <>
-                <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
-                  <FolderOpen size={18} />
-                </button>
+                {!savedPlaylist && (
+                  <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
+                    <FolderOpen size={18} />
+                  </button>
+                )}
                 {playlist.length > 0 && (
                   <button className="btn btn-icon" onClick={() => setShowSavePrompt(true)} title="Save Playlist" style={staticStyles.iconBtn}>
                     <Save size={18} />
                   </button>
                 )}
-                {playlist.length > 0 && (
+                {playlist.length > 0 && !savedPlaylist && (
                   <button className="btn btn-icon" onClick={() => setShowClearPrompt(true)} title="Clear Playlist" style={staticStyles.iconBtnDanger}>
                     <Trash2 size={18} />
                   </button>
@@ -721,9 +762,9 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                   title="Endless Play" 
                   style={{ padding: '6px', color: isEndlessPlay ? 'var(--accent-color)' : 'inherit' }}
                 >
-                  <Infinity size={18} />
+                  {isFetchingEndless ? <Loader2 size={18} className="animate-spin" /> : <Infinity size={18} />}
                 </button>
-                <div style={{ position: 'relative' }}>
+                <div style={{ position: 'relative' }} ref={trendingRef}>
                   <button 
                     className={`btn btn-icon ${isFetchingTrending || showTrendingDropdown ? 'active' : ''}`} 
                     onClick={() => setShowTrendingDropdown(!showTrendingDropdown)} 
@@ -731,7 +772,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                     disabled={isFetchingTrending}
                     style={{ padding: '6px', color: (isFetchingTrending || showTrendingDropdown) ? 'var(--accent-color)' : 'inherit' }}
                   >
-                    <TrendingUp size={18} />
+                    {isFetchingTrending ? <Loader2 size={18} className="animate-spin" /> : <TrendingUp size={18} />}
                   </button>
                   {showTrendingDropdown && (
                     <div style={{
@@ -769,16 +810,18 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 </div>
               </>
             )}
-            <button className="btn btn-icon" onClick={() => setShowSearch(!showSearch)} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>
-              {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
-            </button>
+            {!savedPlaylist && (
+              <button className="btn btn-icon" onClick={() => setShowSearch(!showSearch)} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>
+                {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
+              </button>
+            )}
           </div>
         </div>
         
         <div style={staticStyles.playlistContainer}>
           {showSearch ? (
             <div style={staticStyles.searchContainer}>
-              <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} />
+              <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} onError={setGlobalError} />
             </div>
           ) : (
             <Playlist 
@@ -787,6 +830,12 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               onSelectIndex={setCurrentIndex} 
               onRemove={handleRemoveSong}
               onReorder={handleReorder}
+              isTrendingMode={!!savedPlaylist}
+              onAddSong={(song) => {
+                if (savedPlaylist) {
+                  setSavedPlaylist([...savedPlaylist, song]);
+                }
+              }}
             />
           )}
         </div>
@@ -852,6 +901,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               <button 
                 onClick={() => {
                   setPlaylist([]);
+                  setSavedPlaylist(null);
                   setCurrentIndex(0);
                   setIsAudioPlaying(false);
                   setShowClearPrompt(false);
@@ -936,7 +986,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto', marginBottom: '24px', paddingRight: '8px', width: '100%' }}>
                   {savedPlaylists.map(pl => (
-                    <div key={pl.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', cursor: 'pointer' }} onClick={() => { setPlaylist(pl.items); setCurrentIndex(0); setShowLoadPrompt(false); }}>
+                    <div key={pl.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', cursor: 'pointer' }} onClick={() => { setPlaylist(pl.items); setSavedPlaylist(null); setCurrentIndex(0); setShowLoadPrompt(false); }}>
                       <div style={{ textAlign: 'left', overflow: 'hidden' }}>
                         <div style={{ fontWeight: '600', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{pl.name}</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pl.items.length} songs</div>
@@ -963,6 +1013,27 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 className="btn btn-secondary btn-large"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {globalError && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-icon-container">
+              <AlertTriangle className="modal-icon" style={{ color: '#ef4444', animation: 'none' }} />
+            </div>
+            <h3 className="modal-title">Connection Error</h3>
+            <p className="modal-desc">{globalError}</p>
+            <div className="modal-actions">
+              <button 
+                onClick={() => setGlobalError(null)}
+                className="btn btn-secondary btn-large"
+                style={{ width: '100%' }}
+              >
+                Dismiss
               </button>
             </div>
           </div>

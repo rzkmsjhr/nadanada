@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Trash2, GripVertical } from 'lucide-react';
+import { Trash2, GripVertical, Plus, Check } from 'lucide-react';
 
-export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder }) {
+export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
+  const [addedSongs, setAddedSongs] = useState(new Set());
 
   const handleDragStart = (e, index) => {
     e.dataTransfer.setData('text/plain', index);
@@ -61,7 +62,7 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
               onDrop={(e) => handleDrop(e, index)}
             >
               <GripVertical size={16} style={{ color: 'var(--text-muted)', marginRight: '4px', cursor: 'grab' }} />
-              {song.rank && (
+              {isTrendingMode && song.rank && (
                 <div style={{
                   minWidth: '24px', 
                   textAlign: 'center', 
@@ -78,17 +79,44 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
                 <div className="song-title">{song.title}</div>
                 <div className="song-duration">{song.duration}</div>
               </div>
-              <button 
-                className="btn btn-icon" 
-                style={{ border: 'none' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemove(index);
-                }}
-                title="Remove from playlist"
-              >
-                <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
-              </button>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                {isTrendingMode && onAddSong && (
+                  addedSongs.has(song.queueId) ? (
+                    <button 
+                      className="btn btn-icon" 
+                      style={{ border: 'none', cursor: 'default' }}
+                      title="Added to playlist"
+                      disabled
+                    >
+                      <Check size={18} style={{ color: 'var(--accent-color)' }} />
+                    </button>
+                  ) : (
+                    <button 
+                      className="btn btn-icon" 
+                      style={{ border: 'none' }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddSong(song);
+                        setAddedSongs(prev => new Set(prev).add(song.queueId));
+                      }}
+                      title="Add to my playlist"
+                    >
+                      <Plus size={18} style={{ color: 'var(--accent-color)' }} />
+                    </button>
+                  )
+                )}
+                <button 
+                  className="btn btn-icon" 
+                  style={{ border: 'none' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(index);
+                  }}
+                  title="Remove from view"
+                >
+                  <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
+                </button>
+              </div>
             </div>
           );
         })}

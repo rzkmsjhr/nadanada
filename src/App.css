@@ -535,3 +535,7 @@ body {
   animation: scrollText 20s linear infinite;
   will-change: transform;
 }
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
