@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
@@ -22,7 +22,7 @@ const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDire
 
 const staticStyles = {
   headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', boxShadow: '0 1px 0 0 var(--panel-border)' },
-  headerTitle: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' },
+  headerTitle: { fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transform: 'translateY(-1px)' },
   headerLoading: { fontSize: '0.8rem', color: 'var(--accent-color)' },
   headerIcons: { display: 'flex', gap: '8px' },
   iconBtn: { padding: '6px' },
@@ -47,6 +47,9 @@ function App() {
   const [showSearch, setShowSearch] = useState(false);
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
+  const [isFetchingTrending, setIsFetchingTrending] = useState(false);
+  const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
+  const [savedPlaylist, setSavedPlaylist] = useState(null);
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   
@@ -363,6 +366,36 @@ function App() {
     setFailedEndlessFetch(false);
   }, [currentIndex, playlist]);
 
+  const handleLoadTrending = async (region) => {
+    setShowTrendingDropdown(false);
+    if (isFetchingTrending) return;
+    setIsFetchingTrending(true);
+    try {
+      const query = region === 'global' ? 'Top 50 trending music' : 'Top 50 trending music Indonesia';
+      const results = await invoke('search_youtube', { query, searchType: 'album' });
+      const playlistItem = results.find(v => v.is_playlist);
+      if (playlistItem) {
+        const songs = await invoke('get_youtube_playlist', { playlistId: playlistItem.id, firstVideoId: playlistItem.first_video_id || '' });
+        if (songs && songs.length > 0) {
+          const timestamp = Date.now();
+          const rankedSongs = songs.slice(0, 50).map((song, idx) => ({
+            ...song,
+            queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9),
+            rank: idx + 1
+          }));
+          setSavedPlaylist([...playlist]);
+          setPlaylist(rankedSongs);
+          setCurrentIndex(0);
+          setIsAudioPlaying(true);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch trending:", e);
+    } finally {
+      setIsFetchingTrending(false);
+    }
+  };
+
   const handleNext = () => {
     if (currentIndex < playlist.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -640,8 +673,21 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
       <div className="bottom-section glass-panel" style={bottomPanelStyle}>
         <div style={staticStyles.headerBar}>
           <div style={staticStyles.headerTitle}>
-            {showSearch ? 'Search YouTube' : `Up Next (${playlist.length})`}
-            {!showSearch && isFetchingEndless && <span style={staticStyles.headerLoading}>Loading mix...</span>}
+            {showSearch ? (
+              'Search YouTube'
+            ) : isFetchingEndless ? (
+              <span>Finding next song...</span>
+            ) : savedPlaylist ? (
+              <button 
+                onClick={() => { setPlaylist(savedPlaylist); setSavedPlaylist(null); }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontWeight: 'inherit', fontSize: 'inherit', fontFamily: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '6px' }}
+                title="Return to your original playlist"
+              >
+                <ArrowLeft size={18} style={{ marginTop: '2px' }} /> My Playlist
+              </button>
+            ) : (
+              `Up Next (${playlist.length})`
+            )}
             {!showSearch && failedEndlessFetch && (
               <button 
                 onClick={() => setFailedEndlessFetch(false)} 
@@ -677,6 +723,50 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 >
                   <Infinity size={18} />
                 </button>
+                <div style={{ position: 'relative' }}>
+                  <button 
+                    className={`btn btn-icon ${isFetchingTrending || showTrendingDropdown ? 'active' : ''}`} 
+                    onClick={() => setShowTrendingDropdown(!showTrendingDropdown)} 
+                    title="Load Trending" 
+                    disabled={isFetchingTrending}
+                    style={{ padding: '6px', color: (isFetchingTrending || showTrendingDropdown) ? 'var(--accent-color)' : 'inherit' }}
+                  >
+                    <TrendingUp size={18} />
+                  </button>
+                  {showTrendingDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '8px',
+                      background: 'var(--bg-color)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '8px',
+                      padding: '4px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      zIndex: 100,
+                      minWidth: '120px'
+                    }}>
+                      <button 
+                        className="btn" 
+                        onClick={() => handleLoadTrending('indonesia')}
+                        style={{ padding: '8px 12px', textAlign: 'left', border: 'none', color: 'var(--text-main)', fontSize: '0.9rem', cursor: 'pointer', borderRadius: '4px', width: '100%' }}
+                      >
+                        Indonesia
+                      </button>
+                      <button 
+                        className="btn" 
+                        onClick={() => handleLoadTrending('global')}
+                        style={{ padding: '8px 12px', textAlign: 'left', border: 'none', color: 'var(--text-main)', fontSize: '0.9rem', cursor: 'pointer', borderRadius: '4px', width: '100%' }}
+                      >
+                        Worldwide
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
             <button className="btn btn-icon" onClick={() => setShowSearch(!showSearch)} title={showSearch ? "Close Search" : "Search Music"} style={{ padding: '6px' }}>

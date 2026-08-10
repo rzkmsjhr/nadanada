@@ -61,6 +61,18 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
               onDrop={(e) => handleDrop(e, index)}
             >
               <GripVertical size={16} style={{ color: 'var(--text-muted)', marginRight: '4px', cursor: 'grab' }} />
+              {song.rank && (
+                <div style={{
+                  minWidth: '24px', 
+                  textAlign: 'center', 
+                  fontSize: '0.9rem', 
+                  fontWeight: 'bold', 
+                  color: 'var(--accent-color)', 
+                  marginRight: '8px'
+                }}>
+                  {song.rank}
+                </div>
+              )}
               <img src={song.thumbnail} alt="" className="song-thumb" />
               <div className="song-info">
                 <div className="song-title">{song.title}</div>
