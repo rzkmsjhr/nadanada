@@ -446,23 +446,36 @@ function App() {
           
           if (available.length > 0) {
             let finalPicked = null;
+
+            // Prioritize official Topic or Vevo channels to avoid lyric videos / unofficial covers
+            available.sort((a, b) => {
+              const aOfficial = (a.channel || '').toLowerCase().includes('- topic') || (a.channel || '').toLowerCase().includes('vevo');
+              const bOfficial = (b.channel || '').toLowerCase().includes('- topic') || (b.channel || '').toLowerCase().includes('vevo');
+              if (aOfficial && !bOfficial) return -1;
+              if (!aOfficial && bOfficial) return 1;
+              return 0;
+            });
             
             for (let item of available) {
               let picked = item;
               
-              // If the recommended song is a "video" version, try to find the audio version
-              const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b)/i;
-              if (videoRegex.test(picked.title)) {
-                // Clean the title by removing bracketed stuff and the video keywords
+              // If the recommended song is a "video" or "lyric" version, try to find the official audio version
+              const unofficialRegex = /(official video|music video|official hd video|official music video|\bvideo\b|lirik|lyrics|lyric|cover|live)/i;
+              const isTopic = (picked.channel || '').toLowerCase().includes('- topic');
+              
+              if (!isTopic && unofficialRegex.test(picked.title)) {
+                // Clean the title by removing bracketed stuff and the unofficial keywords
                 const cleanTitle = picked.title
                   .replace(/\[.*?\]|\(.*?\)/g, ' ')
-                  .replace(videoRegex, ' ')
+                  .replace(unofficialRegex, ' ')
                   .replace(/\s+/g, ' ')
                   .trim();
                   
                 if (cleanTitle.length > 0) {
                   try {
-                    const searchResults = await invoke('search_youtube', { query: cleanTitle + ' topic' });
+                    // Search for the clean title + artist + 'topic' to find the official audio
+                    let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
+                    const searchResults = await invoke('search_youtube', { query: `${cleanTitle} ${searchArtist} topic` });
                     if (searchResults && searchResults.length > 0) {
                       picked = searchResults[0];
                     }

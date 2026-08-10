@@ -161,6 +161,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
+      origin: window.location.origin,
     },
   };
 
@@ -187,7 +188,14 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
                 onStateChange={onStateChange}
                 onError={(e) => {
                   console.error("YouTube Error:", e);
-                  if (onError) onError("Failed to stream track from YouTube. Please check your connection.");
+                  // Some videos block embedding. Auto-skip to the next track if possible.
+                  if (hasNext) {
+                    onNext();
+                  } else {
+                    setIsPlaying(false);
+                    if (onPlayStateChange) onPlayStateChange(false);
+                    if (onError) onError("Failed to stream track from YouTube. Some tracks block embedding.");
+                  }
                 }}
                 style={{ width: '100%', height: '100%' }}
                 iframeClassName="youtube-iframe"
