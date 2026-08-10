@@ -906,21 +906,29 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
         || safe_artist.trim().is_empty()
     {
         music_dir
-            .join("%(artist,uploader)s - %(title)s.%(ext)s")
+            .join("%(artist,uploader)s - %(title)s [%(id)s].%(ext)s")
             .to_string_lossy()
             .to_string()
     } else {
         music_dir
             .join(format!(
-                "{} - {}.%(ext)s",
+                "{} - {} [{}].%(ext)s",
                 safe_artist.trim(),
-                safe_title.trim()
+                safe_title.trim(),
+                id
             ))
             .to_string_lossy()
             .to_string()
     };
 
-    let output = Command::new(&exe_path)
+    let mut command = Command::new(&exe_path);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+    
+    let output = command
         .arg("--js-runtimes")
         .arg("node")
         .arg("--replace-in-metadata")
@@ -980,15 +988,30 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                 if let Some(ext) = path.extension() {
                     if ext == "m4a" || ext == "mp3" || ext == "webm" {
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
-                            let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
+                            // Extract YouTube ID from brackets at the end if present
+                            let (base_name, yt_id) = if file_name.ends_with(']') {
+                                if let Some(start_bracket) = file_name.rfind(" [") {
+                                    let id_str = &file_name[start_bracket + 2 .. file_name.len() - 1];
+                                    let base = &file_name[..start_bracket];
+                                    (base.to_string(), Some(id_str.to_string()))
+                                } else {
+                                    (file_name.to_string(), None)
+                                }
+                            } else {
+                                (file_name.to_string(), None)
+                            };
+
+                            let parts: Vec<&str> = base_name.splitn(2, " - ").collect();
                             let (artist, title) = if parts.len() == 2 {
                                 (parts[0].to_string(), parts[1].to_string())
                             } else {
-                                ("Unknown".to_string(), file_name.to_string())
+                                ("Unknown".to_string(), base_name.to_string())
                             };
 
+                            let song_id = yt_id.unwrap_or_else(|| path.to_string_lossy().to_string());
+
                             songs.push(DownloadedSong {
-                                id: path.to_string_lossy().to_string(),
+                                id: song_id,
                                 title,
                                 channel: artist,
                                 is_local: true,
