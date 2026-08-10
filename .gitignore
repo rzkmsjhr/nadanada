@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Downloaded audio files
+*.m4a
+*.mp3
+*.opus
+*.webm
+
+# Test / scratch files
+testSearch.cjs
+ytData.json
+scratch/
