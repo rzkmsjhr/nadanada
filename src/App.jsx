@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
@@ -55,12 +55,18 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [playlist, setPlaylist] = useState(() => {
-    const saved = localStorage.getItem('nadanada-session-playlist');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('nadanada-session-playlist');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse session playlist:', e);
+      return [];
+    }
   });
   const [currentIndex, setCurrentIndex] = useState(() => {
     const saved = localStorage.getItem('nadanada-session-index');
-    return saved ? parseInt(saved, 10) : 0;
+    const parsed = saved ? parseInt(saved, 10) : 0;
+    return isNaN(parsed) ? 0 : parsed;
   });
   const [showSearch, setShowSearch] = useState(false);
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
@@ -75,7 +81,11 @@ function App() {
   const [showDownloadedList, setShowDownloadedList] = useState(false);
   const [downloadedSongs, setDownloadedSongs] = useState([]);
   const [downloadingSongId, setDownloadingSongId] = useState(null);
-  const [downloadedIds, setDownloadedIds] = useState(new Set());
+  
+  // Derive Set so it maintains a stable reference unless the actual song IDs change
+  const downloadedIdsStr = downloadedSongs.map(s => s.id).sort().join(',');
+  const downloadedIds = useMemo(() => new Set(downloadedSongs.map(s => s.id)), [downloadedIdsStr]);
+  
   const [successMessage, setSuccessMessage] = useState(null);
   
   useEffect(() => {
@@ -87,8 +97,10 @@ function App() {
   const loadDownloadedSongs = async () => {
     try {
       const songs = await invoke('get_downloaded_songs');
-      setDownloadedSongs(songs);
-      setDownloadedIds(new Set(songs.map(s => s.id)));
+      setDownloadedSongs(prev => {
+        if (prev.length === songs.length && prev.every((s, i) => s.id === songs[i].id)) return prev;
+        return songs;
+      });
     } catch (e) {
       console.error('Failed to load downloaded songs:', e);
     }
@@ -120,7 +132,10 @@ function App() {
       if (showDownloadedList) {
         loadDownloadedSongs();
       }
-      setDownloadedIds(prev => new Set(prev).add(song.id));
+      setDownloadedSongs(prev => {
+        if (prev.find(s => s.id === song.id)) return prev;
+        return [...prev, { id: song.id, file_path: '' }]; // Optimistic update
+      });
       
     } catch (e) {
       console.error('Download failed:', e);
@@ -134,6 +149,7 @@ function App() {
   const [showChords, setShowChords] = useState(false);
   const [chordsData, setChordsData] = useState(null);
   const [isFetchingChords, setIsFetchingChords] = useState(false);
+  const isFetchingChordsRef = useRef(false);
   const [chordsError, setChordsError] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [syncOffset, setSyncOffset] = useState(0);
@@ -143,8 +159,13 @@ function App() {
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
   const [savePlaylistName, setSavePlaylistName] = useState('');
   const [savedPlaylists, setSavedPlaylists] = useState(() => {
-    const saved = localStorage.getItem('nadanada-saved-playlists');
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem('nadanada-saved-playlists');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      console.error('Failed to parse saved playlists:', e);
+      return [];
+    }
   });
 
   const trendingRef = useRef(null);
@@ -162,12 +183,18 @@ function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlist));
-    localStorage.setItem('nadanada-session-index', currentIndex.toString());
+    const timer = setTimeout(() => {
+      localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlist));
+      localStorage.setItem('nadanada-session-index', currentIndex.toString());
+    }, 500);
+    return () => clearTimeout(timer);
   }, [playlist, currentIndex]);
 
   useEffect(() => {
-    localStorage.setItem('nadanada-saved-playlists', JSON.stringify(savedPlaylists));
+    const timer = setTimeout(() => {
+      localStorage.setItem('nadanada-saved-playlists', JSON.stringify(savedPlaylists));
+    }, 500);
+    return () => clearTimeout(timer);
   }, [savedPlaylists]);
 
   useEffect(() => {
@@ -198,8 +225,8 @@ function App() {
       'nox-noir',
       'crimson-night'
     ];
-    const currentIndex = themes.indexOf(theme);
-    const nextIndex = (currentIndex + 1) % themes.length;
+    const currentThemeIndex = themes.indexOf(theme);
+    const nextIndex = (currentThemeIndex + 1) % themes.length;
     setTheme(themes[nextIndex]);
   };
 
@@ -214,8 +241,9 @@ function App() {
       const savedTranspose = localStorage.getItem(`transpose_${currentSong.id}`);
       setTransposeOffset(savedTranspose ? parseInt(savedTranspose, 10) : 0);
       
-      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id) && !isFetchingChords) {
+      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id) && !isFetchingChordsRef.current) {
         const fetchChords = async () => {
+          isFetchingChordsRef.current = true;
           setIsFetchingChords(true);
           setChordsError(null);
           try {
@@ -255,6 +283,7 @@ function App() {
             setChordsError(e.toString());
             setChordsData({ _songId: currentSong.id });
           } finally {
+            isFetchingChordsRef.current = false;
             setIsFetchingChords(false);
           }
         };
@@ -277,6 +306,9 @@ function App() {
       return;
     }
     
+    const controller = new AbortController();
+    const signal = controller.signal;
+
     const fetchFact = async () => {
       try {
         let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic/i, '').trim() : '';
@@ -285,7 +317,7 @@ function App() {
             if (parts.length > 1) {
                 artist = parts[0].trim();
             } else {
-                setArtistFact('');
+                if (!signal.aborted) setArtistFact('');
                 return;
             }
         }
@@ -294,7 +326,8 @@ function App() {
         let factFound = false;
         
         for (const suffix of suffixes) {
-            const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + suffix)}`);
+            if (signal.aborted) return;
+            const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + suffix)}`, { signal });
             if (res.ok) {
                 const data = await res.json();
                 if (data.extract) {
@@ -312,22 +345,25 @@ function App() {
                     if (!firstSentence.endsWith('.')) {
                         firstSentence += '.';
                     }
-                    setArtistFact(firstSentence);
+                    if (!signal.aborted) setArtistFact(firstSentence);
                     factFound = true;
                     break;
                 }
             }
         }
         
-        if (!factFound) {
+        if (!factFound && !signal.aborted) {
             setArtistFact('');
         }
       } catch (e) {
-        setArtistFact('');
+        if (!signal.aborted) {
+          setArtistFact('');
+        }
       }
     };
     
     fetchFact();
+    return () => controller.abort();
   }, [currentSong]);
 
   // Save sync and transpose offsets when changed
@@ -353,7 +389,26 @@ function App() {
         setIsFetchingEndless(true);
         try {
           const current = playlist[currentIndex];
-          const results = await invoke('get_youtube_mix', { videoId: current.id });
+          let seedId = current.id;
+          
+          // YouTube's "Topic" auto-generated tracks often have poor recommendation seeds
+          // that drift into unrelated genres. If the current song is a Topic track, 
+          // search for its official video counterpart to seed a much better mix.
+          if (current.channel && current.channel.toLowerCase().includes('- topic')) {
+            try {
+              const cleanArtist = current.channel.replace(/- topic/i, '').trim();
+              const searchResults = await invoke('search_youtube', { query: `${current.title} ${cleanArtist}` });
+              if (searchResults && searchResults.length > 0) {
+                // Find the first result that is NOT a topic channel to use as the seed
+                const officialVideo = searchResults.find(v => !(v.channel || '').toLowerCase().includes('- topic')) || searchResults[0];
+                seedId = officialVideo.id;
+              }
+            } catch (e) {
+              console.error("Failed to fetch official video for mix seed:", e);
+            }
+          }
+
+          const results = await invoke('get_youtube_mix', { videoId: seedId });
           
           const getWords = (song) => {
             const text = ((song.title || '') + ' ' + (song.channel || '')).toLowerCase()
@@ -468,7 +523,7 @@ function App() {
   // Reset the failed state whenever the user manually plays a different song or adds a song
   useEffect(() => {
     setFailedEndlessFetch(false);
-  }, [currentIndex, playlist]);
+  }, [currentIndex]);
 
   const handleLoadTrending = async (region) => {
     setShowTrendingDropdown(false);
@@ -519,6 +574,7 @@ function App() {
   };
 
   const handleAddSong = (video) => {
+    setFailedEndlessFetch(false);
     const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const newSong = { ...video, queueId };
     if (savedPlaylist) {
@@ -529,6 +585,7 @@ function App() {
   };
 
   const handleAddMultiple = (videos) => {
+    setFailedEndlessFetch(false);
     const timestamp = Date.now();
     const newSongs = videos.map((video, idx) => ({
       ...video,
@@ -541,16 +598,20 @@ function App() {
   };
 
   const handleRemoveSong = (index) => {
+    const isLast = index >= playlist.length - 1;
     setPlaylist(prev => {
       const newPlaylist = [...prev];
       newPlaylist.splice(index, 1);
       return newPlaylist;
     });
-    if (index < currentIndex) {
-      setCurrentIndex(currentIndex - 1);
-    } else if (index === currentIndex && currentIndex >= playlist.length - 1) {
-      setCurrentIndex(Math.max(0, currentIndex - 1));
-    }
+    setCurrentIndex(prev => {
+      if (index < prev) {
+        return prev - 1;
+      } else if (index === prev && isLast) {
+        return Math.max(0, prev - 1);
+      }
+      return prev;
+    });
   };
 
   const handleReorder = (fromIndex, toIndex) => {
@@ -563,13 +624,16 @@ function App() {
       return newPlaylist;
     });
 
-    if (currentIndex === fromIndex) {
-      setCurrentIndex(toIndex);
-    } else if (fromIndex < currentIndex && toIndex >= currentIndex) {
-      setCurrentIndex(currentIndex - 1);
-    } else if (fromIndex > currentIndex && toIndex <= currentIndex) {
-      setCurrentIndex(currentIndex + 1);
-    }
+    setCurrentIndex(prev => {
+      if (prev === fromIndex) {
+        return toIndex;
+      } else if (fromIndex < prev && toIndex >= prev) {
+        return prev - 1;
+      } else if (fromIndex > prev && toIndex <= prev) {
+        return prev + 1;
+      }
+      return prev;
+    });
   };
 
 
@@ -673,15 +737,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
 
   return (
     <div className="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {globalError && (
-        <div style={staticStyles.errorToast}>
-          <AlertTriangle size={18} />
-          {globalError}
-          <button className="btn btn-icon" onClick={() => setGlobalError(null)} style={{ padding: '2px', color: 'inherit' }}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
+
 
       {successMessage && !globalError && (
         <div style={{...staticStyles.errorToast, background: 'var(--accent-color)', color: '#fff', borderColor: 'transparent'}}>
@@ -760,25 +816,25 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginRight: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
                   <span style={{ marginRight: '4px' }}>Key:</span>
-                  <button onClick={() => setTransposeOffset(s => s - 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Down">
+                  <button onClick={() => setTransposeOffset(s => (s - 1) % 12)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Down">
                     -
                   </button>
                   <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
                     {transposeOffset > 0 ? '+' : ''}{transposeOffset}
                   </span>
-                  <button onClick={() => setTransposeOffset(s => s + 1)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Up">
+                  <button onClick={() => setTransposeOffset(s => (s + 1) % 12)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Transpose Up">
                     +
                   </button>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.7rem', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '8px', padding: '2px 6px', color: 'var(--text-muted)' }}>
                   <span style={{ marginRight: '4px' }}>Sync:</span>
-                  <button onClick={() => setSyncOffset(s => s - 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
+                  <button onClick={() => setSyncOffset(s => Math.max(-30, s - 0.25))} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delay Chords">
                     -
                   </button>
                   <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold', color: 'var(--text-main)' }}>
                     {syncOffset > 0 ? '+' : ''}{syncOffset}s
                   </span>
-                  <button onClick={() => setSyncOffset(s => s + 0.25)} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
+                  <button onClick={() => setSyncOffset(s => Math.min(30, s + 0.25))} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: '0 4px', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Advance Chords">
                     +
                   </button>
                 </div>
@@ -1215,13 +1271,14 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
         </div>
       )}
 
+
       {globalError && (
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-icon-container">
               <AlertTriangle className="modal-icon" style={{ color: '#ef4444', animation: 'none' }} />
             </div>
-            <h3 className="modal-title">Connection Error</h3>
+            <h3 className="modal-title">Error</h3>
             <p className="modal-desc">{globalError}</p>
             <div className="modal-actions">
               <button 

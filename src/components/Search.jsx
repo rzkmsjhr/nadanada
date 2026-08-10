@@ -97,11 +97,15 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
     }
     setLoadingAlbumId(album.id);
     try {
-      const tracks = await invoke('get_youtube_playlist', { 
+      let tracks = await invoke('get_youtube_playlist', { 
         playlistId: album.id, 
         firstVideoId: album.first_video_id 
       });
       if (tracks && tracks.length > 0) {
+        if (tracks.length > 50) {
+          tracks = tracks.slice(0, 50);
+          onError(`Album is too large. Only the first 50 tracks were added to prevent performance issues.`);
+        }
         onAddMultiple(tracks);
       }
     } catch (err) {

@@ -1,21 +1,18 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use lazy_static::lazy_static;
 use regex::Regex;
 use reqwest;
 use serde::{Deserialize, Serialize};
-use spectrum_analyzer::windows::hann_window;
-use spectrum_analyzer::{samples_fft_to_spectrum, scaling::divide_by_N_sqrt, FrequencyLimit};
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
-use std::sync::{Arc, Mutex};
+use tokio::process::Command;
+
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
 
 lazy_static! {
-    static ref CURRENT_SPECTRUM: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(vec![0.0; 24]));
+    static ref IO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -306,141 +303,7 @@ async fn get_youtube_playlist(
     Err("ytInitialData not found in playlist".to_string())
 }
 
-#[tauri::command]
-fn get_audio_spectrum() -> Vec<f32> {
-    let spectrum = CURRENT_SPECTRUM.lock().unwrap();
-    spectrum.clone()
-}
 
-pub fn start_audio_monitor() {
-    std::thread::spawn(|| {
-        let host = cpal::default_host();
-        let device = match host.default_output_device() {
-            Some(d) => d,
-            None => {
-                println!("No default output device for loopback");
-                return;
-            }
-        };
-
-        let config = match device.default_output_config() {
-            Ok(c) => c,
-            Err(e) => {
-                println!("Failed to get default output config: {}", e);
-                return;
-            }
-        };
-
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => run_stream::<f32>(&device, &config.into()),
-            cpal::SampleFormat::I16 => run_stream::<i16>(&device, &config.into()),
-            cpal::SampleFormat::U16 => run_stream::<u16>(&device, &config.into()),
-            _ => return,
-        };
-
-        match stream {
-            Ok(s) => {
-                let _ = s.play();
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(3600));
-                }
-            }
-            Err(e) => println!("Error running loopback stream: {}", e),
-        }
-    });
-}
-
-fn run_stream<T>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-) -> Result<cpal::Stream, cpal::BuildStreamError>
-where
-    T: cpal::Sample + cpal::SizedSample,
-    f32: cpal::FromSample<T>,
-{
-    let channels = config.channels as usize;
-    let sample_rate = config.sample_rate.0 as u32;
-    let mut sample_buffer: Vec<f32> = Vec::with_capacity(2048);
-
-    device.build_input_stream(
-        config,
-        move |data: &[T], _: &cpal::InputCallbackInfo| {
-            for frame in data.chunks(channels) {
-                let mut sum = 0.0;
-                for sample in frame {
-                    let val: f32 = cpal::FromSample::from_sample_(*sample);
-                    sum += val;
-                }
-                let mono_sample = sum / channels as f32;
-
-                sample_buffer.push(mono_sample);
-
-                if sample_buffer.len() == 2048 {
-                    let windowed_samples = hann_window(&sample_buffer);
-                    if let Ok(spectrum) = samples_fft_to_spectrum(
-                        &windowed_samples,
-                        sample_rate,
-                        FrequencyLimit::Range(20.0, 20000.0),
-                        Some(&divide_by_N_sqrt),
-                    ) {
-                        let data = spectrum.data();
-                        let mut bins = vec![0.0; 24];
-                        // Tighten the frequency range to focus on active musical frequencies
-                        // (YouTube compression often cuts off audio above 15kHz, leaving dead bars on the right)
-                        let min_freq = 40.0_f32;
-                        let max_freq = 14000.0_f32;
-
-                        for (freq_val, fr_value) in data {
-                            let f = freq_val.val();
-                            if f < min_freq || f > max_freq {
-                                continue;
-                            }
-
-                            let log_f = f.log10();
-                            let log_min = min_freq.log10();
-                            let log_max = max_freq.log10();
-
-                            let mut bin_index =
-                                ((log_f - log_min) / (log_max - log_min) * 24.0) as usize;
-                            if bin_index >= 24 {
-                                bin_index = 23;
-                            }
-
-                            let mag = fr_value.val();
-
-                            // Convert linear magnitude to decibels (dB)
-                            let db = 20.0 * (mag + 1e-6).log10();
-
-                            // Map -60dB (silence) to 0.0, and 0dB (max volume) to 1.0
-                            let scaled = ((db + 60.0) / 60.0).max(0.0).min(1.0);
-
-                            if scaled > bins[bin_index] {
-                                bins[bin_index] = scaled;
-                            }
-                        }
-
-                        // Fill any gaps caused by low FFT resolution at low frequencies
-                        for i in 1..24 {
-                            if bins[i] == 0.0 {
-                                bins[i] = bins[i - 1] * 0.8;
-                            }
-                        }
-
-                        if let Ok(mut current) = CURRENT_SPECTRUM.lock() {
-                            for i in 0..24 {
-                                // Smooth transition: 75% old, 25% new
-                                current[i] = current[i] * 0.75 + bins[i] * 0.25;
-                            }
-                        }
-                    }
-                    sample_buffer.clear();
-                }
-            }
-        },
-        |err| eprintln!("Stream error: {}", err),
-        None,
-    )
-}
 
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
@@ -506,7 +369,7 @@ async fn scrape_chords(
                 "Killing existing scraper window to prevent concurrency abuse: {}",
                 label
             );
-            window.close().ok();
+            let _ = window.destroy();
         }
     }
 
@@ -730,7 +593,7 @@ async fn scrape_chords(
         Ok(w) => w,
         Err(e) => {
             if let Some(w) = app_handle.get_webview_window(&window_label) {
-                w.close().ok();
+                let _ = w.destroy();
             }
             return Err(format!("Failed to build window: {}", e));
         }
@@ -745,12 +608,12 @@ async fn scrape_chords(
         }
         _ => {
             println!("Scraper timed out!");
-            window.close().ok();
+            let _ = window.destroy();
             return Err("Timeout waiting for scraper".to_string());
         }
     };
 
-    window.close().ok();
+    let _ = window.destroy();
 
     if result_str.trim().is_empty() {
         return Err("Scraper returned empty output".to_string());
@@ -810,12 +673,12 @@ async fn scrape_chords(
         match tokio::time::timeout(std::time::Duration::from_secs(45), rx2).await {
             Ok(Ok(data)) => {
                 println!("Got result from Google fallback scraper!");
-                window2.close().ok();
+                let _ = window2.destroy();
                 data
             }
             _ => {
                 println!("Google fallback scraper timed out!");
-                window2.close().ok();
+                let _ = window2.destroy();
                 return Err("Timeout waiting for Google fallback scraper".to_string());
             }
         }
@@ -923,7 +786,6 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
     let mut command = Command::new(&exe_path);
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
     
@@ -938,22 +800,31 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
         .arg("title")
         .arg(r"(?i)(?:official|music|video|audio|hd|hq|lyrics|\[.*?\]|\(.*?\))")
         .arg("")
+        .arg("--print")
+        .arg("after_move:filepath")
+        .arg("--no-simulate")
         .arg("-f")
         .arg("bestaudio[ext=m4a]/bestaudio")
         .arg("-o")
         .arg(&out_template)
         .arg(url)
         .output()
+        .await
         .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).to_string());
     }
 
-    // Attempt to register this download mapping so we can link the YT ID to the final file
-    // We don't know the exact final filename if yt-dlp renames it, but we use out_template as a strong guess.
-    // Replace .%(ext)s with .m4a since we specified bestaudio[ext=m4a]
-    let final_guess = out_template.replace(".%(ext)s", ".m4a");
+    // Use the stdout from yt-dlp which contains the exact final filepath because of `--print after_move:filepath`
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let final_path = stdout_str.trim().lines().last().unwrap_or("").trim().to_string();
+    
+    if final_path.is_empty() {
+        return Err("yt-dlp succeeded but did not output a filepath".to_string());
+    }
+
+    let _lock = IO_LOCK.lock().unwrap();
     let registry_path = data_dir.join("youtube_downloads.json");
     let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
         if let Ok(content) = fs::read_to_string(&registry_path) {
@@ -964,7 +835,7 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
     } else {
         std::collections::HashMap::new()
     };
-    registry.insert(final_guess, id);
+    registry.insert(final_path, id);
     let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
@@ -981,6 +852,7 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
     
+    let _lock = IO_LOCK.lock().unwrap();
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let hidden_paths: Vec<String> = if hidden_json_path.exists() {
         if let Ok(content) = fs::read_to_string(&hidden_json_path) {
@@ -1097,6 +969,7 @@ fn add_local_song(file_path: String) -> Result<(), String> {
         fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
     
+    let _lock = IO_LOCK.lock().unwrap();
     let json_path = data_dir.join("local_songs.json");
     let mut local_paths: Vec<String> = if json_path.exists() {
         if let Ok(content) = fs::read_to_string(&json_path) {
@@ -1122,6 +995,7 @@ fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     data_dir.push("NadaNada");
     
     // 1. Remove from local_songs.json if it exists there
+    let _lock = IO_LOCK.lock().unwrap();
     let local_json_path = data_dir.join("local_songs.json");
     if local_json_path.exists() {
         if let Ok(content) = fs::read_to_string(&local_json_path) {
@@ -1157,8 +1031,6 @@ fn delete_downloaded_song(file_path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    start_audio_monitor();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -1193,7 +1065,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             search_youtube,
-            get_audio_spectrum,
             get_youtube_mix,
             get_youtube_playlist,
             quit_app,

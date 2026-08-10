@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Trash2, GripVertical, Plus, Check, Download, Loader2 } from 'lucide-react';
 
-const PlaylistItem = ({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove }) => {
+const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const textRef = useRef(null);
@@ -130,9 +130,9 @@ const PlaylistItem = ({ song, index, isActive, isDragOver, onSelectIndex, handle
       </div>
     </div>
   );
-};
+});
 
-export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
 
@@ -207,4 +207,4 @@ export default function Playlist({ playlist, currentIndex, onSelectIndex, onRemo
       </div>
     </div>
   );
-}
+});
