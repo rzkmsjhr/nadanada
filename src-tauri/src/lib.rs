@@ -574,10 +574,18 @@ async fn scrape_chords(
             let checkInterval = setInterval(() => {{
                 attempts++;
                 
-                // ── SIGNUP / SIGNIN WALL → signal Rust to open fresh Google window ─
+                // ── SIGNUP / SIGNIN WALL (redirect) → signal Rust to open fresh Google window ─
                 if (window.location.pathname.startsWith('/user/signup') || window.location.pathname.startsWith('/user/signin')) {{
                     clearInterval(checkInterval);
-                    console.log('[NadaNada] Chordify requires login – signalling Google fallback');
+                    console.log('[NadaNada] Chordify login redirect – signalling Google fallback');
+                    window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
+                    return;
+                }}
+
+                // ── SIGNUP MODAL POPUP (overlay on search page) → same fallback ────
+                if (document.body && document.body.innerText && document.body.innerText.includes("Please sign up to add new songs to Chordify")) {{
+                    clearInterval(checkInterval);
+                    console.log('[NadaNada] Chordify signup modal detected – signalling Google fallback');
                     window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
                     return;
                 }}
