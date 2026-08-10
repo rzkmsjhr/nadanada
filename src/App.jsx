@@ -989,7 +989,16 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 setCurrentIndex(idx);
                 setIsAudioPlaying(true);
               }} 
-              onRemove={() => {}}
+              onRemove={async (idx) => {
+                const song = downloadedSongs[idx];
+                try {
+                  await invoke('delete_downloaded_song', { filePath: song.file_path });
+                  loadDownloadedSongs();
+                } catch (e) {
+                  console.error('Failed to delete song:', e);
+                  setGlobalError('Failed to delete song.');
+                }
+              }}
               onReorder={(dragIndex, dropIndex) => {
                 const newPlaylist = [...downloadedSongs];
                 const [draggedItem] = newPlaylist.splice(dragIndex, 1);

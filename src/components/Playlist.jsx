@@ -116,19 +116,17 @@ const PlaylistItem = ({ song, index, isActive, isDragOver, onSelectIndex, handle
           )
         )}
 
-        {!isDownloadedView && (
-          <button 
-            className="btn btn-icon" 
-            style={{ border: 'none' }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove(index);
-            }}
-            title="Remove from view"
-          >
-            <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
-          </button>
-        )}
+        <button 
+          className="btn btn-icon" 
+          style={{ border: 'none' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove(index);
+          }}
+          title={isDownloadedView ? "Delete from downloads" : "Remove from view"}
+        >
+          <Trash2 size={18} style={{ color: 'var(--text-muted)' }} />
+        </button>
       </div>
     </div>
   );

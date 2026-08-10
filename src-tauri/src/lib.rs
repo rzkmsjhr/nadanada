@@ -857,11 +857,29 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
 
     let mut songs = Vec::new();
 
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    
+    let hidden_json_path = data_dir.join("hidden_downloads.json");
+    let hidden_paths: Vec<String> = if hidden_json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&hidden_json_path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
     if music_dir.exists() {
         for entry in fs::read_dir(music_dir).map_err(|e| e.to_string())? {
             let entry = entry.map_err(|e| e.to_string())?;
             let path = entry.path();
             if path.is_file() {
+                let path_str = path.to_string_lossy().to_string();
+                if hidden_paths.contains(&path_str) {
+                    continue;
+                }
                 if let Some(ext) = path.extension() {
                     if ext == "m4a" || ext == "mp3" || ext == "webm" {
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
@@ -964,6 +982,45 @@ fn add_local_song(file_path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn delete_downloaded_song(file_path: String) -> Result<(), String> {
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    
+    // 1. Remove from local_songs.json if it exists there
+    let local_json_path = data_dir.join("local_songs.json");
+    if local_json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&local_json_path) {
+            if let Ok(mut local_paths) = serde_json::from_str::<Vec<String>>(&content) {
+                let original_len = local_paths.len();
+                local_paths.retain(|p| p != &file_path);
+                if local_paths.len() < original_len {
+                    let _ = fs::write(&local_json_path, serde_json::to_string(&local_paths).unwrap_or_default());
+                }
+            }
+        }
+    }
+    
+    // 2. Add to hidden_downloads.json so it gets ignored during folder scans
+    let hidden_json_path = data_dir.join("hidden_downloads.json");
+    let mut hidden_paths: Vec<String> = if hidden_json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&hidden_json_path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+    
+    if !hidden_paths.contains(&file_path) {
+        hidden_paths.push(file_path);
+        let _ = fs::write(&hidden_json_path, serde_json::to_string(&hidden_paths).unwrap_or_default());
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     start_audio_monitor();
@@ -1009,7 +1066,8 @@ pub fn run() {
             scrape_chords,
             download_song,
             get_downloaded_songs,
-            add_local_song
+            add_local_song,
+            delete_downloaded_song
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
