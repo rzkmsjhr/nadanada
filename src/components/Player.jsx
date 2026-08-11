@@ -3,7 +3,7 @@ import YouTube from 'react-youtube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 
-export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError }) {
+export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden }) {
   const playerRef = useRef(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -14,6 +14,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+
 
   useEffect(() => {
     if (currentSong) {
@@ -166,17 +167,34 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden' }}>
-        <div style={{ 
-          width: '100%', 
-          height: 'auto', 
-          maxHeight: '100%', 
-          aspectRatio: '16 / 9', 
-          position: 'relative', 
-          background: '#000', 
-          borderRadius: '12px', 
-          overflow: 'hidden' 
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+      {/* Video area wrapper — must be a sized flex container so height:100% resolves on child */}
+      <div style={{ flex: 1, height: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden' }}>
+        <div style={isMaximized ? {
+          /* Maximized: size height-first so aspect-ratio computes width from available height.
+             This prevents the box ever being wider than 16:9, killing side black bars. */
+          height: '100%',
+          width: 'auto',
+          maxWidth: '100%',
+          aspectRatio: '16 / 9',
+          position: 'relative',
+          background: '#000',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          opacity: isVideoHidden ? 0 : 1,
+          transition: 'opacity 0.15s ease',
+        } : {
+          /* Default (normal window): size width-first, constrained by available height */
+          width: '100%',
+          height: 'auto',
+          maxHeight: '100%',
+          aspectRatio: '16 / 9',
+          position: 'relative',
+          background: '#000',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          opacity: isVideoHidden ? 0 : 1,
+          transition: 'opacity 0.15s ease',
         }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
