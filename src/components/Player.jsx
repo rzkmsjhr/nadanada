@@ -47,6 +47,61 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
     return () => clearInterval(interval);
   }, [isPlaying, isDragging, currentSong]);
 
+  // --- Media Session API Integration for SMTC ---
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      if (currentSong) {
+        let title = currentSong.title;
+        let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic/i, '').trim() : 'Unknown Artist';
+        
+        const parts = currentSong.title.split('-');
+        if (parts.length > 1 && (!currentSong.channel || currentSong.channel.toLowerCase().includes('topic'))) {
+            artist = parts[0].trim();
+            title = parts.slice(1).join('-').trim();
+        }
+
+        title = title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
+
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: title || currentSong.title,
+          artist: artist,
+          artwork: currentSong.thumbnail ? [
+            { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' }
+          ] : []
+        });
+      } else {
+        navigator.mediaSession.metadata = null;
+      }
+    }
+  }, [currentSong]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  }, [isPlaying]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator && currentSong && duration > 0) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: 1.0,
+          position: currentTime
+        });
+      } catch (e) {}
+    }
+  }, [currentTime, duration, currentSong]);
+
+  useEffect(() => {
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.setActionHandler('play', togglePlay);
+      navigator.mediaSession.setActionHandler('pause', togglePlay);
+      navigator.mediaSession.setActionHandler('previoustrack', hasPrevious ? () => onPrevious() : null);
+      navigator.mediaSession.setActionHandler('nexttrack', hasNext ? () => onNext() : null);
+    }
+  });
+
   const onReady = (event) => {
     playerRef.current = event.target;
     event.target.setVolume(isMuted ? 0 : masterVolume);
@@ -174,15 +229,13 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: isMaximized ? 1 : 'none', overflow: 'hidden', minHeight: 0 }}>
       {/* Video area wrapper — must be a sized flex container so height:100% resolves on child */}
-      <div style={{ flex: 1, height: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ flex: isMaximized ? 1 : 'none', height: isMaximized ? 0 : 'auto', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden', containerType: isMaximized ? 'size' : 'normal' }}>
         <div style={isMaximized ? {
-          /* Maximized: size height-first so aspect-ratio computes width from available height.
-             This prevents the box ever being wider than 16:9, killing side black bars. */
-          height: '100%',
-          width: 'auto',
-          maxWidth: '100%',
+          /* Maximized: Use container queries to guarantee exact 16:9 fit within the parent without black bars */
+          width: '100cqw',
+          maxWidth: 'calc(100cqh * (16 / 9))',
           aspectRatio: '16 / 9',
           position: 'relative',
           background: '#000',
@@ -191,10 +244,9 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
           opacity: isVideoHidden ? 0 : 1,
           transition: 'opacity 0.15s ease',
         } : {
-          /* Default (normal window): size width-first, constrained by available height */
+          /* Default (normal window): stretch to 100% width and maintain exactly 16:9 height natively */
           width: '100%',
           height: 'auto',
-          maxHeight: '100%',
           aspectRatio: '16 / 9',
           position: 'relative',
           background: '#000',

@@ -19,7 +19,7 @@ const parseDuration = (durationStr) => {
 };
 
 const basePanelStyle = { margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px' };
-const topPanelStyle = { ...basePanelStyle, position: 'relative' };
+const topPanelStyle = { ...basePanelStyle, position: 'relative', flex: 'none' };
 const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 };
 
 const staticStyles = {
@@ -956,7 +956,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           <div style={isMaximized ? {
             flex: 1, display: 'flex', flexDirection: 'column',
             padding: '16px', minHeight: 0, overflow: 'hidden',
-          } : { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+          } : { display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Player
               currentSong={currentSong}
               nextSong={playlist[currentIndex + 1]}
