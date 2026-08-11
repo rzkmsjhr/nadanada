@@ -484,7 +484,7 @@ function App() {
           const existingIds = new Set(playlist.map(s => s.id));
           const existingWordSets = playlist.map(s => getWords(s));
           
-          const available = results.filter(v => {
+          let available = results.filter(v => {
             if (existingIds.has(v.id)) return false;
             
             const vWords = getWords(v);
@@ -495,6 +495,33 @@ function App() {
             }
             return true;
           });
+          
+          if (available.length === 0) {
+            console.log("Primary mix empty or all duplicates. Attempting fallback...");
+            try {
+              let cleanArtist = current.channel ? current.channel.replace(/- topic/i, '').replace(/vevo/i, '').trim() : '';
+              let fallbackQuery = cleanArtist ? `${cleanArtist} songs` : `${current.title} cover`;
+              
+              let fallbackResults = await invoke('search_youtube', { query: fallbackQuery });
+              available = fallbackResults.filter(v => {
+                if (existingIds.has(v.id)) return false;
+                const vWords = getWords(v);
+                for (let existingSet of existingWordSets) {
+                  if (calculateSimilarity(vWords, existingSet) > 0.55) return false;
+                }
+                return true;
+              });
+
+              if (available.length === 0 && playlist.length > 1) {
+                 // Final fallback: try mixing from the previous song
+                 const prevSong = playlist[currentIndex - 1];
+                 const prevResults = await invoke('get_youtube_mix', { videoId: prevSong.id });
+                 available = prevResults.filter(v => !existingIds.has(v.id));
+              }
+            } catch (fallbackErr) {
+              console.error("Endless play fallback failed:", fallbackErr);
+            }
+          }
           
           if (available.length > 0) {
             let finalPicked = null;
