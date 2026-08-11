@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2 } from 'lucide-react';
-import { convertFileSrc } from '@tauri-apps/api/core';
+import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden }) {
   const playerRef = useRef(null);
@@ -14,10 +14,14 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-
+  
+  const [streamUrl, setStreamUrl] = useState(null);
+  const [isExtractingStream, setIsExtractingStream] = useState(false);
 
   useEffect(() => {
     if (currentSong) {
+      setStreamUrl(null);
+      setIsExtractingStream(false);
       setIsBuffering(true);
     } else {
       setIsBuffering(false);
@@ -74,7 +78,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   };
 
   const togglePlay = () => {
-    if (currentSong && currentSong.is_local) {
+    if (currentSong && (currentSong.is_local || streamUrl)) {
       const audioEl = document.getElementById('local-audio-player');
       if (audioEl) {
         if (isPlaying) audioEl.pause();
@@ -93,7 +97,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
-    if (currentSong && currentSong.is_local) {
+    if (currentSong && (currentSong.is_local || streamUrl)) {
       const audioEl = document.getElementById('local-audio-player');
       if (audioEl) audioEl.muted = !isMuted;
       return;
@@ -109,15 +113,18 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   };
 
   const handleVolumeChange = (e) => {
-    const val = Number(e.target.value);
+    const val = parseInt(e.target.value);
     setMasterVolume(val);
-    if (val > 0) setIsMuted(false);
+    if (isMuted) {
+      setIsMuted(false);
+      if (playerRef.current) playerRef.current.unMute();
+    }
     
-    if (currentSong && currentSong.is_local) {
+    if (currentSong && (currentSong.is_local || streamUrl)) {
       const audioEl = document.getElementById('local-audio-player');
       if (audioEl) {
+        audioEl.muted = false;
         audioEl.volume = val / 100;
-        if (val > 0) audioEl.muted = false;
       }
       return;
     }
@@ -131,7 +138,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
 
   const handleSeekMouseUp = (e) => {
     setIsDragging(false);
-    if (currentSong && currentSong.is_local) {
+    if (currentSong && (currentSong.is_local || streamUrl)) {
       const audioEl = document.getElementById('local-audio-player');
       if (audioEl) {
         audioEl.currentTime = Number(e.target.value);
@@ -162,6 +169,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
+      origin: 'https://127.0.0.1.nip.io'
     },
   };
 
@@ -197,36 +205,53 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
         }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
-            {currentSong && !currentSong.is_local && (
+            {currentSong && !currentSong.is_local && !streamUrl && (
               <YouTube
                 videoId={currentSong.id}
                 opts={opts}
                 onReady={onReady}
                 onStateChange={onStateChange}
-                onError={(e) => {
+                onError={async (e) => {
                   console.error("YouTube Error:", e);
-                  // Some videos block embedding. Auto-skip to the next track if possible.
-                  if (hasNext) {
-                    onNext();
-                  } else {
-                    setIsPlaying(false);
-                    if (onPlayStateChange) onPlayStateChange(false);
-                    if (onError) onError("Failed to stream track from YouTube. Some tracks block embedding.");
+                  // Error codes 101/150 mean embedding is disabled. Fallback to extracting the raw stream!
+                  if (!streamUrl && !isExtractingStream) {
+                    setIsExtractingStream(true);
+                    try {
+                      const url = await invoke('get_stream_url', { videoId: currentSong.id });
+                      setStreamUrl(url);
+                    } catch (err) {
+                      console.error("Stream extraction fallback failed:", err);
+                      if (hasNext) {
+                        onNext();
+                      } else {
+                        setIsPlaying(false);
+                        if (onPlayStateChange) onPlayStateChange(false);
+                        if (onError) onError("Failed to stream track from YouTube. Some tracks block embedding.");
+                      }
+                    } finally {
+                      setIsExtractingStream(false);
+                    }
                   }
                 }}
                 style={{ width: '100%', height: '100%' }}
                 iframeClassName="youtube-iframe"
               />
             )}
-            {currentSong && currentSong.is_local && (
+            {isExtractingStream && (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(0,0,0,0.5)' }}>
+                <Loader2 className="spinning" style={{ color: 'var(--accent-color)', marginBottom: '16px' }} size={40} />
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Bypassing embed block...</div>
+              </div>
+            )}
+            {currentSong && (currentSong.is_local || streamUrl) && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Playing Offline</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{currentSong.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
                   id="local-audio-player"
-                  src={convertFileSrc(currentSong.file_path)}
+                  src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : streamUrl}
                   autoPlay
                   onPlay={() => { setIsPlaying(true); setIsBuffering(false); if (onPlayStateChange) onPlayStateChange(true); }}
                   onPause={() => { setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}

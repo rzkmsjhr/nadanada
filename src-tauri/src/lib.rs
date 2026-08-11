@@ -216,6 +216,42 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
 }
 
 #[tauri::command]
+async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<String, String> {
+    use tauri::Manager;
+    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    
+    let data_dir = app.path().local_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let exe_path = data_dir.join("yt-dlp.exe");
+    
+    // Ensure yt-dlp exists (it should be downloaded by the existing setup logic)
+    if !exe_path.exists() {
+        return Err("yt-dlp not found. Please wait for the initial setup to complete.".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    use std::os::windows::process::CommandExt;
+
+    // Get the direct audio stream URL using yt-dlp (-g / --get-url)
+    let mut cmd = std::process::Command::new(exe_path);
+    cmd.arg("-g").arg("-f").arg("bestaudio").arg(&url);
+
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        let stream_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !stream_url.is_empty() {
+            return Ok(stream_url);
+        }
+    }
+    
+    let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
+    Err(format!("yt-dlp failed to extract stream: {}", err_msg))
+}
+
+#[tauri::command]
 async fn get_youtube_playlist(
     playlist_id: String,
     first_video_id: String,
@@ -1072,7 +1108,8 @@ pub fn run() {
             download_song,
             get_downloaded_songs,
             add_local_song,
-            delete_downloaded_song
+            delete_downloaded_song,
+            get_stream_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
