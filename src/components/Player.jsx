@@ -162,7 +162,6 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
-      origin: window.location.origin,
     },
   };
 
