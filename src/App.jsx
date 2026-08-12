@@ -134,6 +134,11 @@ function App() {
   const [downloadedSongs, setDownloadedSongs] = useState([]);
   const [downloadingSongId, setDownloadingSongId] = useState(null);
   
+  // Playback control states
+  const [repeatMode, setRepeatMode] = useState(0); // 0=off, 1=repeat, 2=repeat once
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [shuffleHistory, setShuffleHistory] = useState([]);
+  
   // Derive Set so it maintains a stable reference unless the actual song IDs change
   const downloadedIdsStr = downloadedSongs.map(s => s.id).sort().join(',');
   const downloadedIds = useMemo(() => new Set(downloadedSongs.map(s => s.id)), [downloadedIdsStr]);
@@ -805,14 +810,35 @@ function App() {
 
 
   const handleNext = () => {
-    if (currentIndex < playlist.length - 1) {
-      setCurrentIndex(currentIndex + 1);
+    if (isShuffle) {
+      if (playlist.length <= 1) return;
+      let nextIdx;
+      do {
+         nextIdx = Math.floor(Math.random() * playlist.length);
+      } while (nextIdx === currentIndex);
+      setShuffleHistory(prev => [...prev, currentIndex]);
+      setCurrentIndex(nextIdx);
+    } else {
+      if (currentIndex < playlist.length - 1) {
+        setCurrentIndex(currentIndex + 1);
+      }
     }
   };
 
   const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex(currentIndex - 1);
+    if (isShuffle) {
+      if (shuffleHistory.length > 0) {
+         const newHistory = [...shuffleHistory];
+         const prevIdx = newHistory.pop();
+         setShuffleHistory(newHistory);
+         setCurrentIndex(prevIdx);
+      } else {
+         if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+      }
+    } else {
+      if (currentIndex > 0) {
+        setCurrentIndex(currentIndex - 1);
+      }
     }
   };
 
@@ -1104,13 +1130,22 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               nextSong={playlist[currentIndex + 1]}
               onNext={handleNext}
               onPrevious={handlePrevious}
-              hasNext={currentIndex < playlist.length - 1}
-              hasPrevious={currentIndex > 0}
+              hasNext={isShuffle || (currentIndex < playlist.length - 1)}
+              hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0}
               onPlayStateChange={setIsAudioPlaying}
               onTimeUpdate={setCurrentTime}
               onError={setGlobalError}
               isMaximized={isMaximized}
               isVideoHidden={isVideoHidden}
+              repeatMode={repeatMode}
+              onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)}
+              isShuffle={isShuffle}
+              onToggleShuffle={() => {
+                const newVal = !isShuffle;
+                setIsShuffle(newVal);
+                if (newVal) setIsEndlessPlay(false);
+              }}
+              onSongEnded={handleNext}
             />
           </div>
         </div>
@@ -1179,7 +1214,11 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                   <div style={staticStyles.separator} />
                   <button
                     className={`btn btn-icon ${isEndlessPlay ? 'active' : ''}`}
-                    onClick={() => setIsEndlessPlay(!isEndlessPlay)}
+                    onClick={() => {
+                      const newVal = !isEndlessPlay;
+                      setIsEndlessPlay(newVal);
+                      if (newVal) setIsShuffle(false);
+                    }}
                     title="Endless Play"
                     style={{ padding: '6px', color: isEndlessPlay ? 'var(--accent-color)' : 'inherit' }}
                   >

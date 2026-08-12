@@ -1,9 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
 import YouTube from 'react-youtube';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
-export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden }) {
+export default function Player({ 
+  currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
+  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded
+}) {
   const playerRef = useRef(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
@@ -17,12 +20,13 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   
   const [streamUrl, setStreamUrl] = useState(null);
   const [isExtractingStream, setIsExtractingStream] = useState(false);
+  
+  // Track how many times this specific song has repeated for 'repeat once' mode
+  const [playCount, setPlayCount] = useState(0);
 
   useEffect(() => {
     let timeout;
     if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
-      // Only trigger fallback if it's stuck buffering at the very beginning (indicating a blocked video).
-      // If they are buffering mid-song (currentTime > 0), it's just slow internet, so we wait indefinitely.
       if (currentTime < 1) {
         timeout = setTimeout(() => {
           console.warn("YouTube iframe stuck buffering for 15s at start. Triggering fallback.");
@@ -56,11 +60,13 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
+      setPlayCount(0); // Reset repeat counter for new song
     } else {
       setIsBuffering(false);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
+      setPlayCount(0);
     }
   }, [currentSong]);
 
@@ -144,6 +150,57 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
     event.target.setVolume(isMuted ? 0 : masterVolume);
   };
 
+  const handleTrackEnd = () => {
+    if (repeatMode === 1) {
+      // Repeat infinitely: just seek to 0 and play again
+      setCurrentTime(0);
+      if (onTimeUpdate) onTimeUpdate(0);
+      
+      if (streamUrl || (currentSong && currentSong.is_local)) {
+        const audioEl = document.getElementById('local-audio-player');
+        if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
+      } else if (playerRef.current) {
+        playerRef.current.seekTo(0, true);
+        playerRef.current.playVideo();
+      }
+    } else if (repeatMode === 2) {
+      // Repeat once: play twice in total
+      if (playCount < 1) {
+        setPlayCount(1);
+        setCurrentTime(0);
+        if (onTimeUpdate) onTimeUpdate(0);
+        
+        if (streamUrl || (currentSong && currentSong.is_local)) {
+          const audioEl = document.getElementById('local-audio-player');
+          if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
+        } else if (playerRef.current) {
+          playerRef.current.seekTo(0, true);
+          playerRef.current.playVideo();
+        }
+      } else {
+        // Already played twice, move to next
+        setIsPlaying(false);
+        setIsBuffering(false);
+        if (onPlayStateChange) onPlayStateChange(false);
+        setCurrentTime(0);
+        if (onTimeUpdate) onTimeUpdate(0);
+        
+        if (onSongEnded) onSongEnded();
+        else if (hasNext) onNext();
+      }
+    } else {
+      // Normal playback: move to next
+      setIsPlaying(false);
+      setIsBuffering(false);
+      if (onPlayStateChange) onPlayStateChange(false);
+      setCurrentTime(0);
+      if (onTimeUpdate) onTimeUpdate(0);
+      
+      if (onSongEnded) onSongEnded();
+      else if (hasNext) onNext();
+    }
+  };
+
   const onStateChange = (event) => {
     if (event.data === 1) { // PLAYING
       setIsPlaying(true);
@@ -154,12 +211,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(false);
     } else if (event.data === 0) { // ENDED
-      setIsPlaying(false);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(false);
-      setCurrentTime(0);
-      if (onTimeUpdate) onTimeUpdate(0);
-      if (hasNext) onNext();
+      handleTrackEnd();
     } else if (event.data === 3) { // BUFFERING
       setIsBuffering(true);
     } else if (event.data === 5 || event.data === -1) {
@@ -345,12 +397,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
                   autoPlay
                   onPlay={() => { setIsPlaying(true); setIsBuffering(false); if (onPlayStateChange) onPlayStateChange(true); }}
                   onPause={() => { setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
-                  onEnded={() => {
-                    setIsPlaying(false);
-                    setCurrentTime(0);
-                    if (onTimeUpdate) onTimeUpdate(0);
-                    if (hasNext) onNext();
-                  }}
+                  onEnded={handleTrackEnd}
                   onTimeUpdate={(e) => {
                     if (!isDragging) {
                       setCurrentTime(e.target.currentTime);
@@ -413,15 +460,29 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+            <button 
+              className="btn btn-icon" 
+              onClick={onToggleShuffle} 
+              style={{ color: isShuffle ? 'var(--accent-color)' : 'var(--text-muted)' }}
+            >
+              <Shuffle size={20} />
+            </button>
             <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious}>
               <SkipBack size={24} />
             </button>
-            <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong || isBuffering} style={{ padding: '12px' }}>
+            <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong || isBuffering} style={{ padding: '10px' }}>
               {isBuffering ? <Loader2 size={24} className="animate-spin" /> : (isPlaying ? <Pause size={24} /> : <Play size={24} />)}
             </button>
             <button className="btn btn-icon" onClick={onNext} disabled={!hasNext}>
               <SkipForward size={24} />
+            </button>
+            <button 
+              className="btn btn-icon" 
+              onClick={onToggleRepeat} 
+              style={{ color: repeatMode > 0 ? 'var(--accent-color)' : 'var(--text-muted)' }}
+            >
+              {repeatMode === 2 ? <Repeat1 size={20} /> : <Repeat size={20} />}
             </button>
           </div>
 
