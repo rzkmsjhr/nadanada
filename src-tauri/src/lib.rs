@@ -222,8 +222,8 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
 }
 
 #[tauri::command]
-async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<String, String> {
-    use tauri::Manager;
+async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<String, String> {
+
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
     
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
