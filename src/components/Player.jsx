@@ -67,7 +67,8 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   // Time tracking
   useEffect(() => {
     let interval;
-    if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local)) {
+    // Do not poll the YouTube player if we are using the local audio fallback (streamUrl is set)
+    if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local) && !streamUrl) {
       interval = setInterval(async () => {
         if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
           try {
@@ -81,7 +82,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isDragging, currentSong]);
+  }, [isPlaying, isDragging, currentSong, streamUrl]);
 
   // --- Media Session API Integration for SMTC ---
   useEffect(() => {
