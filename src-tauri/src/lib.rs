@@ -50,7 +50,10 @@ async fn search_youtube(
         query.push_str(" topic");
         format!("https://www.youtube.com/results?search_query={}", query)
     };
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -139,7 +142,10 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
         "https://www.youtube.com/watch?v={}&list=RD{}",
         video_id, video_id
     );
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -253,7 +259,7 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
     let output = match output_result {
         Ok(Ok(out)) => out,
         Ok(Err(e)) => return Err(e.to_string()),
-        Err(_) => return Err("Stream extraction timed out after 10 seconds".to_string()),
+        Err(_) => return Err("Stream extraction timed out after 30 seconds".to_string()),
     };
 
     if output.status.success() {
@@ -276,7 +282,10 @@ struct SpotifyTrack {
 #[tauri::command]
 async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrack>, String> {
     let url = format!("https://open.spotify.com/embed/playlist/{}", playlist_id);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
@@ -320,7 +329,10 @@ async fn get_youtube_playlist(
         "https://www.youtube.com/watch?v={}&list={}",
         first_video_id, playlist_id
     );
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")

@@ -78,6 +78,11 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
     e.preventDefault();
     if (!query.trim()) return;
     
+    if (!navigator.onLine) {
+      onError("No internet connection.");
+      return;
+    }
+    
     setIsSearching(true);
     try {
       const videos = await invoke('search_youtube', { query, searchType });
@@ -95,6 +100,12 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
       onError("Cannot fetch playlist without a starting video.");
       return;
     }
+    
+    if (!navigator.onLine) {
+      onError("No internet connection.");
+      return;
+    }
+    
     setLoadingAlbumId(album.id);
     try {
       let tracks = await invoke('get_youtube_playlist', { 

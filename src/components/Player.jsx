@@ -24,6 +24,27 @@ export default function Player({
   // Track how many times this specific song has repeated for 'repeat once' mode
   const [playCount, setPlayCount] = useState(0);
 
+  const stallTimeoutRef = useRef(null);
+
+  const handleStallStart = () => {
+    setIsBuffering(true);
+    if (currentSong && !currentSong.is_local && !stallTimeoutRef.current) {
+      stallTimeoutRef.current = setTimeout(() => {
+        console.warn("Audio stream stalled for 10s. Skipping.");
+        if (hasNext) onNext();
+        else if (onError) onError("Stream stalled and failed to recover.");
+      }, 10000);
+    }
+  };
+
+  const handleStallClear = () => {
+    setIsBuffering(false);
+    if (stallTimeoutRef.current) {
+      clearTimeout(stallTimeoutRef.current);
+      stallTimeoutRef.current = null;
+    }
+  };
+
   useEffect(() => {
     let timeout;
     if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
@@ -53,6 +74,10 @@ export default function Player({
   }, [isBuffering, streamUrl, isExtractingStream, currentSong, currentTime]);
 
   useEffect(() => {
+    if (stallTimeoutRef.current) {
+      clearTimeout(stallTimeoutRef.current);
+      stallTimeoutRef.current = null;
+    }
     if (currentSong) {
       setStreamUrl(null);
       setIsExtractingStream(false);
@@ -395,7 +420,7 @@ export default function Player({
                   id="local-audio-player"
                   src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : streamUrl}
                   autoPlay
-                  onPlay={() => { setIsPlaying(true); setIsBuffering(false); if (onPlayStateChange) onPlayStateChange(true); }}
+                  onPlay={() => { setIsPlaying(true); handleStallClear(); if (onPlayStateChange) onPlayStateChange(true); }}
                   onPause={() => { setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
                   onEnded={handleTrackEnd}
                   onTimeUpdate={(e) => {
@@ -411,10 +436,12 @@ export default function Player({
                   onError={(e) => {
                     console.error("Local audio error", e);
                     if (onError) onError("Failed to play local audio file.");
-                    setIsBuffering(false);
+                    handleStallClear();
                   }}
-                  onWaiting={() => setIsBuffering(true)}
-                  onCanPlay={() => setIsBuffering(false)}
+                  onWaiting={handleStallStart}
+                  onStalled={handleStallStart}
+                  onCanPlay={handleStallClear}
+                  onPlaying={handleStallClear}
                 />
               </div>
             )}

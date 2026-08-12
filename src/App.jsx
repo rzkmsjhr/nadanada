@@ -166,7 +166,14 @@ function App() {
   useEffect(() => {
     loadDownloadedSongs();
     const interval = setInterval(loadDownloadedSongs, 5000);
-    return () => clearInterval(interval);
+    
+    const handleOnline = () => window.location.reload();
+    window.addEventListener('online', handleOnline);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   const handleDownloadSong = async (song) => {
@@ -448,6 +455,11 @@ function App() {
   useEffect(() => {
     if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless && !failedEndlessFetch) {
       const fetchNext = async () => {
+        if (!navigator.onLine) {
+          setFailedEndlessFetch(true);
+          setGlobalError("No internet connection.");
+          return;
+        }
         setIsFetchingEndless(true);
         try {
           const current = playlist[currentIndex];
@@ -628,9 +640,11 @@ function App() {
   }, [currentIndex]);
 
   const handleLoadTrending = async (region) => {
+    if (!navigator.onLine) {
+      setGlobalError("No internet connection.");
+      return;
+    }
     setShowTrendingDropdown(false);
-    setShowSearch(false);
-    if (isFetchingTrending) return;
     setIsFetchingTrending(true);
     try {
       const query = region === 'global' ? 'Top 50 Spotify Global' : 'Top 50 Spotify Indonesia';
@@ -664,9 +678,14 @@ function App() {
   };
 
   const handleImportPlaylist = async () => {
+    if (!navigator.onLine) {
+      setGlobalError("No internet connection.");
+      return;
+    }
     if (!importUrl.trim() || isImporting) return;
     
     setIsImporting(true);
+    setImportProgress('');
     let errorMsg = null;
     try {
       const urlStr = importUrl.trim();
