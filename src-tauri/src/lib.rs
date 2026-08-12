@@ -222,11 +222,21 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
     
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     data_dir.push("NadaNada");
+    if !data_dir.exists() {
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    }
     let exe_path = data_dir.join("yt-dlp.exe");
     
-    // Ensure yt-dlp exists (it should be downloaded by the existing setup logic)
     if !exe_path.exists() {
-        return Err("yt-dlp not found. Please wait for the initial setup to complete.".to_string());
+        println!("yt-dlp not found, downloading now...");
+        let bytes =
+            reqwest::get("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe")
+                .await
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+        std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
     }
 
 
