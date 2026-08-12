@@ -33,3 +33,4 @@ dist-ssr
 testSearch.cjs
 ytData.json
 scratch/
+src-tauri/Cargo.lock
