@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle, ListPlus } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -177,10 +177,10 @@ function App() {
       let title = song.title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
       let artist = '';
       
-      const parts = title.split('-');
+      const parts = title.split(' - ');
       if (parts.length > 1) {
           artist = parts[0].trim();
-          title = parts[1].trim();
+          title = parts.slice(1).join(' - ').trim();
       } else {
           artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
       }
@@ -217,6 +217,8 @@ function App() {
   const [importUrl, setImportUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState('');
+  const [songToAddToPlaylist, setSongToAddToPlaylist] = useState(null);
+  const [addToPlaylistName, setAddToPlaylistName] = useState('');
   const [savePlaylistName, setSavePlaylistName] = useState('');
   const [savedPlaylists, setSavedPlaylists] = useState(() => {
     try {
@@ -1302,6 +1304,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 onDownloadSong={handleDownloadSong}
                 downloadingSongId={downloadingSongId}
                 downloadedIds={downloadedIds}
+                onAddToSavedPlaylist={(song) => setSongToAddToPlaylist(song)}
               />
             )}
           </div>
@@ -1519,6 +1522,91 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
         </div>
       )}
 
+
+      {songToAddToPlaylist && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ width: '90%', maxWidth: '400px' }}>
+            <div className="modal-icon-container">
+              <ListPlus className="modal-icon" />
+            </div>
+            <h3 className="modal-title">Add to Playlist</h3>
+            <div style={{ width: '100%', marginTop: '16px' }}>
+              {savedPlaylists.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto', marginBottom: '16px', paddingRight: '8px' }}>
+                  {savedPlaylists.map(pl => (
+                    <button
+                      key={pl.id}
+                      className="btn"
+                      style={{ padding: '12px', textAlign: 'left', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                      onClick={() => {
+                        setSavedPlaylists(prev => prev.map(p => {
+                          if (p.id === pl.id) {
+                            if (p.items.some(s => s.id === songToAddToPlaylist.id)) return p;
+                            return { ...p, items: [...p.items, songToAddToPlaylist] };
+                          }
+                          return p;
+                        }));
+                        setSongToAddToPlaylist(null);
+                        setSuccessMessage(`Added to ${pl.name}`);
+                      }}
+                    >
+                      <span style={{ fontWeight: '600' }}>{pl.name}</span>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pl.items.length} songs</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              <div style={{ borderTop: '1px solid var(--panel-border)', paddingTop: '16px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>Create New Playlist</div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="input"
+                    value={addToPlaylistName}
+                    onChange={(e) => setAddToPlaylistName(e.target.value)}
+                    placeholder="Playlist name..."
+                    style={{ flex: 1 }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && addToPlaylistName.trim()) {
+                        setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: addToPlaylistName.trim(), items: [songToAddToPlaylist] }]);
+                        setAddToPlaylistName('');
+                        setSongToAddToPlaylist(null);
+                        setSuccessMessage(`Created and added to ${addToPlaylistName.trim()}`);
+                      }
+                    }}
+                  />
+                  <button
+                    className="btn btn-primary"
+                    disabled={!addToPlaylistName.trim()}
+                    onClick={() => {
+                      setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: addToPlaylistName.trim(), items: [songToAddToPlaylist] }]);
+                      setAddToPlaylistName('');
+                      setSongToAddToPlaylist(null);
+                      setSuccessMessage(`Created and added to ${addToPlaylistName.trim()}`);
+                    }}
+                  >
+                    Create
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="modal-actions" style={{ marginTop: '24px' }}>
+              <button 
+                onClick={() => {
+                  setSongToAddToPlaylist(null);
+                  setAddToPlaylistName('');
+                }}
+                className="btn btn-secondary btn-large"
+                style={{ width: '100%' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {globalError && (
         <div className="modal-overlay">

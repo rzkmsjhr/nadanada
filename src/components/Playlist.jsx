@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { Trash2, GripVertical, Plus, Check, Download, Loader2 } from 'lucide-react';
+import { Trash2, GripVertical, Plus, Check, Download, Loader2, ListPlus } from 'lucide-react';
 
-const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove }) => {
+const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const textRef = useRef(null);
@@ -116,6 +116,20 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           )
         )}
 
+        {!isTrendingMode && !isDownloadedView && onAddToSavedPlaylist && (
+          <button 
+            className="btn btn-icon" 
+            style={{ border: 'none' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddToSavedPlaylist(song);
+            }}
+            title="Add to a saved playlist"
+          >
+            <ListPlus size={18} style={{ color: 'var(--accent-color)' }} />
+          </button>
+        )}
+
         <button 
           className="btn btn-icon" 
           style={{ border: 'none' }}
@@ -132,7 +146,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   );
 });
 
-export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
 
@@ -201,6 +215,7 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
                downloadingSongId={downloadingSongId}
                downloadedIds={downloadedIds}
                onRemove={onRemove}
+               onAddToSavedPlaylist={onAddToSavedPlaylist}
             />
           );
         })}
