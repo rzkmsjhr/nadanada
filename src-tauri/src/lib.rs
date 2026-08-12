@@ -220,7 +220,8 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
     use tauri::Manager;
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
     
-    let data_dir = app.path().local_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    data_dir.push("NadaNada");
     let exe_path = data_dir.join("yt-dlp.exe");
     
     // Ensure yt-dlp exists (it should be downloaded by the existing setup logic)
@@ -228,17 +229,22 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
         return Err("yt-dlp not found. Please wait for the initial setup to complete.".to_string());
     }
 
-    #[cfg(target_os = "windows")]
-    use std::os::windows::process::CommandExt;
+
 
     // Get the direct audio stream URL using yt-dlp (-g / --get-url)
-    let mut cmd = std::process::Command::new(exe_path);
+    let mut cmd = tokio::process::Command::new(exe_path);
     cmd.arg("-g").arg("-f").arg("bestaudio").arg(&url);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-    let output = cmd.output().map_err(|e| e.to_string())?;
+    let output_result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
+    
+    let output = match output_result {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(e.to_string()),
+        Err(_) => return Err("Stream extraction timed out after 10 seconds".to_string()),
+    };
 
     if output.status.success() {
         let stream_url = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -249,6 +255,50 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
     
     let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
     Err(format!("yt-dlp failed to extract stream: {}", err_msg))
+}
+
+#[derive(serde::Serialize)]
+struct SpotifyTrack {
+    query: String,
+    duration_ms: u64,
+}
+
+#[tauri::command]
+async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrack>, String> {
+    let url = format!("https://open.spotify.com/embed/playlist/{}", playlist_id);
+    let client = reqwest::Client::new();
+    let res = client.get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let text = res.text().await.map_err(|e| e.to_string())?;
+    
+    let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+    if let Some(caps) = re.captures(&text) {
+        let json_str = &caps[1];
+        let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
+        
+        let mut queries = Vec::new();
+        if let Some(track_list) = v.pointer("/props/pageProps/state/data/entity/trackList").and_then(|v| v.as_array()) {
+            for track in track_list {
+                let title = track.get("title").and_then(|t| t.as_str()).unwrap_or("");
+                let artist = track.get("subtitle").and_then(|a| a.as_str()).unwrap_or("");
+                let duration_ms = track.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
+                if !title.is_empty() {
+                    queries.push(SpotifyTrack {
+                        query: format!("{} {}", title, artist).trim().to_string(),
+                        duration_ms,
+                    });
+                }
+            }
+        }
+        return Ok(queries);
+    }
+    
+    Err("Could not parse Spotify playlist data".to_string())
 }
 
 #[tauri::command]
@@ -1103,6 +1153,7 @@ pub fn run() {
             search_youtube,
             get_youtube_mix,
             get_youtube_playlist,
+            get_spotify_playlist,
             quit_app,
             scrape_chords,
             download_song,

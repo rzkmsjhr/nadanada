@@ -19,12 +19,48 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
   const [isExtractingStream, setIsExtractingStream] = useState(false);
 
   useEffect(() => {
+    let timeout;
+    if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
+      // Only trigger fallback if it's stuck buffering at the very beginning (indicating a blocked video).
+      // If they are buffering mid-song (currentTime > 0), it's just slow internet, so we wait indefinitely.
+      if (currentTime < 1) {
+        timeout = setTimeout(() => {
+          console.warn("YouTube iframe stuck buffering for 15s at start. Triggering fallback.");
+          setIsExtractingStream(true);
+          invoke('get_stream_url', { videoId: currentSong.id })
+            .then(url => {
+              setStreamUrl(url);
+              setIsExtractingStream(false);
+            })
+            .catch(err => {
+              console.error("Stream extraction fallback failed:", err);
+              setIsExtractingStream(false);
+              if (hasNext) onNext();
+              else {
+                setIsPlaying(false);
+                if (onPlayStateChange) onPlayStateChange(false);
+                if (onError) onError("Failed to stream track from YouTube.");
+              }
+            });
+        }, 15000); // 15 seconds to be safe for slow connections
+      }
+    }
+    return () => clearTimeout(timeout);
+  }, [isBuffering, streamUrl, isExtractingStream, currentSong, currentTime]);
+
+  useEffect(() => {
     if (currentSong) {
       setStreamUrl(null);
       setIsExtractingStream(false);
       setIsBuffering(true);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
     } else {
       setIsBuffering(false);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
     }
   }, [currentSong]);
 
@@ -259,6 +295,7 @@ export default function Player({ currentSong, onNext, onPrevious, hasNext, hasPr
           <div style={{ position: 'absolute', inset: 0 }}>
             {currentSong && !currentSong.is_local && !streamUrl && (
               <YouTube
+                key={currentSong.id}
                 videoId={currentSong.id}
                 opts={opts}
                 onReady={onReady}

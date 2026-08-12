@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Player from './components/Player';
 import Search from './components/Search';
 import Playlist from './components/Playlist';
-import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download } from 'lucide-react';
+import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -209,6 +209,9 @@ function App() {
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState('');
   const [savePlaylistName, setSavePlaylistName] = useState('');
   const [savedPlaylists, setSavedPlaylists] = useState(() => {
     try {
@@ -653,6 +656,154 @@ function App() {
     }
   };
 
+  const handleImportPlaylist = async () => {
+    if (!importUrl.trim() || isImporting) return;
+    
+    setIsImporting(true);
+    let errorMsg = null;
+    try {
+      const urlStr = importUrl.trim();
+      if (urlStr.includes('youtube.com/playlist') || urlStr.includes('youtube.com/watch')) {
+        // Extract list ID
+        const match = urlStr.match(/[?&]list=([^&]+)/);
+        if (match && match[1]) {
+          const playlistId = match[1];
+          const songs = await invoke('get_youtube_playlist', { playlistId, firstVideoId: '' });
+          if (songs && songs.length > 0) {
+            handleAddMultiple(songs);
+            setSuccessMessage(`Imported ${songs.length} songs from YouTube playlist.`);
+            setImportUrl('');
+          } else {
+            errorMsg = "Could not find any songs in this YouTube playlist. It might be private or empty.";
+          }
+        } else {
+          errorMsg = "Invalid YouTube playlist URL.";
+        }
+      } else if (urlStr.includes('spotify.com/playlist/')) {
+        // Extract Spotify playlist ID
+        const match = urlStr.match(/playlist\/([a-zA-Z0-9]+)/);
+        if (match && match[1]) {
+          const playlistId = match[1];
+          const spotifyTracks = await invoke('get_spotify_playlist', { playlistId });
+          if (spotifyTracks && spotifyTracks.length > 0) {
+            const importedSongs = [];
+            const failedSongs = [];
+            
+            for (let i = 0; i < spotifyTracks.length; i++) {
+              const track = spotifyTracks[i];
+              setImportProgress(`Checking ${i + 1}/${spotifyTracks.length}...`);
+              try {
+                const results = await invoke('search_youtube', { query: track.query, searchType: null });
+                if (results && results.length > 0) {
+                  const spotifyDur = track.duration_ms / 1000;
+                  const normalize = (str) => str.toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
+                  const queryWords = [...new Set(normalize(track.query).split(/\s+/).filter(w => w.length > 1))];
+                  
+                  const badWords = ['karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 'remix', 'slowed', 'reverb', 'bass boosted'];
+                  
+                  let validResults = results.map((r, index) => {
+                      const ytText = normalize(r.title + " " + r.channel);
+                      let missingWords = 0;
+                      for (const word of queryWords) {
+                          if (!ytText.includes(word)) missingWords++;
+                      }
+                      
+                      let hasBadWord = false;
+                      for (const badWord of badWords) {
+                          if (ytText.includes(badWord) && !normalize(track.query).includes(badWord)) {
+                              hasBadWord = true;
+                              break;
+                          }
+                      }
+                      
+                      let officialBonus = 0;
+                      if (ytText.includes('official') || ytText.includes('topic') || ytText.includes('mv') || ytText.includes('music video')) {
+                          officialBonus = 40; // 40 seconds leniency for official uploads (to account for MV intros/outros)
+                      }
+                      
+                      const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
+                      
+                      // YouTube's search is very smart (it knows Japanese translations, etc.).
+                      // We add a penalty for lower-ranked search results (15 secs per rank position)
+                      // so we don't accidentally pick the 9th result just because its duration matched closer.
+                      const rankPenalty = index * 15;
+                      
+                      const score = durationDiff + (missingWords * 2) + rankPenalty - officialBonus;
+                      
+                      return {
+                          ...r,
+                          durationDiff,
+                          score,
+                          hasBadWord
+                      };
+                  });
+
+                  // Completely filter out fake/instrumental/karaoke versions unless requested
+                  validResults = validResults.filter(r => !r.hasBadWord).sort((a, b) => a.score - b.score);
+
+                  let bestVideo = null;
+                  let lastError = null;
+                  for (const v of validResults.slice(0, 3)) {
+                      try {
+                          await invoke('get_stream_url', { videoId: v.id });
+                          bestVideo = v;
+                          break;
+                      } catch (e) {
+                          lastError = e;
+                          console.log(`Video ${v.id} blocked/premium, trying next...`, e);
+                      }
+                  }
+                  
+                  if (bestVideo) {
+                    importedSongs.push(bestVideo);
+                  } else {
+                    failedSongs.push(track.query + " (" + (lastError ? lastError.toString() : "unknown") + ")");
+                  }
+                } else {
+                  failedSongs.push(track.query);
+                }
+              } catch (e) {
+                console.error("Failed to search track:", track.query, e);
+                failedSongs.push(track.query);
+              }
+              
+              // THROTTLING: Add a 1.5-second delay between each track to prevent 
+              // flooding YouTube and getting IP banned (HTTP 429 Too Many Requests).
+              await new Promise(resolve => setTimeout(resolve, 1500));
+            }
+            
+            if (importedSongs.length > 0) {
+              handleAddMultiple(importedSongs);
+              let msg = `Imported ${importedSongs.length} out of ${spotifyTracks.length} songs from Spotify.`;
+              if (failedSongs.length > 0) {
+                msg += ` Failed to import ${failedSongs.length} songs (premium/blocked).`;
+              }
+              setSuccessMessage(msg);
+              setImportUrl('');
+            } else {
+              errorMsg = "Could not find any playable matching songs. Error from first track: " + (failedSongs[0] || "Unknown");
+            }
+          } else {
+            errorMsg = "Could not find any songs in this Spotify playlist. It might be private or empty.";
+          }
+        } else {
+          errorMsg = "Invalid Spotify playlist URL.";
+        }
+      } else {
+        errorMsg = "Please enter a valid YouTube or Spotify playlist URL.";
+      }
+    } catch (e) {
+      console.error("Import failed:", e);
+      errorMsg = `Failed to import playlist: ${e.toString()}`;
+    } finally {
+      setIsImporting(false);
+      if (errorMsg) {
+        setGlobalError(errorMsg);
+      }
+    }
+  };
+
+
   const handleNext = () => {
     if (currentIndex < playlist.length - 1) {
       setCurrentIndex(currentIndex + 1);
@@ -831,15 +982,6 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
     <div className="app-container" style={{ position: 'relative', width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
 
-      {successMessage && !globalError && (
-        <div style={{...staticStyles.errorToast, background: 'var(--accent-color)', color: '#fff', borderColor: 'transparent'}}>
-          <Download size={18} />
-          {successMessage}
-          <button className="btn btn-icon" onClick={() => setSuccessMessage(null)} style={{ padding: '2px', color: 'inherit' }}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
       {/* Invisible Resize Borders */}
       <ResizeBorder windowObj={appWindow} cursor="n-resize" direction="Top" style={{ top: 0, left: 4, right: 4, height: '4px' }} />
       <ResizeBorder windowObj={appWindow} cursor="s-resize" direction="Bottom" style={{ bottom: 0, left: 4, right: 4, height: '12px' }} />
@@ -1294,10 +1436,42 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               )}
             </div>
             
+            <div style={{ width: '100%', marginTop: '16px', marginBottom: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '16px' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>Import Playlist</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input 
+                  type="text" 
+                  className="input" 
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  placeholder="Spotify or YouTube playlist URL..."
+                  style={{ flex: 1 }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleImportPlaylist();
+                  }}
+                  disabled={isImporting}
+                />
+                <button 
+                  onClick={handleImportPlaylist}
+                  className="btn btn-primary"
+                  disabled={!importUrl.trim() || isImporting}
+                  style={{ padding: '8px 16px', minWidth: '120px' }}
+                >
+                  {isImporting ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span style={{ fontSize: '0.8rem' }}>{importProgress || 'Importing'}</span>
+                    </div>
+                  ) : 'Import'}
+                </button>
+              </div>
+            </div>
+
             <div className="modal-actions">
               <button 
                 onClick={() => setShowLoadPrompt(false)}
                 className="btn btn-secondary btn-large"
+                disabled={isImporting}
               >
                 Close
               </button>
@@ -1322,6 +1496,27 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 style={{ width: '100%' }}
               >
                 Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-icon-container">
+              <CheckCircle className="modal-icon" style={{ color: 'var(--accent-color)', animation: 'none' }} />
+            </div>
+            <h3 className="modal-title">Success</h3>
+            <p className="modal-desc">{successMessage}</p>
+            <div className="modal-actions">
+              <button 
+                onClick={() => setSuccessMessage(null)}
+                className="btn btn-primary btn-large"
+                style={{ width: '100%' }}
+              >
+                OK
               </button>
             </div>
           </div>
