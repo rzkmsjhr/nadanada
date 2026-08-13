@@ -30,6 +30,49 @@ pub struct Video {
     first_video_id: Option<String>,
 }
 
+async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    data_dir.push("NadaNada");
+    if !data_dir.exists() {
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(target_os = "windows")]
+    let exe_name = "yt-dlp.exe";
+    #[cfg(target_os = "macos")]
+    let exe_name = "yt-dlp_macos";
+    #[cfg(target_os = "linux")]
+    let exe_name = "yt-dlp";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let exe_name = "yt-dlp";
+
+    let exe_path = data_dir.join(exe_name);
+    
+    if !exe_path.exists() {
+        println!("{} not found, downloading now...", exe_name);
+        let download_url = format!("https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}", exe_name);
+        let bytes =
+            reqwest::get(&download_url)
+                .await
+                .map_err(|e| e.to_string())?
+                .bytes()
+                .await
+                .map_err(|e| e.to_string())?;
+        std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(mut perms) = std::fs::metadata(&exe_path).map(|m| m.permissions()) {
+                perms.set_mode(0o755);
+                let _ = std::fs::set_permissions(&exe_path, perms);
+            }
+        }
+    }
+    
+    Ok(exe_path)
+}
+
 #[tauri::command]
 async fn search_youtube(
     mut query: String,
@@ -226,26 +269,7 @@ async fn get_stream_url(app: tauri::AppHandle, video_id: String) -> Result<Strin
     use tauri::Manager;
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
     
-    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
-    data_dir.push("NadaNada");
-    if !data_dir.exists() {
-        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
-    }
-    let exe_path = data_dir.join("yt-dlp.exe");
-    
-    if !exe_path.exists() {
-        println!("yt-dlp not found, downloading now...");
-        let bytes =
-            reqwest::get("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe")
-                .await
-                .map_err(|e| e.to_string())?
-                .bytes()
-                .await
-                .map_err(|e| e.to_string())?;
-        std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
-    }
-
-
+    let exe_path = get_yt_dlp_path().await?;
 
     // Get the direct audio stream URL using yt-dlp (-g / --get-url)
     let mut cmd = tokio::process::Command::new(exe_path);
@@ -815,23 +839,13 @@ pub struct DownloadedSong {
 async fn download_song(id: String, title: String, artist: String) -> Result<String, String> {
     let url = format!("https://www.youtube.com/watch?v={}", id);
 
-    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     data_dir.push("NadaNada");
     if !data_dir.exists() {
-        fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
 
-    let exe_path = data_dir.join("yt-dlp.exe");
-    if !exe_path.exists() {
-        let bytes =
-            reqwest::get("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe")
-                .await
-                .map_err(|e| e.to_string())?
-                .bytes()
-                .await
-                .map_err(|e| e.to_string())?;
-        fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
-    }
+    let exe_path = get_yt_dlp_path().await?;
 
     let mut music_dir = dirs::audio_dir()
         .unwrap_or_else(|| dirs::document_dir().unwrap_or_else(|| PathBuf::from(".")));
