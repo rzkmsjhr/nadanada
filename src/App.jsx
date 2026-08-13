@@ -536,6 +536,12 @@ function App() {
           if (signal.aborted) return;
           const text = await wikiGet(variant);
           if (!text) continue;
+          
+          // Sanity check: Ensure this page is actually about music/artist
+          // If the entire Wikipedia intro doesn't mention any of these, it's likely a generic noun (e.g., 'Chillies' -> 'Chili peppers')
+          const isMusicRelated = /band|singer|album|music|musician|song|rapper|producer|dj|vocalist|guitarist|chart|record/i.test(text);
+          if (!isMusicRelated) continue;
+
           const fact = extractFact(text);
           if (fact) { if (!signal.aborted) setArtistFact(fact); return; }
         }
