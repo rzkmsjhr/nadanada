@@ -50,7 +50,7 @@ async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
     
     if !exe_path.exists() {
         println!("{} not found, downloading now...", exe_name);
-        let download_url = format!("https://github.com/yt-dlp/yt-dlp/releases/latest/download/{}", exe_name);
+        let download_url = format!("https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}", exe_name);
         let bytes =
             reqwest::get(&download_url)
                 .await
