@@ -56,7 +56,14 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isMaximized, setIsMaximized] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const isMaximizedRef = useRef(false);
+
+  // Ref to Player's imperative handle — used by keyboard shortcuts
+  const playerRef = useRef(null);
+  // Stable refs for next/prev so the keyboard handler never becomes stale
+  const handleNextRef = useRef(null);
+  const handlePreviousRef = useRef(null);
 
   useEffect(() => {
     // Sync initial maximized state (no animation needed on load)
@@ -167,12 +174,22 @@ function App() {
     loadDownloadedSongs();
     const interval = setInterval(loadDownloadedSongs, 5000);
     
-    const handleOnline = () => window.location.reload();
+    // Debounce the online event by 1.5s to let the network stack fully stabilise
+    // before reloading, and show a visual indicator so the reload doesn't feel
+    // like a crash.
+    let reconnectTimer = null;
+    const handleOnline = () => {
+      setIsReconnecting(true);
+      reconnectTimer = setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    };
     window.addEventListener('online', handleOnline);
     
     return () => {
       clearInterval(interval);
       window.removeEventListener('online', handleOnline);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, []);
 
@@ -227,15 +244,45 @@ function App() {
   const [songToAddToPlaylist, setSongToAddToPlaylist] = useState(null);
   const [addToPlaylistName, setAddToPlaylistName] = useState('');
   const [savePlaylistName, setSavePlaylistName] = useState('');
-  const [savedPlaylists, setSavedPlaylists] = useState(() => {
-    try {
-      const saved = localStorage.getItem('nadanada-saved-playlists');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error('Failed to parse saved playlists:', e);
-      return [];
-    }
-  });
+  // Saved playlists — persisted to %LOCALAPPDATA%\NadaNada\playlists.json
+  // so they survive localStorage wipes. Falls back to localStorage on error
+  // and auto-migrates existing data on first run.
+  const [savedPlaylists, setSavedPlaylists] = useState([]);
+  const playlistsLoadedRef = useRef(false);
+
+  useEffect(() => {
+    const loadPlaylists = async () => {
+      try {
+        const data = await invoke('load_playlists');
+        const parsed = JSON.parse(data);
+        if (parsed && parsed.length > 0) {
+          setSavedPlaylists(parsed);
+        } else {
+          // One-time migration from localStorage
+          const lsData = localStorage.getItem('nadanada-saved-playlists');
+          if (lsData) {
+            try {
+              const lsParsed = JSON.parse(lsData);
+              if (lsParsed && lsParsed.length > 0) {
+                setSavedPlaylists(lsParsed);
+                await invoke('save_playlists', { data: lsData });
+                localStorage.removeItem('nadanada-saved-playlists');
+              }
+            } catch {}
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load playlists from file, using localStorage fallback:', e);
+        try {
+          const lsData = localStorage.getItem('nadanada-saved-playlists');
+          if (lsData) setSavedPlaylists(JSON.parse(lsData));
+        } catch {}
+      } finally {
+        playlistsLoadedRef.current = true;
+      }
+    };
+    loadPlaylists();
+  }, []);
 
   const trendingRef = useRef(null);
 
@@ -260,8 +307,10 @@ function App() {
   }, [playlist, currentIndex]);
 
   useEffect(() => {
+    if (!playlistsLoadedRef.current) return; // Don't overwrite the file before we've loaded it
     const timer = setTimeout(() => {
-      localStorage.setItem('nadanada-saved-playlists', JSON.stringify(savedPlaylists));
+      invoke('save_playlists', { data: JSON.stringify(savedPlaylists) })
+        .catch(e => console.error('Failed to save playlists to file:', e));
     }, 500);
     return () => clearTimeout(timer);
   }, [savedPlaylists]);
@@ -369,69 +418,135 @@ function App() {
     }
   }, [currentSong, showChords, isAudioPlaying]);
 
+  // ── Artist / Song Fun Facts (Wikipedia) ───────────────────────────────────
+  // Extracts genuinely interesting sentences from Wikipedia articles — origin
+  // stories, accidents, early-career moments — NOT genre tags or chart data.
   useEffect(() => {
-    if (!currentSong) {
-      setArtistFact('');
-      return;
-    }
-    
+    if (!currentSong) { setArtistFact(''); return; }
+
     const controller = new AbortController();
     const signal = controller.signal;
 
-    const fetchFact = async () => {
-      try {
-        let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic/i, '').trim() : '';
-        if (!artist) {
-            const parts = currentSong.title.split('-');
-            if (parts.length > 1) {
-                artist = parts[0].trim();
-            } else {
-                if (!signal.aborted) setArtistFact('');
-                return;
-            }
-        }
-        
-        const suffixes = ['_(singer)', '_(musician)', '_(band)', ''];
-        let factFound = false;
-        
-        for (const suffix of suffixes) {
-            if (signal.aborted) return;
-            const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(artist + suffix)}`, { signal });
-            if (res.ok) {
-                const data = await res.json();
-                if (data.extract) {
-                    // Quick sanity check if we fell back to the raw artist name without suffix
-                    if (suffix === '') {
-                        const desc = (data.description || '').toLowerCase();
-                        const ext = data.extract.toLowerCase();
-                        if (!desc.includes('singer') && !desc.includes('band') && !desc.includes('musician') && !desc.includes('music') && 
-                            !ext.includes('singer') && !ext.includes('band') && !ext.includes('musician') && !ext.includes('music') && !ext.includes('rapper') && !ext.includes('dj')) {
-                            continue; // Likely not a musician, try next or fail
-                        }
-                    }
+    // Words that hint at a fun, surprising, or story-driven sentence
+    const GOOD = [
+      'before', 'originally', 'accident', 'accidentally', 'inspired',
+      'inspiration', 'rejected', 'almost', 'discovered', 'signed',
+      'grew up', 'childhood', 'school', 'young', 'early', 'first',
+      'debut', 'never', 'actually', 'surprisingly', 'unexpected',
+      'unknown', 'wrote', 'recorded', 'named after', 'named for',
+      'dropped out', 'quit', 'left the band', 'met', 'formed',
+      'started', 'began', 'rumoured', 'rumored', 'reportedly',
+      'auditioned', 'sampled', 'influenced by', 'influence',
+      'originally planned', 'nearly', 'almost', 'decided to',
+      'came up with', 'thought of', 'idea for', 'when they were',
+    ];
 
-                    let firstSentence = data.extract.split('. ')[0];
-                    if (!firstSentence.endsWith('.')) {
-                        firstSentence += '.';
-                    }
-                    if (!signal.aborted) setArtistFact(firstSentence);
-                    factFound = true;
-                    break;
-                }
-            }
+    // Words that reveal a boring descriptor / chart / sales sentence
+    const BAD = [
+      ' is a ', ' are a ', ' is an ', ' are an ',
+      'born in', 'born on', 'citizenship', 'nationality',
+      'discography', 'known for', 'best known',
+      'certified platinum', 'certified gold', 'billboard',
+      'number one', 'topped the', 'peaked at', 'charted',
+      'won the', 'grammy', 'brit award', 'mtv award',
+    ];
+
+    const scoreSentence = (s) => {
+      const l = s.toLowerCase();
+      let score = 0;
+      for (const w of GOOD) if (l.includes(w)) score += 2;
+      for (const w of BAD)  if (l.includes(w)) score -= 3;
+      if (s.length < 50 || s.length > 290) score -= 2; // too short or too long
+      return score;
+    };
+
+    const extractFact = (wikiText) => {
+      // Split on ". " or "! " or "? " preserving the sentence text
+      const sentences = wikiText
+        .split(/\.\s+|\!\s+|\?\s+/)
+        .map(s => s.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim())
+        .filter(s => s.length > 50 && s.length < 290);
+
+      // Skip the first sentence (always "X is a <genre> band from <city>")
+      const candidates = sentences.slice(1);
+      const scored = candidates
+        .map(s => ({ text: s, score: scoreSentence(s) }))
+        .filter(({ score }) => score > 0)
+        .sort((a, b) => b.score - a.score);
+
+      if (scored.length === 0) return null;
+      // Pick randomly from the top 3 so each listen to the same song can surface
+      // a different fact, making the header feel alive
+      const pool = scored.slice(0, Math.min(3, scored.length));
+      const { text } = pool[Math.floor(Math.random() * pool.length)];
+      return text.endsWith('.') ? text : text + '.';
+    };
+
+    const wikiGet = async (title) => {
+      const res = await fetch(
+        `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&titles=${encodeURIComponent(title)}&exintro=true&explaintext=true&redirects=1&format=json&origin=*`,
+        { signal }
+      );
+      if (!res.ok) return null;
+      const data = await res.json();
+      const pages = Object.values(data.query?.pages || {});
+      const page = pages[0];
+      if (!page || page.missing !== undefined || !page.extract) return null;
+      return page.extract;
+    };
+
+    const fetchFunFact = async () => {
+      try {
+        // --- derive clean artist & title ---
+        let artist = currentSong.channel
+          ? currentSong.channel.replace(/ - Topic$/i, '').replace(/vevo/i, '').trim()
+          : '';
+        let title = currentSong.title
+          .replace(/\[.*?\]|\(.*?\)/g, ' ')
+          .replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ')
+          .replace(/\s+/g, ' ').trim();
+        const dashParts = title.split(' - ');
+        if (dashParts.length > 1) {
+          if (!artist) artist = dashParts[0].trim();
+          title = dashParts.slice(1).join(' - ').trim();
         }
-        
-        if (!factFound && !signal.aborted) {
-            setArtistFact('');
+        if (!artist) { if (!signal.aborted) setArtistFact(''); return; }
+
+        // --- 1. Try the song page first (best chance of "how it was made" facts) ---
+        if (!signal.aborted && title) {
+          const songText = await wikiGet(`${title} (song)`);
+          if (songText && !signal.aborted) {
+            const fact = extractFact(songText);
+            if (fact) { setArtistFact(fact); return; }
+          }
         }
+
+        if (signal.aborted) return;
+
+        // --- 2. Try artist page variants ---
+        const artistVariants = [
+          artist,
+          `${artist} (band)`,
+          `${artist} (singer)`,
+          `${artist} (rapper)`,
+          `${artist} (musician)`,
+        ];
+
+        for (const variant of artistVariants) {
+          if (signal.aborted) return;
+          const text = await wikiGet(variant);
+          if (!text) continue;
+          const fact = extractFact(text);
+          if (fact) { if (!signal.aborted) setArtistFact(fact); return; }
+        }
+
+        if (!signal.aborted) setArtistFact('');
       } catch (e) {
-        if (!signal.aborted) {
-          setArtistFact('');
-        }
+        if (!signal.aborted) setArtistFact('');
       }
     };
-    
-    fetchFact();
+
+    fetchFunFact();
     return () => controller.abort();
   }, [currentSong]);
 
@@ -926,6 +1041,47 @@ function App() {
     });
   };
 
+  // \u2500\u2500 Keyboard shortcuts \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // Keep refs current so the effect registered once never becomes stale
+  handleNextRef.current = handleNext;
+  handlePreviousRef.current = handlePrevious;
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't fire shortcuts while the user is typing
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          playerRef.current?.togglePlay();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleNextRef.current?.();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          handlePreviousRef.current?.();
+          break;
+        case 'm':
+        case 'M':
+          playerRef.current?.toggleMute();
+          break;
+        case 'f':
+        case 'F':
+          // Only open search if not in a special view
+          setShowSearch(s => !s);
+          setShowDownloadedList(false);
+          break;
+        default:
+          break;
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []); // Registered once — relies on refs for always-current functions
 
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -1147,6 +1303,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             padding: '16px', minHeight: 0, overflow: 'hidden',
           } : { display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             <Player
+              ref={playerRef}
               currentSong={currentSong}
               nextSong={playlist[currentIndex + 1]}
               onNext={handleNext}
@@ -1330,6 +1487,23 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
         </div>
 
       </div>
+
+      {/* ── Reconnection overlay ── shows briefly before auto-reload */}
+      {isReconnecting && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexDirection: 'column', gap: '16px',
+          background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          animation: 'fadeIn 0.3s ease-out',
+        }}>
+          <Loader2 size={36} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
+          <div style={{ color: 'var(--text-main)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.02em' }}>
+            Connection restored. Refreshing…
+          </div>
+        </div>
+      )}
 
       {showClosePrompt && (
         <div className="modal-overlay">

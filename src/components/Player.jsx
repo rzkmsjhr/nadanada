@@ -1,25 +1,35 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
 import YouTube from 'react-youtube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
-export default function Player({ 
+const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded
-}) {
+}, ref) {
   const playerRef = useRef(null);
   
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [masterVolume, setMasterVolume] = useState(100);
+  const [masterVolume, setMasterVolume] = useState(() => {
+    const saved = localStorage.getItem('nadanada-volume');
+    const parsed = saved ? parseInt(saved, 10) : 100;
+    return isNaN(parsed) ? 100 : Math.max(0, Math.min(100, parsed));
+  });
   const [isMuted, setIsMuted] = useState(false);
   
+  // Persist volume preference across sessions
+  useEffect(() => {
+    localStorage.setItem('nadanada-volume', masterVolume.toString());
+  }, [masterVolume]);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   
   const [streamUrl, setStreamUrl] = useState(null);
   const [isExtractingStream, setIsExtractingStream] = useState(false);
+  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   
   // Track how many times this specific song has repeated for 'repeat once' mode
   const [playCount, setPlayCount] = useState(0);
@@ -161,6 +171,10 @@ export default function Player({
     }
   }, [currentTime, duration, currentSong]);
 
+  // togglePlayRef and toggleMuteRef are assigned after those functions are defined below.
+  const togglePlayRef = useRef(null);
+  const toggleMuteRef = useRef(null);
+
   useEffect(() => {
     if ('mediaSession' in navigator) {
       navigator.mediaSession.setActionHandler('play', togglePlay);
@@ -168,7 +182,7 @@ export default function Player({
       navigator.mediaSession.setActionHandler('previoustrack', hasPrevious ? () => onPrevious() : null);
       navigator.mediaSession.setActionHandler('nexttrack', hasNext ? () => onNext() : null);
     }
-  });
+  }, [isPlaying, hasPrevious, hasNext, onPrevious, onNext]);
 
   const onReady = (event) => {
     playerRef.current = event.target;
@@ -280,6 +294,17 @@ export default function Player({
       }
     }
   };
+
+  // Assign refs AFTER the functions are defined to avoid temporal dead zone.
+  // These stay current on every render so the keyboard handler in App always
+  // calls the latest version without needing to re-register the listener.
+  togglePlayRef.current = togglePlay;
+  toggleMuteRef.current = toggleMute;
+
+  useImperativeHandle(ref, () => ({
+    togglePlay: () => togglePlayRef.current?.(),
+    toggleMute: () => toggleMuteRef.current?.(),
+  }), []);
 
   const handleVolumeChange = (e) => {
     const val = parseInt(e.target.value);
@@ -513,10 +538,37 @@ export default function Player({
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <button className="btn btn-icon" style={{ border: 'none', background: 'transparent' }} onClick={toggleMute}>
-              {isMuted || masterVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            </button>
+          <div
+            style={{ display: 'flex', gap: '4px', alignItems: 'center' }}
+            onMouseEnter={() => setIsVolumeHovered(true)}
+            onMouseLeave={() => setIsVolumeHovered(false)}
+          >
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              {/* Floating % tooltip — appears above speaker on hover */}
+              <div style={{
+                position: 'absolute',
+                top: '-26px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                fontSize: '0.7rem',
+                fontVariantNumeric: 'tabular-nums',
+                color: 'var(--text-main)',
+                background: 'var(--panel-bg)',
+                border: '1px solid var(--panel-border)',
+                borderRadius: '4px',
+                padding: '1px 5px',
+                pointerEvents: 'none',
+                whiteSpace: 'nowrap',
+                opacity: isVolumeHovered ? 1 : 0,
+                transition: 'opacity 0.15s ease',
+                zIndex: 10,
+              }}>
+                {isMuted ? 0 : masterVolume}%
+              </div>
+              <button className="btn btn-icon" style={{ border: 'none', background: 'transparent' }} onClick={toggleMute}>
+                {isMuted || masterVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+            </div>
             <input
               type="range"
               className="seek-bar"
@@ -524,9 +576,9 @@ export default function Player({
               max="100"
               value={isMuted ? 0 : masterVolume}
               onChange={handleVolumeChange}
-              style={{ 
-                width: '70px', 
-                background: `linear-gradient(to right, var(--accent-color) ${isMuted ? 0 : masterVolume}%, var(--panel-border) ${isMuted ? 0 : masterVolume}%)` 
+              style={{
+                width: '70px',
+                background: `linear-gradient(to right, var(--accent-color) ${isMuted ? 0 : masterVolume}%, var(--panel-border) ${isMuted ? 0 : masterVolume}%)`
               }}
             />
           </div>
@@ -534,4 +586,6 @@ export default function Player({
       </div>
     </div>
   );
-}
+});
+
+export default Player;

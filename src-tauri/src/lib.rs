@@ -273,7 +273,10 @@ async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<Stri
 
     // Get the direct audio stream URL using yt-dlp (-g / --get-url)
     let mut cmd = tokio::process::Command::new(exe_path);
-    cmd.arg("-g").arg("-f").arg("bestaudio").arg(&url);
+    cmd.arg("-g")
+       .arg("-f")
+       .arg("bestaudio")
+       .arg(&url);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -987,7 +990,7 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     };
     
     let registry_path = data_dir.join("youtube_downloads.json");
-    let registry: std::collections::HashMap<String, String> = if registry_path.exists() {
+    let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
         if let Ok(content) = fs::read_to_string(&registry_path) {
             serde_json::from_str(&content).unwrap_or_default()
         } else {
@@ -996,6 +999,20 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     } else {
         std::collections::HashMap::new()
     };
+
+    // Clean up stale registry entries whose files have been moved or deleted.
+    // This ensures the frontend's downloadedIds Set correctly un-marks those songs.
+    let mut registry_changed = false;
+    registry.retain(|path, _| {
+        let still_exists = std::path::Path::new(path).exists();
+        if !still_exists {
+            registry_changed = true;
+        }
+        still_exists
+    });
+    if registry_changed {
+        let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
+    }
 
     if music_dir.exists() {
         for entry in fs::read_dir(music_dir).map_err(|e| e.to_string())? {
@@ -1151,6 +1168,41 @@ fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── Playlist File Persistence ───────────────────────────────────────────────
+// Saves user-created playlists to %LOCALAPPDATA%\NadaNada\playlists.json so
+// they survive localStorage wipes from CCleaner / Edge data-clear etc.
+
+#[tauri::command]
+fn load_playlists() -> Result<String, String> {
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    let playlists_path = data_dir.join("playlists.json");
+
+    if playlists_path.exists() {
+        fs::read_to_string(&playlists_path).map_err(|e| e.to_string())
+    } else {
+        Ok("[]".to_string())
+    }
+}
+
+#[tauri::command]
+fn save_playlists(data: String) -> Result<(), String> {
+    let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    data_dir.push("NadaNada");
+    if !data_dir.exists() {
+        fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    }
+
+    // Atomic write: write to a temp file first, then rename to prevent
+    // corruption if the app crashes mid-write.
+    let playlists_path = data_dir.join("playlists.json");
+    let temp_path = data_dir.join("playlists.json.tmp");
+    fs::write(&temp_path, &data).map_err(|e| e.to_string())?;
+    fs::rename(&temp_path, &playlists_path).map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1196,7 +1248,9 @@ pub fn run() {
             get_downloaded_songs,
             add_local_song,
             delete_downloaded_song,
-            get_stream_url
+            get_stream_url,
+            load_playlists,
+            save_playlists
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
