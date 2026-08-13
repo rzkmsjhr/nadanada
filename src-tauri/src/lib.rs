@@ -446,6 +446,44 @@ fn quit_app(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+async fn get_playlist_title(platform: String, playlist_id: String) -> Result<String, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    if platform == "spotify" {
+        let url = format!("https://open.spotify.com/embed/playlist/{}", playlist_id);
+        let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+        if let Some(caps) = re.captures(&text) {
+            let json_str = &caps[1];
+            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(name) = v.pointer("/props/pageProps/state/data/entity/name").and_then(|v| v.as_str()) {
+                return Ok(name.to_string());
+            }
+        }
+        return Ok("Imported Spotify Playlist".to_string());
+    } else if platform == "youtube" {
+        let url = format!("https://www.youtube.com/playlist?list={}", playlist_id);
+        let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let text = res.text().await.map_err(|e| e.to_string())?;
+        let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
+        if let Some(caps) = re.captures(&text) {
+            let json_str = &caps[1];
+            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(title) = v.pointer("/header/playlistHeaderRenderer/title/simpleText").and_then(|v| v.as_str()) {
+                return Ok(title.to_string());
+            }
+        }
+        return Ok("Imported YouTube Playlist".to_string());
+    }
+    
+    Err("Unknown platform".to_string())
+}
+
+#[tauri::command]
 async fn scrape_chords(
     id: String,
     title: String,
@@ -1242,13 +1280,14 @@ pub fn run() {
             get_youtube_mix,
             get_youtube_playlist,
             get_spotify_playlist,
+            get_stream_url,
             quit_app,
+            get_playlist_title,
             scrape_chords,
             download_song,
             get_downloaded_songs,
             add_local_song,
             delete_downloaded_song,
-            get_stream_url,
             load_playlists,
             save_playlists
         ])

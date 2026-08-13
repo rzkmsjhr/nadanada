@@ -812,6 +812,13 @@ function App() {
           const songs = await invoke('get_youtube_playlist', { playlistId, firstVideoId: '' });
           if (songs && songs.length > 0) {
             handleAddMultiple(songs);
+            try {
+              const pTitle = await invoke('get_playlist_title', { platform: 'youtube', playlistId });
+              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: songs }]);
+            } catch (err) {
+              console.error("Failed to fetch youtube title", err);
+              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported YouTube Playlist", items: songs }]);
+            }
             setSuccessMessage(`Imported ${songs.length} songs from YouTube playlist.`);
             setImportUrl('');
           } else {
@@ -915,6 +922,13 @@ function App() {
             
             if (importedSongs.length > 0) {
               handleAddMultiple(importedSongs);
+              try {
+                const pTitle = await invoke('get_playlist_title', { platform: 'spotify', playlistId });
+                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: importedSongs }]);
+              } catch (err) {
+                console.error("Failed to fetch spotify title", err);
+                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported Spotify Playlist", items: importedSongs }]);
+              }
               let msg = `Imported ${importedSongs.length} out of ${spotifyTracks.length} songs from Spotify.`;
               if (failedSongs.length > 0) {
                 msg += ` Failed to import ${failedSongs.length} songs (premium/blocked).`;
@@ -1672,14 +1686,18 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
             </div>
             
             <div style={{ width: '100%', marginTop: '16px', marginBottom: '24px', borderTop: '1px solid var(--panel-border)', paddingTop: '16px' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-main)' }}>Import Playlist</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Import Playlist</div>
+                <img src="/youtube.svg" alt="YouTube" title="YouTube supported" style={{ height: '12px', width: 'auto', objectFit: 'contain', position: 'relative', top: '2px' }} />
+                <img src="/spotify.svg" alt="Spotify" title="Spotify supported" style={{ height: '12px', width: 'auto', objectFit: 'contain', position: 'relative', top: '2px' }} />
+              </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input 
                   type="text" 
                   className="input" 
                   value={importUrl}
                   onChange={(e) => setImportUrl(e.target.value)}
-                  placeholder="Spotify or YouTube playlist URL..."
+                  placeholder="Your playlist url"
                   style={{ flex: 1 }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleImportPlaylist();
