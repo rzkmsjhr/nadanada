@@ -1695,7 +1695,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
                 <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-main)' }}>Import Playlist</div>
                 <img src="/youtube.svg" alt="YouTube" title="YouTube supported" style={{ height: '12px', width: 'auto', objectFit: 'contain', position: 'relative', top: '2px' }} />
-                <img src="/spotify.svg" alt="Spotify" title="Spotify supported" style={{ height: '12px', width: 'auto', objectFit: 'contain', position: 'relative', top: '2px' }} />
+                <img src="/spotify.svg" alt="Spotify" title="Spotify supported" style={{ height: '12px', width: 'auto', objectFit: 'contain', position: 'relative', top: '1px' }} />
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <input 
