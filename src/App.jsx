@@ -1897,7 +1897,6 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               <button 
                 onClick={() => setShowLoadPrompt(false)}
                 className="btn btn-secondary btn-large"
-                disabled={isImporting}
               >
                 Close
               </button>
