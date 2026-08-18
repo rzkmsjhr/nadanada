@@ -47,22 +47,26 @@ async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
     let exe_name = "yt-dlp";
 
     let exe_path = data_dir.join(exe_name);
-    
+
     if !exe_path.exists() {
         println!("{} not found, downloading now...", exe_name);
-        let download_url = format!("https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}", exe_name);
+        let download_url = format!(
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}",
+            exe_name
+        );
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .map_err(|e| e.to_string())?;
-            
-        let bytes = client.get(&download_url)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .bytes()
-                .await
-                .map_err(|e| e.to_string())?;
+
+        let bytes = client
+            .get(&download_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .bytes()
+            .await
+            .map_err(|e| e.to_string())?;
         std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
 
         #[cfg(not(target_os = "windows"))]
@@ -74,7 +78,7 @@ async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
             }
         }
     }
-    
+
     Ok(exe_path)
 }
 
@@ -271,24 +275,24 @@ async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
 
 #[tauri::command]
 async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<String, String> {
-
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
-    
+
     let exe_path = get_yt_dlp_path().await?;
 
     // Get the direct audio stream URL using yt-dlp (-g / --get-url)
     let mut cmd = tokio::process::Command::new(exe_path);
     cmd.stdin(std::process::Stdio::null())
-       .arg("-g")
-       .arg("-f")
-       .arg("bestaudio")
-       .arg(&url);
+        .arg("-g")
+        .arg("-f")
+        .arg("bestaudio")
+        .arg(&url);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-    let output_result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
-    
+    let output_result =
+        tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
+
     let output = match output_result {
         Ok(Ok(out)) => out,
         Ok(Err(e)) => return Err(e.to_string()),
@@ -301,7 +305,7 @@ async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<Stri
             return Ok(stream_url);
         }
     }
-    
+
     let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
     Err(format!("yt-dlp failed to extract stream: {}", err_msg))
 }
@@ -327,14 +331,18 @@ async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrack>, 
         .map_err(|e| e.to_string())?;
 
     let text = res.text().await.map_err(|e| e.to_string())?;
-    
-    let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+
+    let re =
+        Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
     if let Some(caps) = re.captures(&text) {
         let json_str = &caps[1];
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        
+
         let mut queries = Vec::new();
-        if let Some(track_list) = v.pointer("/props/pageProps/state/data/entity/trackList").and_then(|v| v.as_array()) {
+        if let Some(track_list) = v
+            .pointer("/props/pageProps/state/data/entity/trackList")
+            .and_then(|v| v.as_array())
+        {
             for track in track_list {
                 let title = track.get("title").and_then(|t| t.as_str()).unwrap_or("");
                 let artist = track.get("subtitle").and_then(|a| a.as_str()).unwrap_or("");
@@ -349,7 +357,7 @@ async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrack>, 
         }
         return Ok(queries);
     }
-    
+
     Err("Could not parse Spotify playlist data".to_string())
 }
 
@@ -444,8 +452,6 @@ async fn get_youtube_playlist(
     Err("ytInitialData not found in playlist".to_string())
 }
 
-
-
 #[derive(serde::Serialize)]
 pub struct KworbTrack {
     pub rank: usize,
@@ -526,11 +532,16 @@ async fn get_playlist_title(platform: String, playlist_id: String) -> Result<Str
         let url = format!("https://open.spotify.com/embed/playlist/{}", playlist_id);
         let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
         let text = res.text().await.map_err(|e| e.to_string())?;
-        let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+        let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#)
+            .unwrap();
         if let Some(caps) = re.captures(&text) {
             let json_str = &caps[1];
-            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
-            if let Some(name) = v.pointer("/props/pageProps/state/data/entity/name").and_then(|v| v.as_str()) {
+            let v: serde_json::Value =
+                serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(name) = v
+                .pointer("/props/pageProps/state/data/entity/name")
+                .and_then(|v| v.as_str())
+            {
                 return Ok(name.to_string());
             }
         }
@@ -542,14 +553,18 @@ async fn get_playlist_title(platform: String, playlist_id: String) -> Result<Str
         let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
         if let Some(caps) = re.captures(&text) {
             let json_str = &caps[1];
-            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
-            if let Some(title) = v.pointer("/header/playlistHeaderRenderer/title/simpleText").and_then(|v| v.as_str()) {
+            let v: serde_json::Value =
+                serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(title) = v
+                .pointer("/header/playlistHeaderRenderer/title/simpleText")
+                .and_then(|v| v.as_str())
+            {
                 return Ok(title.to_string());
             }
         }
         return Ok("Imported YouTube Playlist".to_string());
     }
-    
+
     Err("Unknown platform".to_string())
 }
 
@@ -625,7 +640,8 @@ async fn scrape_chords(
     let window_label = format!("scraper_{}_{}_{}", safe_id, ts, counter);
 
     // JS uses format! (not r#) so we can embed the google_fallback_url at compile time
-    let js_code = format!(r#"
+    let js_code = format!(
+        r#"
         (function() {{
             // ── GOOGLE FALLBACK HANDLER ─────────────────────────────────────────
             if (window.location.hostname.includes("google.")) {{
@@ -793,7 +809,8 @@ async fn scrape_chords(
                 }}
             }}, 500);
         }})();
-    "#);
+    "#
+    );
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
@@ -1021,7 +1038,7 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
     {
         command.creation_flags(0x08000000);
     }
-    
+
     let output = command
         .arg("--js-runtimes")
         .arg("node")
@@ -1051,8 +1068,14 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
 
     // Use the stdout from yt-dlp which contains the exact final filepath because of `--print after_move:filepath`
     let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let final_path = stdout_str.trim().lines().last().unwrap_or("").trim().to_string();
-    
+    let final_path = stdout_str
+        .trim()
+        .lines()
+        .last()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
     if final_path.is_empty() {
         return Err("yt-dlp succeeded but did not output a filepath".to_string());
     }
@@ -1069,7 +1092,10 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
         std::collections::HashMap::new()
     };
     registry.insert(final_path, id);
-    let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
+    let _ = fs::write(
+        &registry_path,
+        serde_json::to_string(&registry).unwrap_or_default(),
+    );
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
 }
@@ -1084,7 +1110,7 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
 
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
-    
+
     let _lock = IO_LOCK.lock().unwrap();
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let hidden_paths: Vec<String> = if hidden_json_path.exists() {
@@ -1096,7 +1122,7 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     } else {
         Vec::new()
     };
-    
+
     let registry_path = data_dir.join("youtube_downloads.json");
     let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
         if let Ok(content) = fs::read_to_string(&registry_path) {
@@ -1119,7 +1145,10 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
         still_exists
     });
     if registry_changed {
-        let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
+        let _ = fs::write(
+            &registry_path,
+            serde_json::to_string(&registry).unwrap_or_default(),
+        );
     }
 
     if music_dir.exists() {
@@ -1141,7 +1170,10 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                                 ("Unknown".to_string(), file_name.to_string())
                             };
 
-                            let song_id = registry.get(&path_str).cloned().unwrap_or_else(|| path_str.clone());
+                            let song_id = registry
+                                .get(&path_str)
+                                .cloned()
+                                .unwrap_or_else(|| path_str.clone());
 
                             songs.push(DownloadedSong {
                                 id: song_id,
@@ -1161,18 +1193,18 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
     let json_path = data_dir.join("local_songs.json");
-    
+
     if json_path.exists() {
         if let Ok(content) = fs::read_to_string(&json_path) {
             if let Ok(local_paths) = serde_json::from_str::<Vec<String>>(&content) {
                 let mut valid_paths = Vec::new();
                 let mut changed = false;
-                
+
                 for path_str in local_paths {
                     let path = PathBuf::from(&path_str);
                     if path.exists() && path.is_file() {
                         valid_paths.push(path_str.clone());
-                        
+
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
                             let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
                             let (artist, title) = if parts.len() == 2 {
@@ -1180,7 +1212,7 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                             } else {
                                 ("Unknown".to_string(), file_name.to_string())
                             };
-                            
+
                             // Check if not already in songs to avoid duplicates if they selected the download folder
                             let is_dup = songs.iter().any(|s| s.file_path == path_str);
                             if !is_dup {
@@ -1197,9 +1229,12 @@ fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                         changed = true; // A path doesn't exist anymore, we will filter it out
                     }
                 }
-                
+
                 if changed {
-                    let _ = fs::write(&json_path, serde_json::to_string(&valid_paths).unwrap_or_default());
+                    let _ = fs::write(
+                        &json_path,
+                        serde_json::to_string(&valid_paths).unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -1215,7 +1250,7 @@ fn add_local_song(file_path: String) -> Result<(), String> {
     if !data_dir.exists() {
         fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
-    
+
     let _lock = IO_LOCK.lock().unwrap();
     let json_path = data_dir.join("local_songs.json");
     let mut local_paths: Vec<String> = if json_path.exists() {
@@ -1227,12 +1262,16 @@ fn add_local_song(file_path: String) -> Result<(), String> {
     } else {
         Vec::new()
     };
-    
+
     if !local_paths.contains(&file_path) {
         local_paths.push(file_path);
-        fs::write(&json_path, serde_json::to_string(&local_paths).unwrap_or_default()).map_err(|e| e.to_string())?;
+        fs::write(
+            &json_path,
+            serde_json::to_string(&local_paths).unwrap_or_default(),
+        )
+        .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -1240,7 +1279,7 @@ fn add_local_song(file_path: String) -> Result<(), String> {
 fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
-    
+
     // 1. Remove from local_songs.json if it exists there
     let _lock = IO_LOCK.lock().unwrap();
     let local_json_path = data_dir.join("local_songs.json");
@@ -1250,12 +1289,15 @@ fn delete_downloaded_song(file_path: String) -> Result<(), String> {
                 let original_len = local_paths.len();
                 local_paths.retain(|p| p != &file_path);
                 if local_paths.len() < original_len {
-                    let _ = fs::write(&local_json_path, serde_json::to_string(&local_paths).unwrap_or_default());
+                    let _ = fs::write(
+                        &local_json_path,
+                        serde_json::to_string(&local_paths).unwrap_or_default(),
+                    );
                 }
             }
         }
     }
-    
+
     // 2. Add to hidden_downloads.json so it gets ignored during folder scans
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let mut hidden_paths: Vec<String> = if hidden_json_path.exists() {
@@ -1267,10 +1309,13 @@ fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     } else {
         Vec::new()
     };
-    
+
     if !hidden_paths.contains(&file_path) {
         hidden_paths.push(file_path);
-        let _ = fs::write(&hidden_json_path, serde_json::to_string(&hidden_paths).unwrap_or_default());
+        let _ = fs::write(
+            &hidden_json_path,
+            serde_json::to_string(&hidden_paths).unwrap_or_default(),
+        );
     }
 
     Ok(())
@@ -1314,6 +1359,7 @@ fn save_playlists(data: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_localhost::Builder::new(14214).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
