@@ -479,7 +479,7 @@ const Player = React.forwardRef(function Player({
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
-      origin: window.location.origin,
+      origin: 'https://127.0.0.1.nip.io',
       start: startSecs > 0 ? startSecs : undefined
     },
   };
