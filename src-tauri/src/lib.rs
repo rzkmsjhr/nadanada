@@ -1373,7 +1373,6 @@ pub fn run() {
                 .inner_size(400.0, 770.0)
                 .min_inner_size(320.0, 568.0)
                 .decorations(false)
-                .drag_drop_enabled(false)
                 .build()?;
 
             let _tray = TrayIconBuilder::new()

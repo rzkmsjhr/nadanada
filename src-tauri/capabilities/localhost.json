@@ -7,21 +7,17 @@
   ],
   "permissions": [
     "core:default",
-    "search_youtube",
-    "get_youtube_mix",
-    "get_youtube_playlist",
-    "get_spotify_playlist",
-    "get_kworb_chart",
-    "get_stream_url",
-    "quit_app",
-    "get_playlist_title",
-    "scrape_chords",
-    "download_song",
-    "get_downloaded_songs",
-    "add_local_song",
-    "delete_downloaded_song",
-    "load_playlists",
-    "save_playlists"
+    "opener:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "dialog:default"
   ],
   "remote": {
     "urls": ["http://localhost:14214"]
