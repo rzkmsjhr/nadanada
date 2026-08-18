@@ -440,6 +440,70 @@ async fn get_youtube_playlist(
 
 
 
+#[derive(serde::Serialize)]
+pub struct KworbTrack {
+    pub rank: usize,
+    pub query: String,
+}
+
+#[tauri::command]
+async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> {
+    let url = if region == "global" {
+        "https://kworb.net/spotify/country/global_daily.html"
+    } else {
+        "https://kworb.net/spotify/country/id_daily.html"
+    };
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+
+    let res = client
+        .get(url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let text = res.text().await.map_err(|e| e.to_string())?;
+
+    let re_cell = Regex::new(r#"<td class="text mp"><div>(.*?)</div></td>"#).unwrap();
+    let re_tag = Regex::new(r"<[^>]*>").unwrap();
+
+    let mut tracks = Vec::new();
+    let mut rank = 1;
+
+    for caps in re_cell.captures_iter(&text) {
+        if rank > 50 {
+            break;
+        }
+        let raw_content = &caps[1];
+        let clean_text = re_tag.replace_all(raw_content, "").trim().to_string();
+        let decoded = clean_text
+            .replace("&amp;", "&")
+            .replace("&#39;", "'")
+            .replace("&quot;", "\"")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">");
+
+        if !decoded.is_empty() {
+            tracks.push(KworbTrack {
+                rank,
+                query: decoded,
+            });
+            rank += 1;
+        }
+    }
+
+    if tracks.is_empty() {
+        return Err("Failed to parse Kworb chart data".to_string());
+    }
+
+    Ok(tracks)
+}
+
 #[tauri::command]
 fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
@@ -1280,6 +1344,7 @@ pub fn run() {
             get_youtube_mix,
             get_youtube_playlist,
             get_spotify_playlist,
+            get_kworb_chart,
             get_stream_url,
             quit_app,
             get_playlist_title,

@@ -146,9 +146,19 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   );
 });
 
-export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
+  const containerRef = useRef(null);
+
+  React.useEffect(() => {
+    if (shouldScrollToBottom && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
+      if (onScrollToBottomDone) {
+        onScrollToBottomDone();
+      }
+    }
+  }, [shouldScrollToBottom, onScrollToBottomDone]);
 
   const handleDragStart = (e, index) => {
     e.dataTransfer.setData('text/plain', index);
@@ -190,7 +200,7 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div ref={containerRef} style={{ flex: 1, overflowY: 'auto' }}>
         {playlist.map((song, index) => {
           const isActive = index === currentIndex;
           const isDragOver = dragOverIndex === index;

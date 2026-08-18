@@ -18,6 +18,35 @@ const parseDuration = (durationStr) => {
   return 0;
 };
 
+const getCachedVideo = (query) => {
+  try {
+    const raw = localStorage.getItem('nadanada-yt-cache');
+    if (!raw) return null;
+    const cache = JSON.parse(raw);
+    const normalizedKey = query.toLowerCase().trim();
+    return cache[normalizedKey] || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const setCachedVideo = (query, videoObj) => {
+  try {
+    const raw = localStorage.getItem('nadanada-yt-cache') || '{}';
+    const cache = JSON.parse(raw);
+    const normalizedKey = query.toLowerCase().trim();
+    const { queueId, rank, ...cleanVideo } = videoObj;
+    cache[normalizedKey] = cleanVideo;
+    const keys = Object.keys(cache);
+    if (keys.length > 500) {
+      delete cache[keys[0]];
+    }
+    localStorage.setItem('nadanada-yt-cache', JSON.stringify(cache));
+  } catch (e) {
+    console.error("Failed to save yt-cache:", e);
+  }
+};
+
 const basePanelStyle = { margin: '0 auto 8px auto', maxWidth: '800px', width: 'calc(100% - 16px)', borderRadius: '16px' };
 const topPanelStyle = { ...basePanelStyle, position: 'relative', flex: 'none' };
 const bottomPanelStyle = { ...basePanelStyle, flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 };
@@ -295,6 +324,27 @@ function App() {
     return isNaN(parsed) ? 0 : parsed;
   });
   const [showSearch, setShowSearch] = useState(false);
+  const [shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom] = useState(false);
+  const hasAddedSongInSearchRef = useRef(false);
+
+  const handleToggleSearch = () => {
+    setShowSearch(prev => {
+      const isCurrentlyOpen = prev;
+      if (isCurrentlyOpen) {
+        // Closing search view
+        if (hasAddedSongInSearchRef.current) {
+          setShouldScrollPlaylistToBottom(true);
+          hasAddedSongInSearchRef.current = false;
+        }
+        return false;
+      } else {
+        // Opening search view
+        hasAddedSongInSearchRef.current = false;
+        setShowDownloadedList(false);
+        return true;
+      }
+    });
+  };
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
   const [isFetchingTrending, setIsFetchingTrending] = useState(false);
@@ -935,27 +985,74 @@ function App() {
     setShowTrendingDropdown(false);
     setIsFetchingTrending(true);
     try {
-      const query = region === 'global' ? 'Top 50 Spotify Global' : 'Top 50 Spotify Indonesia';
-      const results = await invoke('search_youtube', { query, searchType: 'album' });
-      const playlistItem = results.find(v => v.is_playlist);
-      if (playlistItem) {
-        const songs = await invoke('get_youtube_playlist', { playlistId: playlistItem.id, firstVideoId: playlistItem.first_video_id || '' });
-        if (songs && songs.length > 0) {
-          const timestamp = Date.now();
-          const rankedSongs = songs.slice(0, 50).map((song, idx) => ({
-            ...song,
-            queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9),
-            rank: idx + 1
-          }));
-          if (!savedPlaylist) {
-            setSavedPlaylist([...playlist]);
-          }
-          setPlaylist(rankedSongs);
-          setCurrentIndex(0);
-          setIsAudioPlaying(true);
+      // Fetch exact real-time Kworb daily chart for Indonesia or Global
+      const kworbTracks = await invoke('get_kworb_chart', { region });
+      if (!kworbTracks || kworbTracks.length === 0) {
+        setGlobalError("Could not fetch Kworb Spotify chart. Please try again.");
+        return;
+      }
+
+      const timestamp = Date.now();
+      const rankedSongs = [];
+      const uncachedTracks = [];
+
+      // 1. Check local cache first for instant loading and re-ordering
+      for (const track of kworbTracks) {
+        const cached = getCachedVideo(track.query);
+        if (cached) {
+          rankedSongs.push({
+            ...cached,
+            queueId: (timestamp + track.rank).toString() + Math.random().toString(36).substr(2, 9),
+            rank: track.rank
+          });
+        } else {
+          uncachedTracks.push(track);
         }
+      }
+
+      // 2. Resolve any new/uncached tracks via YouTube search in parallel batches
+      if (uncachedTracks.length > 0) {
+        const batchSize = 5;
+        for (let i = 0; i < uncachedTracks.length; i += batchSize) {
+          const batch = uncachedTracks.slice(i, i + batchSize);
+          const batchResults = await Promise.all(
+            batch.map(async (track) => {
+              try {
+                const searchResults = await invoke('search_youtube', { query: track.query, searchType: null });
+                if (searchResults && searchResults.length > 0) {
+                  const bestMatch = searchResults[0];
+                  setCachedVideo(track.query, bestMatch);
+                  return {
+                    ...bestMatch,
+                    queueId: (timestamp + track.rank).toString() + Math.random().toString(36).substr(2, 9),
+                    rank: track.rank
+                  };
+                }
+              } catch (e) {
+                console.error(`Failed to search YouTube for Kworb rank ${track.rank}:`, track.query, e);
+              }
+              return null;
+            })
+          );
+
+          for (const item of batchResults) {
+            if (item) rankedSongs.push(item);
+          }
+        }
+      }
+
+      if (rankedSongs.length > 0) {
+        // Sort by rank to ensure 1..50 ordering
+        rankedSongs.sort((a, b) => a.rank - b.rank);
+
+        if (!savedPlaylist) {
+          setSavedPlaylist([...playlist]);
+        }
+        setPlaylist(rankedSongs);
+        setCurrentIndex(0);
+        setIsAudioPlaying(true);
       } else {
-        setGlobalError("Could not find a trending playlist right now. Try again later.");
+        setGlobalError("Could not find matching videos on YouTube for trending chart.");
       }
     } catch (e) {
       console.error("Failed to fetch trending:", e);
@@ -1166,6 +1263,9 @@ function App() {
   };
 
   const handleAddSong = (video) => {
+    if (showSearch) {
+      hasAddedSongInSearchRef.current = true;
+    }
     setFailedEndlessFetch(false);
     const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
     const newSong = { ...video, queueId };
@@ -1177,6 +1277,9 @@ function App() {
   };
 
   const handleAddMultiple = (videos) => {
+    if (showSearch) {
+      hasAddedSongInSearchRef.current = true;
+    }
     setFailedEndlessFetch(false);
     const timestamp = Date.now();
     const newSongs = videos.map((video, idx) => ({
@@ -1258,9 +1361,9 @@ function App() {
           break;
         case 'f':
         case 'F':
-          // Only open search if not in a special view
-          setShowSearch(s => !s);
-          setShowDownloadedList(false);
+          e.preventDefault();
+          // Toggle search view
+          handleToggleSearch();
           break;
         default:
           break;
@@ -1610,7 +1713,18 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               )}
               <button
                 className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`}
-                onClick={() => { if (showDownloadedList && savedPlaylist) { setPlaylist(savedPlaylist); setSavedPlaylist(null); } setShowDownloadedList(!showDownloadedList); setShowSearch(false); }}
+                onClick={() => {
+                  if (showSearch && hasAddedSongInSearchRef.current) {
+                    setShouldScrollPlaylistToBottom(true);
+                    hasAddedSongInSearchRef.current = false;
+                  }
+                  if (showDownloadedList && savedPlaylist) {
+                    setPlaylist(savedPlaylist);
+                    setSavedPlaylist(null);
+                  }
+                  setShowDownloadedList(!showDownloadedList);
+                  setShowSearch(false);
+                }}
                 title="Downloaded Songs"
                 style={{ padding: '6px', color: showDownloadedList ? 'var(--accent-color)' : 'inherit' }}
               >
@@ -1632,7 +1746,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 </button>
               )}
               {!savedPlaylist && !showDownloadedList && (
-                <button className="btn btn-icon" onClick={() => { setShowSearch(!showSearch); setShowDownloadedList(false); }} title={showSearch ? 'Close Search' : 'Search Music'} style={{ padding: '6px' }}>
+                <button className="btn btn-icon" onClick={handleToggleSearch} title={showSearch ? 'Close Search' : 'Search Music'} style={{ padding: '6px' }}>
                   {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
                 </button>
               )}
@@ -1668,6 +1782,8 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 downloadingSongId={downloadingSongId}
                 downloadedIds={downloadedIds}
                 onAddToSavedPlaylist={(song) => setSongToAddToPlaylist(song)}
+                shouldScrollToBottom={shouldScrollPlaylistToBottom}
+                onScrollToBottomDone={() => setShouldScrollPlaylistToBottom(false)}
               />
             )}
           </div>
