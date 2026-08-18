@@ -327,23 +327,88 @@ function App() {
   const [shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
 
-  const handleToggleSearch = () => {
-    setShowSearch(prev => {
-      const isCurrentlyOpen = prev;
-      if (isCurrentlyOpen) {
-        // Closing search view
-        if (hasAddedSongInSearchRef.current) {
-          setShouldScrollPlaylistToBottom(true);
-          hasAddedSongInSearchRef.current = false;
-        }
-        return false;
-      } else {
-        // Opening search view
-        hasAddedSongInSearchRef.current = false;
-        setShowDownloadedList(false);
-        return true;
+  // Search Preview State
+  const [previewSong, setPreviewSong] = useState(null);
+  const [restoredSong, setRestoredSong] = useState(null);
+  const previewSavedStateRef = useRef(null);
+
+  const handlePlayPreview = async (video) => {
+    if (!previewSavedStateRef.current) {
+      let currentTimeSeconds = currentTime;
+      if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+        try {
+          const t = await playerRef.current.getCurrentTime();
+          if (typeof t === 'number' && !isNaN(t)) {
+            currentTimeSeconds = t;
+          }
+        } catch (e) {}
       }
-    });
+
+      previewSavedStateRef.current = {
+        song: playlist[currentIndex],
+        time: currentTimeSeconds,
+        wasPlaying: isAudioPlaying
+      };
+    }
+
+    // Smoothly fade out currently playing main track
+    if (playerRef.current && typeof playerRef.current.fadeOut === 'function') {
+      await playerRef.current.fadeOut(200);
+    }
+
+    setRestoredSong(null);
+    setPreviewSong(video);
+    setIsAudioPlaying(true);
+
+    // Smoothly fade in preview track
+    setTimeout(() => {
+      if (playerRef.current && typeof playerRef.current.fadeIn === 'function') {
+        playerRef.current.fadeIn(350);
+      }
+    }, 120);
+  };
+
+  const handleStopPreview = async () => {
+    const saved = previewSavedStateRef.current;
+    previewSavedStateRef.current = null;
+
+    // Smoothly fade out preview track
+    if (playerRef.current && typeof playerRef.current.fadeOut === 'function') {
+      await playerRef.current.fadeOut(200);
+    }
+
+    setPreviewSong(null);
+
+    if (saved && saved.song) {
+      const restoredItem = { ...saved.song, startSeconds: Math.floor(saved.time || 0) };
+      setRestoredSong(restoredItem);
+      setIsAudioPlaying(saved.wasPlaying);
+
+      setTimeout(() => {
+        if (playerRef.current && typeof playerRef.current.fadeIn === 'function') {
+          playerRef.current.fadeIn(400);
+        }
+      }, 150);
+    }
+  };
+
+  const handleToggleSearch = () => {
+    if (showSearch) {
+      // Closing search view
+      if (previewSavedStateRef.current || previewSong) {
+        handleStopPreview();
+      }
+      if (hasAddedSongInSearchRef.current) {
+        setShouldScrollPlaylistToBottom(true);
+        hasAddedSongInSearchRef.current = false;
+      }
+      setShowSearch(false);
+    } else {
+      // Opening search view
+      hasAddedSongInSearchRef.current = false;
+      setShowDownloadedList(false);
+      setShowSearch(true);
+    }
   };
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
@@ -565,7 +630,15 @@ function App() {
     setTheme(themes[nextIndex]);
   };
 
-  const currentSong = playlist[currentIndex] || null;
+  const currentSong = useMemo(() => {
+    if (previewSong) {
+      return { ...previewSong, startSeconds: 35 };
+    }
+    if (restoredSong) {
+      return restoredSong;
+    }
+    return playlist[currentIndex] || null;
+  }, [previewSong, restoredSong, playlist, currentIndex]);
   const [artistFact, setArtistFact] = useState('');
   
   useEffect(() => {
@@ -1230,6 +1303,8 @@ function App() {
 
 
   const handleNext = () => {
+    if (previewSong) setPreviewSong(null);
+    if (restoredSong) setRestoredSong(null);
     if (isShuffle) {
       if (playlist.length <= 1) return;
       let nextIdx;
@@ -1246,6 +1321,8 @@ function App() {
   };
 
   const handlePrevious = () => {
+    if (previewSong) setPreviewSong(null);
+    if (restoredSong) setRestoredSong(null);
     if (isShuffle) {
       if (shuffleHistory.length > 0) {
          const newHistory = [...shuffleHistory];
@@ -1263,6 +1340,10 @@ function App() {
   };
 
   const handleAddSong = (video) => {
+    if (previewSong) {
+      setPreviewSong(null);
+      previewSavedStateRef.current = null;
+    }
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
     }
@@ -1277,6 +1358,10 @@ function App() {
   };
 
   const handleAddMultiple = (videos) => {
+    if (previewSong) {
+      setPreviewSong(null);
+      previewSavedStateRef.current = null;
+    }
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
     }
@@ -1614,6 +1699,7 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
                 if (newVal) setIsEndlessPlay(false);
               }}
               onSongEnded={handleNext}
+              onRestoreHandled={() => setRestoredMainTime(null)}
             />
           </div>
         </div>
@@ -1714,6 +1800,9 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
               <button
                 className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`}
                 onClick={() => {
+                  if (previewSavedStateRef.current || previewSong) {
+                    handleStopPreview();
+                  }
                   if (showSearch && hasAddedSongInSearchRef.current) {
                     setShouldScrollPlaylistToBottom(true);
                     hasAddedSongInSearchRef.current = false;
@@ -1756,7 +1845,15 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
           <div style={staticStyles.playlistContainer}>
             {showSearch ? (
               <div style={staticStyles.searchContainer}>
-                <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} onError={setGlobalError} />
+                <Search 
+                  onAdd={handleAddSong} 
+                  onAddMultiple={handleAddMultiple} 
+                  playlist={playlist} 
+                  onError={setGlobalError} 
+                  onPlayPreview={handlePlayPreview}
+                  onStopPreview={handleStopPreview}
+                  previewSongId={previewSong?.id}
+                />
               </div>
             ) : showDownloadedList ? (
               <Playlist

@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Loader2, Plus, Check, X, Disc, Music } from 'lucide-react';
+import { Loader2, Plus, Check, X, Disc, Music, Play, Square } from 'lucide-react';
 
-const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId }) => {
+const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId, onPlayPreview, onStopPreview, isPreviewing }) => {
   const isAlbum = video.is_playlist;
   const isAdded = !isAlbum && playlist.some(s => s.id === video.id);
   const isLoading = loadingAlbumId === video.id;
@@ -47,27 +47,48 @@ const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId
           {isAlbum && <span style={{ marginLeft: '6px', opacity: 0.7 }}>• {video.channel}</span>}
         </div>
       </div>
-      <button 
-        className={`btn btn-icon ${isAdded ? '' : 'btn-primary'}`} 
-        onClick={(e) => { 
-          e.stopPropagation(); 
-          if (isLoading) return;
-          if (isAlbum) {
-            handleAddAlbum(video);
-          } else if (!isAdded) {
-            onAdd(video); 
-          }
-        }}
-        disabled={isAdded || isLoading}
-        title={isAdded ? "Already in Playlist" : (isAlbum ? "Add Album to Queue" : "Add to Playlist")}
-      >
-        {isLoading ? <Loader2 size={16} className="animate-spin" /> : (isAdded ? <Check size={16} /> : <Plus size={16} />)}
-      </button>
+
+      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+        {!isAlbum && (
+          <button 
+            className="btn btn-icon btn-primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isPreviewing) {
+                if (onStopPreview) onStopPreview();
+              } else {
+                if (onPlayPreview) onPlayPreview(video);
+              }
+            }}
+            disabled={isLoading}
+            title={isPreviewing ? "Stop Preview" : "Preview at 35s"}
+          >
+            {isPreviewing ? <Square size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+          </button>
+        )}
+
+        <button 
+          className={`btn btn-icon ${isAdded ? '' : 'btn-primary'}`} 
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (isLoading) return;
+            if (isAlbum) {
+              handleAddAlbum(video);
+            } else if (!isAdded) {
+              onAdd(video); 
+            }
+          }}
+          disabled={isAdded || isLoading}
+          title={isAdded ? "Already in Playlist" : (isAlbum ? "Add Album to Queue" : "Add to Playlist")}
+        >
+          {isLoading ? <Loader2 size={16} className="animate-spin" /> : (isAdded ? <Check size={16} /> : <Plus size={16} />)}
+        </button>
+      </div>
     </div>
   );
 };
 
-export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
+export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlayPreview, onStopPreview, previewSongId }) {
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('song');
   const [results, setResults] = useState([]);
@@ -187,6 +208,9 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError }) {
             onAdd={onAdd}
             handleAddAlbum={handleAddAlbum}
             loadingAlbumId={loadingAlbumId}
+            onPlayPreview={onPlayPreview}
+            onStopPreview={onStopPreview}
+            isPreviewing={previewSongId === video.id}
           />
         ))}
       </div>

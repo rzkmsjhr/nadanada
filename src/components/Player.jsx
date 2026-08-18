@@ -5,7 +5,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
-  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded
+  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled
 }, ref) {
   const playerRef = useRef(null);
   
@@ -83,27 +83,49 @@ const Player = React.forwardRef(function Player({
     return () => clearTimeout(timeout);
   }, [isBuffering, streamUrl, isExtractingStream, currentSong, currentTime]);
 
+  const songId = currentSong?.id;
+  const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
+  const prevSongIdRef = useRef(null);
+  const hasSeekedInitialRef = useRef(false);
+
+  useEffect(() => {
+    hasSeekedInitialRef.current = false;
+  }, [songId, startSecs]);
+
   useEffect(() => {
     if (stallTimeoutRef.current) {
       clearTimeout(stallTimeoutRef.current);
       stallTimeoutRef.current = null;
     }
-    if (currentSong) {
+    if (songId) {
       setStreamUrl(null);
       setIsExtractingStream(false);
       setIsBuffering(true);
       setIsPlaying(false);
-      setCurrentTime(0);
+      setCurrentTime(startSecs);
       setDuration(0);
       setPlayCount(0); // Reset repeat counter for new song
+
+      if (prevSongIdRef.current === songId && playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
+        try {
+          playerRef.current.loadVideoById(songId, startSecs);
+        } catch (e) {
+          console.error("Failed to loadVideoById:", e);
+        }
+      }
+      prevSongIdRef.current = songId;
     } else {
+      prevSongIdRef.current = null;
+      if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
+        try { playerRef.current.stopVideo(); } catch (e) {}
+      }
       setIsBuffering(false);
       setIsPlaying(false);
       setCurrentTime(0);
       setDuration(0);
       setPlayCount(0);
     }
-  }, [currentSong]);
+  }, [songId, startSecs]);
 
   // Time tracking
   useEffect(() => {
@@ -186,7 +208,17 @@ const Player = React.forwardRef(function Player({
 
   const onReady = (event) => {
     playerRef.current = event.target;
-    event.target.setVolume(isMuted ? 0 : masterVolume);
+    if (!activeFadeIntervalRef.current) {
+      event.target.setVolume(isMuted ? 0 : masterVolume);
+    }
+    if (startSecs > 0) {
+      try {
+        event.target.seekTo(startSecs, true);
+      } catch (e) {}
+    }
+    try {
+      event.target.playVideo();
+    } catch (e) {}
   };
 
   const handleTrackEnd = () => {
@@ -245,6 +277,12 @@ const Player = React.forwardRef(function Player({
       setIsPlaying(true);
       setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(true);
+      if (startSecs > 0 && !hasSeekedInitialRef.current) {
+        hasSeekedInitialRef.current = true;
+        try {
+          event.target.seekTo(startSecs, true);
+        } catch (e) {}
+      }
     } else if (event.data === 2) { // PAUSED
       setIsPlaying(false);
       setIsBuffering(false);
@@ -256,7 +294,15 @@ const Player = React.forwardRef(function Player({
     } else if (event.data === 5 || event.data === -1) {
       // CUED (5) or UNSTARTED (-1)
       setIsBuffering(true);
-      event.target.playVideo();
+      if (startSecs > 0 && !hasSeekedInitialRef.current) {
+        hasSeekedInitialRef.current = true;
+        try {
+          event.target.seekTo(startSecs, true);
+        } catch (e) {}
+      }
+      try {
+        event.target.playVideo();
+      } catch (e) {}
     }
   };
 
@@ -301,10 +347,80 @@ const Player = React.forwardRef(function Player({
   togglePlayRef.current = togglePlay;
   toggleMuteRef.current = toggleMute;
 
+  const activeFadeIntervalRef = useRef(null);
+
+  const applyVolume = (vol) => {
+    if (playerRef.current && typeof playerRef.current.setVolume === 'function') {
+      try { playerRef.current.setVolume(vol); } catch (e) {}
+    }
+    const audioEl = document.getElementById('local-audio-player');
+    if (audioEl) {
+      try { audioEl.volume = Math.max(0, Math.min(1, vol / 100)); } catch (e) {}
+    }
+  };
+
   useImperativeHandle(ref, () => ({
     togglePlay: () => togglePlayRef.current?.(),
     toggleMute: () => toggleMuteRef.current?.(),
-  }), []);
+    fadeOut: (durationMs = 250) => {
+      return new Promise((resolve) => {
+        if (activeFadeIntervalRef.current) {
+          clearInterval(activeFadeIntervalRef.current);
+          activeFadeIntervalRef.current = null;
+        }
+        const startVol = isMuted ? 0 : masterVolume;
+        if (startVol <= 0) {
+          applyVolume(0);
+          resolve();
+          return;
+        }
+        const steps = 10;
+        const stepTime = durationMs / steps;
+        let step = 0;
+
+        activeFadeIntervalRef.current = setInterval(() => {
+          step++;
+          const curVol = Math.max(0, Math.round(startVol * (1 - step / steps)));
+          applyVolume(curVol);
+          if (step >= steps || curVol <= 0) {
+            clearInterval(activeFadeIntervalRef.current);
+            activeFadeIntervalRef.current = null;
+            resolve();
+          }
+        }, stepTime);
+      });
+    },
+    fadeIn: (durationMs = 350) => {
+      return new Promise((resolve) => {
+        if (activeFadeIntervalRef.current) {
+          clearInterval(activeFadeIntervalRef.current);
+          activeFadeIntervalRef.current = null;
+        }
+        const targetVol = isMuted ? 0 : masterVolume;
+        if (targetVol <= 0) {
+          applyVolume(0);
+          resolve();
+          return;
+        }
+        applyVolume(0);
+        const steps = 12;
+        const stepTime = durationMs / steps;
+        let step = 0;
+
+        activeFadeIntervalRef.current = setInterval(() => {
+          step++;
+          const curVol = Math.min(targetVol, Math.round(targetVol * (step / steps)));
+          applyVolume(curVol);
+          if (step >= steps || curVol >= targetVol) {
+            clearInterval(activeFadeIntervalRef.current);
+            activeFadeIntervalRef.current = null;
+            applyVolume(targetVol);
+            resolve();
+          }
+        }, stepTime);
+      });
+    }
+  }), [masterVolume, isMuted]);
 
   const handleVolumeChange = (e) => {
     const val = parseInt(e.target.value);
@@ -363,7 +479,8 @@ const Player = React.forwardRef(function Player({
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
-      origin: 'https://127.0.0.1.nip.io'
+      origin: 'https://127.0.0.1.nip.io',
+      start: startSecs > 0 ? startSecs : undefined
     },
   };
 
