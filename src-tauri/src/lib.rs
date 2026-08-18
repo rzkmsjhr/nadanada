@@ -51,8 +51,13 @@ async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
     if !exe_path.exists() {
         println!("{} not found, downloading now...", exe_name);
         let download_url = format!("https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}", exe_name);
-        let bytes =
-            reqwest::get(&download_url)
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()
+            .map_err(|e| e.to_string())?;
+            
+        let bytes = client.get(&download_url)
+                .send()
                 .await
                 .map_err(|e| e.to_string())?
                 .bytes()
@@ -273,7 +278,8 @@ async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<Stri
 
     // Get the direct audio stream URL using yt-dlp (-g / --get-url)
     let mut cmd = tokio::process::Command::new(exe_path);
-    cmd.arg("-g")
+    cmd.stdin(std::process::Stdio::null())
+       .arg("-g")
        .arg("-f")
        .arg("bestaudio")
        .arg(&url);
