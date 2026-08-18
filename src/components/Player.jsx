@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
-import YouTube from 'react-youtube';
+import ProxyYouTube from './ProxyYouTube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
@@ -479,7 +479,6 @@ const Player = React.forwardRef(function Player({
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
-      origin: 'https://127.0.0.1.nip.io',
       start: startSecs > 0 ? startSecs : undefined
     },
   };
@@ -514,7 +513,7 @@ const Player = React.forwardRef(function Player({
           
           <div style={{ position: 'absolute', inset: 0 }}>
             {currentSong && !currentSong.is_local && !streamUrl && !isExtractingStream && (
-              <YouTube
+              <ProxyYouTube
                 key={currentSong.id}
                 videoId={currentSong.id}
                 opts={opts}
