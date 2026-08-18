@@ -28,7 +28,6 @@
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
       videoId: videoId,
-      host: 'https://www.youtube-nocookie.com',
       width: '100%',
       height: '100%',
       playerVars: {
@@ -38,7 +37,7 @@
         modestbranding: 1,
         rel: 0,
         start: startSeconds > 0 ? startSeconds : undefined,
-        origin: 'https://127.0.0.1.nip.io'
+        origin: window.location.origin
       },
       events: {
         onReady: function(e) {
