@@ -1363,6 +1363,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            #[cfg(not(dev))]
+            let url = tauri::WebviewUrl::External("http://localhost:14214".parse().unwrap());
+            #[cfg(dev)]
+            let url = tauri::WebviewUrl::App(std::path::PathBuf::from("/"));
+
+            tauri::WebviewWindowBuilder::new(app, "main", url)
+                .title("NadaNada")
+                .inner_size(400.0, 770.0)
+                .min_inner_size(320.0, 568.0)
+                .decorations(false)
+                .drag_drop_enabled(false)
+                .build()?;
+
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
                 .on_tray_icon_event(|tray, event| match event {
