@@ -85,7 +85,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
 
   const playerVars = opts?.playerVars || {};
   const startSecs = playerVars.start || 0;
-  const src = `http://127.0.0.1.nip.io:${port}/embed?v=${videoId}&start=${startSecs}&volume=100`;
+  const src = `http://127.0.0.1:${port}/embed?v=${videoId}&start=${startSecs}&volume=100`;
 
   return (
     <iframe
@@ -94,6 +94,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
       className={iframeClassName}
       style={{ ...style, width: '100%', height: '100%', border: 'none' }}
       allow="autoplay; encrypted-media"
+      referrerPolicy="strict-origin-when-cross-origin"
       sandbox="allow-scripts allow-same-origin allow-popups"
     />
   );
