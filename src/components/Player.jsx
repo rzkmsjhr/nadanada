@@ -479,7 +479,7 @@ const Player = React.forwardRef(function Player({
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
-      origin: 'https://127.0.0.1.nip.io',
+      origin: window.location.origin,
       start: startSecs > 0 ? startSecs : undefined
     },
   };
@@ -513,7 +513,7 @@ const Player = React.forwardRef(function Player({
         }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
-            {currentSong && !currentSong.is_local && !streamUrl && (
+            {currentSong && !currentSong.is_local && !streamUrl && !isExtractingStream && (
               <YouTube
                 key={currentSong.id}
                 videoId={currentSong.id}

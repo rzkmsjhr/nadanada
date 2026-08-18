@@ -1,6 +1,7 @@
 :root {
   /* Theme 1: Lavender Steel (Default) */
   --bg-color: #FFDBED; /* Blossom Vapor */
+  --modal-bg: rgba(255, 219, 237, 0.85);
   --panel-bg: rgba(142, 147, 203, 0.15); /* Lavender Steel glass */
   --panel-border: rgba(142, 147, 203, 0.25);
   --text-main: #8E93CB; /* Lavender Steel */
@@ -12,6 +13,7 @@
 
 [data-theme="mahogany-dusk"] {
   --bg-color: #CAE7F7; /* Crystal Glaze */
+  --modal-bg: rgba(202, 231, 247, 0.85);
   --panel-bg: rgba(72, 38, 29, 0.05); /* Mahogany Dusk glass */
   --panel-border: rgba(72, 38, 29, 0.15);
   --text-main: #48261D; /* Mahogany Dusk */
@@ -23,6 +25,7 @@
 
 [data-theme="tidal-sage"] {
   --bg-color: #E6D4BE; /* Toasted Sand */
+  --modal-bg: rgba(230, 212, 190, 0.85);
   --panel-bg: rgba(103, 159, 158, 0.15); /* Tidal Sage glass */
   --panel-border: rgba(103, 159, 158, 0.3);
   --text-main: #679F9E; /* Tidal Sage */
@@ -34,6 +37,7 @@
 
 [data-theme="sangria-deep"] {
   --bg-color: #E4EAE8; /* Pebble Mist */
+  --modal-bg: rgba(228, 234, 232, 0.85);
   --panel-bg: rgba(122, 18, 41, 0.05); /* Sangria Deep glass */
   --panel-border: rgba(122, 18, 41, 0.15);
   --text-main: #7A1229; /* Sangria Deep */
@@ -45,6 +49,7 @@
 
 [data-theme="midnight-static"] {
   --bg-color: #CF98AF; /* Dusty Orchid */
+  --modal-bg: rgba(207, 152, 175, 0.85);
   --panel-bg: rgba(27, 28, 32, 0.05); /* Midnight Static glass */
   --panel-border: rgba(27, 28, 32, 0.15);
   --text-main: #1B1C20; /* Midnight Static */
@@ -56,6 +61,7 @@
 
 [data-theme="obsidian-root"] {
   --bg-color: #FCFF1A; /* Electric Sun */
+  --modal-bg: rgba(252, 255, 26, 0.85);
   --panel-bg: rgba(12, 14, 9, 0.03); /* Obsidian Root glass */
   --panel-border: rgba(12, 14, 9, 0.1);
   --text-main: #0C0E09; /* Obsidian Root */
@@ -67,6 +73,7 @@
 
 [data-theme="nox-noir"] {
   --bg-color: #CFCFCF; /* Steel Mist */
+  --modal-bg: rgba(207, 207, 207, 0.85);
   --panel-bg: rgba(20, 20, 20, 0.05); /* Nox Noir glass */
   --panel-border: rgba(20, 20, 20, 0.15);
   --text-main: #141414; /* Nox Noir */
@@ -78,6 +85,7 @@
 
 [data-theme="crimson-night"] {
   --bg-color: #080d16; /* Very Deep Navy / Tinted Black */
+  --modal-bg: rgba(8, 13, 22, 0.85);
   --panel-bg: rgba(16, 26, 43, 0.5); /* Deep Navy Glass */
   --panel-border: rgba(59, 151, 151, 0.3); /* Teal (#3B9797) with opacity */
   --text-main: #f3f4f6; /* Off-white */
@@ -415,8 +423,7 @@ body {
 }
 
 .modal-content {
-  background: var(--bg-color);
-  background: color-mix(in srgb, var(--bg-color) 85%, transparent);
+  background: var(--modal-bg);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--panel-border);
