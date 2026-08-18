@@ -511,8 +511,8 @@ async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> {
 }
 
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
-    app.exit(0);
+fn quit_app(_app: tauri::AppHandle) {
+    std::process::exit(0);
 }
 
 #[tauri::command]
