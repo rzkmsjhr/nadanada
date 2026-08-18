@@ -534,7 +534,7 @@ const Player = React.forwardRef(function Player({
                       } else {
                         setIsPlaying(false);
                         if (onPlayStateChange) onPlayStateChange(false);
-                        if (onError) onError("Failed to stream track from YouTube. Some tracks block embedding.");
+                        if (onError) onError(`Failed to stream track from YouTube: ${err}`);
                       }
                     } finally {
                       setIsExtractingStream(false);
