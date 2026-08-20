@@ -55,12 +55,12 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: '4px' }}>
+      <div style={{ display: 'flex', gap: '0px', marginRight: '-6px' }}>
         {isTrendingMode && onAddSong && !isDownloadedView && (
           addedSongs.has(song.queueId) ? (
             <button 
               className="btn btn-icon" 
-              style={{ border: 'none', cursor: 'default' }}
+              style={{ border: 'none', cursor: 'default', padding: '6px' }}
               title="Added to playlist"
               disabled
             >
@@ -69,7 +69,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           ) : (
             <button 
               className="btn btn-icon" 
-              style={{ border: 'none' }}
+              style={{ border: 'none', padding: '6px' }}
               onClick={(e) => {
                 e.stopPropagation();
                 onAddSong(song);
@@ -86,7 +86,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           downloadingSongId === song.id ? (
             <button 
               className="btn btn-icon" 
-              style={{ border: 'none', cursor: 'default' }}
+              style={{ border: 'none', cursor: 'default', padding: '6px' }}
               title="Downloading..."
               disabled
             >
@@ -95,7 +95,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           ) : downloadedIds?.has(song.id) ? (
             <button 
               className="btn btn-icon" 
-              style={{ border: 'none', cursor: 'default' }}
+              style={{ border: 'none', cursor: 'default', padding: '6px' }}
               title="Downloaded successfully"
               disabled
             >
@@ -104,7 +104,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           ) : (
             <button 
               className="btn btn-icon" 
-              style={{ border: 'none' }}
+              style={{ border: 'none', padding: '6px' }}
               onClick={(e) => {
                 e.stopPropagation();
                 onDownloadSong(song);
@@ -119,7 +119,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
         {!isTrendingMode && !isDownloadedView && onAddToSavedPlaylist && (
           <button 
             className="btn btn-icon" 
-            style={{ border: 'none' }}
+            style={{ border: 'none', padding: '6px' }}
             onClick={(e) => {
               e.stopPropagation();
               onAddToSavedPlaylist(song);
@@ -132,7 +132,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
 
         <button 
           className="btn btn-icon" 
-          style={{ border: 'none' }}
+          style={{ border: 'none', padding: '6px' }}
           onClick={(e) => {
             e.stopPropagation();
             onRemove(index);
