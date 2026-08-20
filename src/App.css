@@ -368,16 +368,9 @@ body {
   transition: background 0.2s, color 0.2s;
 }
 .titlebar-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--panel-border, rgba(128, 128, 128, 0.2));
 }
 .titlebar-button.close:hover {
-  background: #e81123;
-  color: white;
-}
-[data-theme="light"] .titlebar-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-[data-theme="light"] .titlebar-button.close:hover {
   background: #e81123;
   color: white;
 }

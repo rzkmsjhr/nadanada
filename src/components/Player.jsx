@@ -294,12 +294,6 @@ const Player = React.forwardRef(function Player({
     } else if (event.data === 5 || event.data === -1) {
       // CUED (5) or UNSTARTED (-1)
       setIsBuffering(true);
-      if (startSecs > 0 && !hasSeekedInitialRef.current) {
-        hasSeekedInitialRef.current = true;
-        try {
-          event.target.seekTo(startSecs, true);
-        } catch (e) {}
-      }
       try {
         event.target.playVideo();
       } catch (e) {}
