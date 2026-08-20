@@ -98,14 +98,18 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
     }
   }, [videoId, startSecs]);
 
-  if (!port || !videoId) return null;
+  const [initialStartSecs] = useState(startSecs);
+  const initialSrc = useMemo(() => {
+    if (!port || !initialVideoId) return null;
+    return `http://127.0.0.1.nip.io:${port}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+  }, [port, initialVideoId, initialStartSecs]);
 
-  const src = `http://127.0.0.1.nip.io:${port}/embed?v=${initialVideoId}&start=${startSecs}&volume=100`;
+  if (!port || !videoId || !initialSrc) return null;
 
   return (
     <iframe
       ref={iframeRef}
-      src={src}
+      src={initialSrc}
       className={iframeClassName}
       style={{ ...style, width: '100%', height: '100%', border: 'none' }}
       allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
