@@ -3,23 +3,31 @@ import { invoke } from '@tauri-apps/api/core';
 
 /**
  * ProxyYouTube — drop-in replacement for react-youtube that routes the YouTube
- * iframe through a local HTTP proxy server.  This avoids macOS WebKit stripping
- * Referer headers on the custom tauri:// protocol, which causes YouTube Error 153.
+ * iframe through a Cloudflare Worker (HTTPS) to satisfy both:
+ *   1. YouTube's embed origin validation (needs a real public FQDN, rejects localhost)
+ *   2. macOS WebKit mixed-content rules (blocks http:// iframes inside tauri://)
+ *
+ * Falls back to the local embed server (http://127.0.0.1.nip.io) if the Worker
+ * is unreachable (e.g. no internet during initial load — though YouTube itself
+ * also needs internet, so this is mainly a development convenience).
  *
  * The component mirrors the react-youtube API surface so Player.jsx needs minimal changes:
  *   <ProxyYouTube videoId={id} opts={opts} onReady={fn} onStateChange={fn} onError={fn} />
  */
+
+const WORKER_EMBED_URL = 'https://nadanada-yt.kdmp.workers.dev';
+
 const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, iframeClassName }) => {
   const iframeRef = useRef(null);
-  const [port, setPort] = useState(null);
   const latestTime = useRef(0);
   const latestDuration = useRef(0);
 
   const [initialVideoId] = useState(videoId);
 
-  // Fetch the embed server port once on mount
+  // Local embed server port — kept as fallback
+  const [localPort, setLocalPort] = useState(null);
   useEffect(() => {
-    invoke('get_embed_port').then(p => setPort(p)).catch(() => {});
+    invoke('get_embed_port').then(p => setLocalPort(p)).catch(() => {});
   }, []);
 
   // Build a fake "player" object that mirrors the YT.Player API surface
@@ -99,22 +107,45 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
   }, [videoId, startSecs]);
 
   const [initialStartSecs] = useState(startSecs);
-  const initialSrc = useMemo(() => {
-    if (!port || !initialVideoId) return null;
-    return `http://127.0.0.1.nip.io:${port}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
-  }, [port, initialVideoId, initialStartSecs]);
 
-  if (!port || !videoId || !initialSrc) return null;
+  // Primary: Cloudflare Worker (HTTPS, works on all platforms including macOS)
+  // Fallback: Local embed server via nip.io (works on Windows, blocked on macOS)
+  const initialSrc = useMemo(() => {
+    if (!initialVideoId) return null;
+    return `${WORKER_EMBED_URL}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+  }, [initialVideoId, initialStartSecs]);
+
+  // Fallback URL using local embed server (kept for resilience)
+  const fallbackSrc = useMemo(() => {
+    if (!localPort || !initialVideoId) return null;
+    return `http://127.0.0.1.nip.io:${localPort}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+  }, [localPort, initialVideoId, initialStartSecs]);
+
+  // If the Worker iframe fails to load (e.g. network error on the iframe itself),
+  // swap to the local fallback. This handles the case where the Worker is down
+  // but the user still has general internet (so YouTube itself would work via nip.io).
+  const [useFallback, setUseFallback] = useState(false);
+  const handleIframeError = useCallback(() => {
+    if (!useFallback && fallbackSrc) {
+      console.warn('Worker embed failed to load, falling back to local server');
+      setUseFallback(true);
+    }
+  }, [useFallback, fallbackSrc]);
+
+  const activeSrc = useFallback ? fallbackSrc : initialSrc;
+
+  if (!videoId || !activeSrc) return null;
 
   return (
     <iframe
       ref={iframeRef}
-      src={initialSrc}
+      src={activeSrc}
       className={iframeClassName}
       style={{ ...style, width: '100%', height: '100%', border: 'none' }}
       allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
       referrerPolicy="strict-origin-when-cross-origin"
       sandbox="allow-scripts allow-same-origin allow-popups"
+      onError={handleIframeError}
     />
   );
 };
