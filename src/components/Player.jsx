@@ -514,7 +514,6 @@ const Player = React.forwardRef(function Player({
           <div style={{ position: 'absolute', inset: 0 }}>
             {currentSong && !currentSong.is_local && !streamUrl && !isExtractingStream && (
               <ProxyYouTube
-                key={currentSong.id}
                 videoId={currentSong.id}
                 opts={opts}
                 onReady={onReady}

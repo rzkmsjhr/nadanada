@@ -15,6 +15,8 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
   const latestTime = useRef(0);
   const latestDuration = useRef(0);
 
+  const [initialVideoId] = useState(videoId);
+
   // Fetch the embed server port once on mount
   useEffect(() => {
     invoke('get_embed_port').then(p => setPort(p)).catch(() => {});
@@ -81,11 +83,19 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
     return () => window.removeEventListener('message', handler);
   }, [onReady, onStateChange, onError]);
 
-  if (!port || !videoId) return null;
-
   const playerVars = opts?.playerVars || {};
   const startSecs = playerVars.start || 0;
-  const src = `http://127.0.0.1.nip.io:${port}/embed?v=${videoId}&start=${startSecs}&volume=100`;
+
+  // When videoId changes after mount, don't reload the iframe; just call loadVideoById
+  useEffect(() => {
+    if (videoId && videoId !== initialVideoId) {
+      playerProxy.current.loadVideoById(videoId, startSecs);
+    }
+  }, [videoId, initialVideoId, startSecs]);
+
+  if (!port || !videoId) return null;
+
+  const src = `http://127.0.0.1.nip.io:${port}/embed?v=${initialVideoId}&start=${startSecs}&volume=100`;
 
   return (
     <iframe
@@ -93,7 +103,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
       src={src}
       className={iframeClassName}
       style={{ ...style, width: '100%', height: '100%', border: 'none' }}
-      allow="autoplay; encrypted-media"
+      allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
       referrerPolicy="strict-origin-when-cross-origin"
       sandbox="allow-scripts allow-same-origin allow-popups"
     />

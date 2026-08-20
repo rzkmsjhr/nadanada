@@ -1570,31 +1570,46 @@ const ResizeBorder = ({ cursor, direction, style, windowObj }) => (
       <ResizeBorder windowObj={appWindow} cursor="sw-resize" direction="BottomLeft" style={{ bottom: 0, left: 0, width: '8px', height: '8px' }} />
       <ResizeBorder windowObj={appWindow} cursor="se-resize" direction="BottomRight" style={{ bottom: 0, right: 0, width: '8px', height: '8px' }} />
 
-      {/* Native Titlebar */}
+      {/* Native/Custom Titlebar */}
       <div 
-        className="titlebar" 
+        className={`titlebar ${navigator.userAgent.toUpperCase().indexOf('MAC') >= 0 ? 'mac' : ''}`} 
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget || e.target.classList.contains('titlebar-logo')) {
+          if (e.target === e.currentTarget || e.target.classList.contains('titlebar-logo') || e.target.classList.contains('titlebar-center')) {
             appWindow.startDragging().catch(()=>{});
           }
         }}
       >
-        <div className="titlebar-logo">
-          <Music2 size={14} /> NadaNada
-        </div>
-        <div className="titlebar-buttons">
-          <div className="titlebar-button" onClick={() => appWindow.minimize()}>
-            <Minus size={14} />
-          </div>
-          <div className="titlebar-button" onClick={() => appWindow.toggleMaximize()}>
-            <Square size={12} />
-          </div>
-          <div className="titlebar-button close" onClick={() => appWindow.close()}>
-            <X size={14} />
-          </div>
-        </div>
+        {navigator.userAgent.toUpperCase().indexOf('MAC') >= 0 ? (
+          <>
+            <div className="titlebar-buttons mac">
+              <div className="mac-btn close" onClick={() => appWindow.close()} />
+              <div className="mac-btn minimize" onClick={() => appWindow.minimize()} />
+              <div className="mac-btn maximize" onClick={() => appWindow.toggleMaximize()} />
+            </div>
+            <div className="titlebar-center">
+               <Music2 size={14} /> NadaNada
+            </div>
+            <div style={{ width: '70px' }}></div>
+          </>
+        ) : (
+          <>
+            <div className="titlebar-logo">
+              <Music2 size={14} /> NadaNada
+            </div>
+            <div className="titlebar-buttons">
+              <div className="titlebar-button" onClick={() => appWindow.minimize()}>
+                <Minus size={14} />
+              </div>
+              <div className="titlebar-button" onClick={() => appWindow.toggleMaximize()}>
+                <Square size={12} />
+              </div>
+              <div className="titlebar-button close" onClick={() => appWindow.close()}>
+                <X size={14} />
+              </div>
+            </div>
+          </>
+        )}
       </div>
-
 
       {/* ── UNIFIED MAIN CONTENT ──
           Single JSX tree — styles switch via isMaximized.

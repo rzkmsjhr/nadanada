@@ -382,6 +382,41 @@ body {
   color: white;
 }
 
+/* macOS Titlebar Styles */
+.titlebar.mac {
+  padding: 0 12px;
+}
+.titlebar-buttons.mac {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  height: 100%;
+}
+.mac-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.mac-btn:hover {
+  opacity: 0.8;
+}
+.mac-btn.close { background: #ff5f56; border: 1px solid #e0443e; }
+.mac-btn.minimize { background: #ffbd2e; border: 1px solid #dea123; }
+.mac-btn.maximize { background: #27c93f; border: 1px solid #1aab29; }
+.titlebar-center {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
 /* Visualizer Animation */
 .visualizer {
   display: flex;
