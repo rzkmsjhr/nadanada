@@ -632,7 +632,7 @@ function App() {
 
   const currentSong = useMemo(() => {
     if (previewSong) {
-      return { ...previewSong, startSeconds: 35 };
+      return { ...previewSong, startSeconds: 30 };
     }
     if (restoredSong) {
       return restoredSong;
@@ -640,6 +640,13 @@ function App() {
     return playlist[currentIndex] || null;
   }, [previewSong, restoredSong, playlist, currentIndex]);
   const [artistFact, setArtistFact] = useState('');
+
+  // Fix: Clear restored song if user manually changes track via playlist
+  useEffect(() => {
+    if (restoredSong) {
+      setRestoredSong(null);
+    }
+  }, [currentIndex, playlist]);
   
   useEffect(() => {
     if (currentSong) {

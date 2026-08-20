@@ -86,12 +86,17 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
   const playerVars = opts?.playerVars || {};
   const startSecs = playerVars.start || 0;
 
-  // When videoId changes after mount, don't reload the iframe; just call loadVideoById
+  const currentLoadedVideoId = useRef(initialVideoId);
+  const currentLoadedStart = useRef(startSecs);
+
+  // When videoId or startSecs changes, call loadVideoById
   useEffect(() => {
-    if (videoId && videoId !== initialVideoId) {
+    if (videoId && (videoId !== currentLoadedVideoId.current || startSecs !== currentLoadedStart.current)) {
       playerProxy.current.loadVideoById(videoId, startSecs);
+      currentLoadedVideoId.current = videoId;
+      currentLoadedStart.current = startSecs;
     }
-  }, [videoId, initialVideoId, startSecs]);
+  }, [videoId, startSecs]);
 
   if (!port || !videoId) return null;
 
