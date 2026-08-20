@@ -301,7 +301,6 @@ async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<Stri
     
     let exe_path = get_yt_dlp_path().await?;
 
-    // Get the direct audio stream URL using yt-dlp (-g / --get-url)
     let mut cmd = tokio::process::Command::new(exe_path);
     cmd.stdin(std::process::Stdio::null())
        .arg("-g")
@@ -311,6 +310,12 @@ async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<Stri
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        let current_path = std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        cmd.env("PATH", format!("{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin", current_path));
+    }
 
     let output_result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
     
@@ -1050,6 +1055,11 @@ async fn download_song(id: String, title: String, artist: String) -> Result<Stri
     #[cfg(target_os = "windows")]
     {
         command.creation_flags(0x08000000);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let current_path = std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        command.env("PATH", format!("{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin", current_path));
     }
     
     let output = command
