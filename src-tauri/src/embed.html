@@ -82,7 +82,7 @@
         case 'setVolume': player.setVolume(msg.value); break;
         case 'mute': player.mute(); break;
         case 'unmute': player.unMute(); break;
-        case 'loadVideoById': player.loadVideoById(msg.videoId, msg.startSeconds || 0); break;
+        case 'loadVideoById': player.loadVideoById({ videoId: msg.videoId, startSeconds: msg.startSeconds || 0 }); break;
       }
     } catch(err) {}
   });
