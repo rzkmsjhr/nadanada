@@ -280,7 +280,10 @@ pub async fn scrape_chords(
     })
     .build()
     {
-        Ok(w) => w,
+        Ok(w) => {
+            let _ = w.hide();
+            w
+        },
         Err(e) => {
             if let Some(w) = app_handle.get_webview_window(&window_label) {
                 let _ = w.destroy();
@@ -355,7 +358,10 @@ pub async fn scrape_chords(
         })
         .build()
         {
-            Ok(w) => w,
+            Ok(w) => {
+                let _ = w.hide();
+                w
+            },
             Err(e) => return Err(format!("Failed to build Google fallback window: {}", e)),
         };
 

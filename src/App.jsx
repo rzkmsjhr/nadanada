@@ -1376,12 +1376,19 @@ const SHARPS_MAP = {
             borderRadius: '16px', overflow: 'hidden', minHeight: 0,
           } : topPanelStyle}
         >
-          <header className="header" style={isMaximized ? {
-            display: 'flex', alignItems: 'center', height: '80px',
-            padding: '0 16px', flexShrink: 0, boxShadow: '0 1px 0 0 var(--panel-border)',
-          } : {
-            paddingBottom: '12px', display: 'flex', alignItems: 'center', height: '50px',
+          <div style={{
+            display: 'grid',
+            gridTemplateRows: (showSearch && !isMaximized) ? '0fr' : '1fr',
+            transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
           }}>
+            <div style={{ overflow: 'hidden' }}>
+              <header className="header" style={isMaximized ? {
+                display: 'flex', alignItems: 'center', height: '80px',
+                padding: '0 16px', flexShrink: 0, boxShadow: '0 1px 0 0 var(--panel-border)',
+              } : {
+                paddingBottom: '12px', display: 'flex', alignItems: 'center', minHeight: '60px', height: 'auto',
+                opacity: (showSearch && !isMaximized) ? 0 : 1, transition: 'opacity 0.2s ease', pointerEvents: (showSearch && !isMaximized) ? 'none' : 'auto'
+              }}>
             <div style={{ flex: 1, display: 'flex', paddingRight: '16px', height: '100%', minWidth: 0 }}>
               {showChords ? (
                 <ChordDisplay
@@ -1432,6 +1439,8 @@ const SHARPS_MAP = {
               </button>
             </div>
           </header>
+            </div>
+          </div>
 
           {/* Player — ONE instance, never remounts */}
           <div style={isMaximized ? {
@@ -1441,6 +1450,7 @@ const SHARPS_MAP = {
             <Player
               ref={playerRef}
               currentSong={currentSong}
+              isSearchExpanded={showSearch && !isMaximized}
               nextSong={playlist[currentIndex + 1]}
               onNext={handleNext}
               onPrevious={handlePrevious}

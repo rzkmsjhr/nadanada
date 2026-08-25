@@ -5,7 +5,7 @@ import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
-  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled
+  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded
 }, ref) {
   const playerRef = useRef(null);
   
@@ -714,7 +714,13 @@ const Player = React.forwardRef(function Player({
         </div>
       </div>
 
-      <div style={{ padding: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: isSearchExpanded ? '0fr' : '1fr',
+        transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
+      }}>
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ padding: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '12px', opacity: isSearchExpanded ? 0 : 1, transition: 'opacity 0.25s ease', pointerEvents: isSearchExpanded ? 'none' : 'auto' }}>
         <div style={{ width: '100%' }}>
           <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {currentSong ? currentSong.title : 'Waiting for music...'}
@@ -820,6 +826,8 @@ const Player = React.forwardRef(function Player({
                 background: `linear-gradient(to right, var(--accent-color) ${isMuted ? 0 : masterVolume}%, var(--panel-border) ${isMuted ? 0 : masterVolume}%)`
               }}
             />
+          </div>
+        </div>
           </div>
         </div>
       </div>
