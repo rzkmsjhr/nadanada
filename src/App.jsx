@@ -5,6 +5,7 @@ import Search from './components/Search';
 import Playlist from './components/Playlist';
 import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle, ListPlus, Pencil, Check } from 'lucide-react';
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
+import WelcomeModal from './components/WelcomeModal';
 import ChordDisplay from "./components/ChordDisplay";
 import ResizeBorder from "./components/ResizeBorder";
 import { api } from './services/api';
@@ -130,6 +131,7 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
   const isMaximizedRef = useRef(false);
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
@@ -1454,6 +1456,8 @@ function App() {
             Connection restored. Refreshing…
           </div>
         </div>}
+
+      {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
 
       {showClosePrompt && <div className="modal-overlay">
           <div className="modal-content">
