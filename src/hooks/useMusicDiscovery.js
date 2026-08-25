@@ -14,7 +14,6 @@ export function useMusicDiscovery({
   setPlaylist, 
   currentIndex, 
   isEndlessPlay, 
-  cachedSearchVideosRef, 
   setCachedVideo, 
   setGlobalError,
   setShowTrendingDropdown

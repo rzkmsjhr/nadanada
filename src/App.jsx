@@ -312,7 +312,6 @@ function App() {
     setPlaylist,
     currentIndex,
     isEndlessPlay,
-    cachedSearchVideosRef,
     setCachedVideo,
     setGlobalError,
     setShowTrendingDropdown
