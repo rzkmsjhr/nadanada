@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { api } from '../services/api';
 
 /**
  * ProxyYouTube — drop-in replacement for react-youtube that routes the YouTube
@@ -27,7 +27,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
   // Local embed server port — kept as fallback
   const [localPort, setLocalPort] = useState(null);
   useEffect(() => {
-    invoke('get_embed_port').then(p => setLocalPort(p)).catch(() => {});
+    api.getEmbedPort().then(p => setLocalPort(p)).catch(() => {});
   }, []);
 
   // Build a fake "player" object that mirrors the YT.Player API surface

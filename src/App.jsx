@@ -6,7 +6,7 @@ import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Inf
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
 import ChordDisplay from "./components/ChordDisplay";
 import ResizeBorder from "./components/ResizeBorder";
-import { invoke } from '@tauri-apps/api/core';
+import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -281,7 +281,7 @@ function App() {
 
   const loadDownloadedSongs = async () => {
     try {
-      const songs = await invoke('get_downloaded_songs');
+      const songs = await api.getDownloadedSongs();
       setDownloadedSongs(prev => {
         if (prev.length === songs.length && prev.every((s, i) => s.id === songs[i].id)) return prev;
         return songs;
@@ -329,7 +329,7 @@ function App() {
       } else {
           artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
       }
-      await invoke('download_song', { id: song.id, title, artist });
+      await api.downloadSong(song.id, title, artist);
       
       if (showDownloadedList) {
         loadDownloadedSongs();
@@ -374,7 +374,7 @@ function App() {
   useEffect(() => {
     const loadPlaylists = async () => {
       try {
-        const data = await invoke('load_playlists');
+        const data = await api.loadPlaylists();
         const parsed = JSON.parse(data);
         if (parsed && parsed.length > 0) {
           setSavedPlaylists(parsed);
@@ -386,7 +386,7 @@ function App() {
               const lsParsed = JSON.parse(lsData);
               if (lsParsed && lsParsed.length > 0) {
                 setSavedPlaylists(lsParsed);
-                await invoke('save_playlists', { data: lsData });
+                await api.savePlaylists(lsData);
                 localStorage.removeItem('nadanada-saved-playlists');
               }
             } catch {}
@@ -430,7 +430,7 @@ function App() {
   useEffect(() => {
     if (!playlistsLoadedRef.current) return; // Don't overwrite the file before we've loaded it
     const timer = setTimeout(() => {
-      invoke('save_playlists', { data: JSON.stringify(savedPlaylists) })
+      api.savePlaylists(JSON.stringify(savedPlaylists))
         .catch(e => console.error('Failed to save playlists to file:', e));
     }, 500);
     return () => clearTimeout(timer);
@@ -507,7 +507,7 @@ function App() {
               const cleanChannel = currentSong.channel.replace(/ - Topic/i, '').trim();
               searchTitle = `${searchTitle} ${cleanChannel}`;
             }
-            const res = await invoke('scrape_chords', { id: currentSong.id, title: searchTitle });
+            const res = await api.scrapeChords(currentSong.id, searchTitle);
             const parsed = JSON.parse(res);
             if (parsed.success) {
               const chordsList = parsed.data.chords;
@@ -728,7 +728,7 @@ function App() {
           if (current.channel && current.channel.toLowerCase().includes('- topic')) {
             try {
               const cleanArtist = current.channel.replace(/- topic/i, '').trim();
-              const searchResults = await invoke('search_youtube', { query: `${current.title} ${cleanArtist}` });
+              const searchResults = await api.searchYouTube(`${current.title} ${cleanArtist}`);
               if (searchResults && searchResults.length > 0) {
                 // Find the first result that is NOT a topic channel to use as the seed
                 const officialVideo = searchResults.find(v => !(v.channel || '').toLowerCase().includes('- topic')) || searchResults[0];
@@ -739,7 +739,7 @@ function App() {
             }
           }
 
-          const results = await invoke('get_youtube_mix', { videoId: seedId });
+          const results = await api.getYouTubeMix(seedId);
           
           const getWords = (song) => {
             const text = ((song.title || '') + ' ' + (song.channel || '')).toLowerCase()
@@ -781,7 +781,7 @@ function App() {
               let cleanArtist = current.channel ? current.channel.replace(/- topic/i, '').replace(/vevo/i, '').trim() : '';
               let fallbackQuery = cleanArtist ? `${cleanArtist} songs` : `${current.title} cover`;
               
-              let fallbackResults = await invoke('search_youtube', { query: fallbackQuery });
+              let fallbackResults = await api.searchYouTube(fallbackQuery);
               available = fallbackResults.filter(v => {
                 if (existingIds.has(v.id)) return false;
                 const vWords = getWords(v);
@@ -794,7 +794,7 @@ function App() {
               if (available.length === 0 && playlist.length > 1) {
                  // Final fallback: try mixing from the previous song
                  const prevSong = playlist[currentIndex - 1];
-                 const prevResults = await invoke('get_youtube_mix', { videoId: prevSong.id });
+                 const prevResults = await api.getYouTubeMix(prevSong.id);
                  available = prevResults.filter(v => !existingIds.has(v.id));
               }
             } catch (fallbackErr) {
@@ -833,7 +833,7 @@ function App() {
                   try {
                     // Search for the clean title + artist + 'topic' to find the official audio
                     let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
-                    const searchResults = await invoke('search_youtube', { query: `${cleanTitle} ${searchArtist} topic` });
+                    const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist} topic`);
                     if (searchResults && searchResults.length > 0) {
                       picked = searchResults[0];
                     }
@@ -905,7 +905,7 @@ function App() {
     setIsFetchingTrending(true);
     try {
       // Fetch exact real-time Kworb daily chart for Indonesia or Global
-      const kworbTracks = await invoke('get_kworb_chart', { region });
+      const kworbTracks = await api.getKworbChart(region);
       if (!kworbTracks || kworbTracks.length === 0) {
         setGlobalError("Could not fetch Kworb Spotify chart. Please try again.");
         return;
@@ -937,7 +937,7 @@ function App() {
           const batchResults = await Promise.all(
             batch.map(async (track) => {
               try {
-                const searchResults = await invoke('search_youtube', { query: track.query, searchType: null });
+                const searchResults = await api.searchYouTube(track.query, null);
                 if (searchResults && searchResults.length > 0) {
                   const bestMatch = searchResults[0];
                   setCachedVideo(track.query, bestMatch);
@@ -998,11 +998,11 @@ function App() {
         const match = urlStr.match(/[?&]list=([^&]+)/);
         if (match && match[1]) {
           const playlistId = match[1];
-          const songs = await invoke('get_youtube_playlist', { playlistId, firstVideoId: '' });
+          const songs = await api.getYouTubePlaylist(playlistId, '');
           if (songs && songs.length > 0) {
             handleAddMultiple(songs);
             try {
-              const pTitle = await invoke('get_playlist_title', { platform: 'youtube', playlistId });
+              const pTitle = await api.getPlaylistTitle('youtube', playlistId);
               setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: songs }]);
             } catch (err) {
               console.error("Failed to fetch youtube title", err);
@@ -1021,7 +1021,7 @@ function App() {
         const match = urlStr.match(/playlist\/([a-zA-Z0-9]+)/);
         if (match && match[1]) {
           const playlistId = match[1];
-          const spotifyTracks = await invoke('get_spotify_playlist', { playlistId });
+          const spotifyTracks = await api.getSpotifyPlaylist(playlistId);
           if (spotifyTracks && spotifyTracks.length > 0) {
             const importedSongs = [];
             const failedSongs = [];
@@ -1030,7 +1030,7 @@ function App() {
               const track = spotifyTracks[i];
               setImportProgress(`Checking ${i + 1}/${spotifyTracks.length}...`);
               try {
-                const results = await invoke('search_youtube', { query: track.query, searchType: null });
+                const results = await api.searchYouTube(track.query, null);
                 if (results && results.length > 0) {
                   const spotifyDur = track.duration_ms / 1000;
                   const normalize = (str) => str.toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
@@ -1082,7 +1082,7 @@ function App() {
                   let lastError = null;
                   for (const v of validResults.slice(0, 3)) {
                       try {
-                          await invoke('get_stream_url', { videoId: v.id });
+                          await api.getStreamUrl(v.id);
                           bestVideo = v;
                           break;
                       } catch (e) {
@@ -1112,7 +1112,7 @@ function App() {
             if (importedSongs.length > 0) {
               handleAddMultiple(importedSongs);
               try {
-                const pTitle = await invoke('get_playlist_title', { platform: 'spotify', playlistId });
+                const pTitle = await api.getPlaylistTitle('spotify', playlistId);
                 setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: importedSongs }]);
               } catch (err) {
                 console.error("Failed to fetch spotify title", err);
@@ -1596,7 +1596,7 @@ const SHARPS_MAP = {
                   onClick={async () => {
                     try {
                       const filePath = await open({ multiple: false, filters: [{ name: 'Audio', extensions: ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm'] }] });
-                      if (filePath) { await invoke('add_local_song', { filePath }); loadDownloadedSongs(); }
+                      if (filePath) { await api.addLocalSong(filePath); loadDownloadedSongs(); }
                     } catch (e) { console.error('Failed to add local song:', e); setGlobalError('Failed to add local song.'); }
                   }}
                   title="Add Local Audio File"
@@ -1631,7 +1631,7 @@ const SHARPS_MAP = {
                 playlist={downloadedSongs}
                 currentIndex={downloadedSongs.findIndex(s => s.id === (currentSong?.id))}
                 onSelectIndex={(idx) => { if (!savedPlaylist && playlist !== downloadedSongs) { setSavedPlaylist(playlist); } setPlaylist(downloadedSongs); setCurrentIndex(idx); setIsAudioPlaying(true); }}
-                onRemove={async (idx) => { const song = downloadedSongs[idx]; try { await invoke('delete_downloaded_song', { filePath: song.file_path }); loadDownloadedSongs(); } catch (e) { console.error('Failed to delete song:', e); setGlobalError('Failed to delete song.'); } }}
+                onRemove={async (idx) => { const song = downloadedSongs[idx]; try { await api.deleteDownloadedSong(song.file_path); loadDownloadedSongs(); } catch (e) { console.error('Failed to delete song:', e); setGlobalError('Failed to delete song.'); } }}
                 onReorder={(dragIndex, dropIndex) => { const newPlaylist = [...downloadedSongs]; const [draggedItem] = newPlaylist.splice(dragIndex, 1); newPlaylist.splice(dropIndex, 0, draggedItem); setDownloadedSongs(newPlaylist); if (playlist === downloadedSongs) { setPlaylist(newPlaylist); if (currentIndex === dragIndex) setCurrentIndex(dropIndex); else if (currentIndex > dragIndex && currentIndex <= dropIndex) setCurrentIndex(currentIndex - 1); else if (currentIndex < dragIndex && currentIndex >= dropIndex) setCurrentIndex(currentIndex + 1); } }}
                 isTrendingMode={true}
                 isDownloadedView={true}
@@ -1702,7 +1702,7 @@ const SHARPS_MAP = {
               <button 
                 onClick={async () => {
                   setShowClosePrompt(false);
-                  await invoke('quit_app');
+                  await api.quitApp();
                 }}
                 className="btn btn-secondary btn-large"
               >

@@ -1,7 +1,8 @@
 import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Subtitles } from 'lucide-react';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { api } from '../services/api';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
@@ -91,7 +92,7 @@ const Player = React.forwardRef(function Player({
         timeout = setTimeout(() => {
           console.warn("YouTube iframe stuck buffering for 15s at start. Triggering fallback.");
           setIsExtractingStream(true);
-          invoke('get_stream_url', { videoId: currentSong.id })
+          api.getStreamUrl(currentSong.id)
             .then(url => {
               setStreamUrl(url);
               setIsExtractingStream(false);
@@ -560,7 +561,7 @@ const Player = React.forwardRef(function Player({
                   if (!streamUrl && !isExtractingStream) {
                     setIsExtractingStream(true);
                     try {
-                      const url = await invoke('get_stream_url', { videoId: currentSong.id });
+                      const url = await api.getStreamUrl(currentSong.id);
                       setStreamUrl(url);
                     } catch (err) {
                       console.error("Stream extraction fallback failed:", err);
