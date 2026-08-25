@@ -1,8 +1,8 @@
 use crate::models::DownloadedSong;
+use lazy_static::lazy_static;
 use std::fs;
 use std::path::PathBuf;
 use tokio::process::Command;
-use lazy_static::lazy_static;
 
 lazy_static! {
     pub static ref IO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -25,22 +25,26 @@ pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
     let exe_name = "yt-dlp";
 
     let exe_path = data_dir.join(exe_name);
-    
+
     if !exe_path.exists() {
         println!("{} not found, downloading now...", exe_name);
-        let download_url = format!("https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}", exe_name);
+        let download_url = format!(
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}",
+            exe_name
+        );
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .map_err(|e| e.to_string())?;
-            
-        let bytes = client.get(&download_url)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .bytes()
-                .await
-                .map_err(|e| e.to_string())?;
+
+        let bytes = client
+            .get(&download_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .bytes()
+            .await
+            .map_err(|e| e.to_string())?;
         std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
 
         #[cfg(not(target_os = "windows"))]
@@ -52,35 +56,42 @@ pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
             }
         }
     }
-    
+
     Ok(exe_path)
 }
 
 #[tauri::command]
 pub async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<String, String> {
-
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
-    
+
     let exe_path = get_yt_dlp_path().await?;
 
     let mut cmd = tokio::process::Command::new(exe_path);
     cmd.stdin(std::process::Stdio::null())
-       .arg("-g")
-       .arg("-f")
-       .arg("bestaudio")
-       .arg(&url);
+        .arg("-g")
+        .arg("-f")
+        .arg("bestaudio")
+        .arg(&url);
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    
+
     #[cfg(not(target_os = "windows"))]
     {
-        let current_path = std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
-        cmd.env("PATH", format!("{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin", current_path));
+        let current_path =
+            std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin",
+                current_path
+            ),
+        );
     }
 
-    let output_result = tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
-    
+    let output_result =
+        tokio::time::timeout(std::time::Duration::from_secs(30), cmd.output()).await;
+
     let output = match output_result {
         Ok(Ok(out)) => out,
         Ok(Err(e)) => return Err(e.to_string()),
@@ -93,7 +104,7 @@ pub async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<
             return Ok(stream_url);
         }
     }
-    
+
     let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
     Err(format!("yt-dlp failed to extract stream: {}", err_msg))
 }
@@ -175,10 +186,17 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let current_path = std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
-        command.env("PATH", format!("{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin", current_path));
+        let current_path =
+            std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        command.env(
+            "PATH",
+            format!(
+                "{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin",
+                current_path
+            ),
+        );
     }
-    
+
     let output = command
         .arg("--js-runtimes")
         .arg("node")
@@ -208,8 +226,14 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
 
     // Use the stdout from yt-dlp which contains the exact final filepath because of `--print after_move:filepath`
     let stdout_str = String::from_utf8_lossy(&output.stdout);
-    let final_path = stdout_str.trim().lines().last().unwrap_or("").trim().to_string();
-    
+    let final_path = stdout_str
+        .trim()
+        .lines()
+        .last()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
     if final_path.is_empty() {
         return Err("yt-dlp succeeded but did not output a filepath".to_string());
     }
@@ -226,7 +250,10 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
         std::collections::HashMap::new()
     };
     registry.insert(final_path, id);
-    let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
+    let _ = fs::write(
+        &registry_path,
+        serde_json::to_string(&registry).unwrap_or_default(),
+    );
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
 }
@@ -241,7 +268,7 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
 
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
-    
+
     let _lock = IO_LOCK.lock().unwrap();
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let hidden_paths: Vec<String> = if hidden_json_path.exists() {
@@ -253,7 +280,7 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     } else {
         Vec::new()
     };
-    
+
     let registry_path = data_dir.join("youtube_downloads.json");
     let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
         if let Ok(content) = fs::read_to_string(&registry_path) {
@@ -276,7 +303,10 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
         still_exists
     });
     if registry_changed {
-        let _ = fs::write(&registry_path, serde_json::to_string(&registry).unwrap_or_default());
+        let _ = fs::write(
+            &registry_path,
+            serde_json::to_string(&registry).unwrap_or_default(),
+        );
     }
 
     if music_dir.exists() {
@@ -298,7 +328,10 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                                 ("Unknown".to_string(), file_name.to_string())
                             };
 
-                            let song_id = registry.get(&path_str).cloned().unwrap_or_else(|| path_str.clone());
+                            let song_id = registry
+                                .get(&path_str)
+                                .cloned()
+                                .unwrap_or_else(|| path_str.clone());
 
                             songs.push(DownloadedSong {
                                 id: song_id,
@@ -318,18 +351,18 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
     let json_path = data_dir.join("local_songs.json");
-    
+
     if json_path.exists() {
         if let Ok(content) = fs::read_to_string(&json_path) {
             if let Ok(local_paths) = serde_json::from_str::<Vec<String>>(&content) {
                 let mut valid_paths = Vec::new();
                 let mut changed = false;
-                
+
                 for path_str in local_paths {
                     let path = PathBuf::from(&path_str);
                     if path.exists() && path.is_file() {
                         valid_paths.push(path_str.clone());
-                        
+
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
                             let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
                             let (artist, title) = if parts.len() == 2 {
@@ -337,7 +370,7 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                             } else {
                                 ("Unknown".to_string(), file_name.to_string())
                             };
-                            
+
                             // Check if not already in songs to avoid duplicates if they selected the download folder
                             let is_dup = songs.iter().any(|s| s.file_path == path_str);
                             if !is_dup {
@@ -354,9 +387,12 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                         changed = true; // A path doesn't exist anymore, we will filter it out
                     }
                 }
-                
+
                 if changed {
-                    let _ = fs::write(&json_path, serde_json::to_string(&valid_paths).unwrap_or_default());
+                    let _ = fs::write(
+                        &json_path,
+                        serde_json::to_string(&valid_paths).unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -372,7 +408,7 @@ pub fn add_local_song(file_path: String) -> Result<(), String> {
     if !data_dir.exists() {
         fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
-    
+
     let _lock = IO_LOCK.lock().unwrap();
     let json_path = data_dir.join("local_songs.json");
     let mut local_paths: Vec<String> = if json_path.exists() {
@@ -384,12 +420,16 @@ pub fn add_local_song(file_path: String) -> Result<(), String> {
     } else {
         Vec::new()
     };
-    
+
     if !local_paths.contains(&file_path) {
         local_paths.push(file_path);
-        fs::write(&json_path, serde_json::to_string(&local_paths).unwrap_or_default()).map_err(|e| e.to_string())?;
+        fs::write(
+            &json_path,
+            serde_json::to_string(&local_paths).unwrap_or_default(),
+        )
+        .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -397,7 +437,7 @@ pub fn add_local_song(file_path: String) -> Result<(), String> {
 pub fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
-    
+
     // 1. Remove from local_songs.json if it exists there
     let _lock = IO_LOCK.lock().unwrap();
     let local_json_path = data_dir.join("local_songs.json");
@@ -407,12 +447,15 @@ pub fn delete_downloaded_song(file_path: String) -> Result<(), String> {
                 let original_len = local_paths.len();
                 local_paths.retain(|p| p != &file_path);
                 if local_paths.len() < original_len {
-                    let _ = fs::write(&local_json_path, serde_json::to_string(&local_paths).unwrap_or_default());
+                    let _ = fs::write(
+                        &local_json_path,
+                        serde_json::to_string(&local_paths).unwrap_or_default(),
+                    );
                 }
             }
         }
     }
-    
+
     // 2. Add to hidden_downloads.json so it gets ignored during folder scans
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let mut hidden_paths: Vec<String> = if hidden_json_path.exists() {
@@ -424,13 +467,14 @@ pub fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     } else {
         Vec::new()
     };
-    
+
     if !hidden_paths.contains(&file_path) {
         hidden_paths.push(file_path);
-        let _ = fs::write(&hidden_json_path, serde_json::to_string(&hidden_paths).unwrap_or_default());
+        let _ = fs::write(
+            &hidden_json_path,
+            serde_json::to_string(&hidden_paths).unwrap_or_default(),
+        );
     }
 
     Ok(())
 }
-
-

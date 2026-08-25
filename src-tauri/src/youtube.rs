@@ -1,4 +1,4 @@
-use crate::models::{Video, SpotifyTrack, KworbTrack};
+use crate::models::{KworbTrack, SpotifyTrack, Video};
 use regex::Regex;
 
 #[tauri::command]
@@ -207,14 +207,18 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
         .map_err(|e| e.to_string())?;
 
     let text = res.text().await.map_err(|e| e.to_string())?;
-    
-    let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+
+    let re =
+        Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
     if let Some(caps) = re.captures(&text) {
         let json_str = &caps[1];
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
-        
+
         let mut queries = Vec::new();
-        if let Some(track_list) = v.pointer("/props/pageProps/state/data/entity/trackList").and_then(|v| v.as_array()) {
+        if let Some(track_list) = v
+            .pointer("/props/pageProps/state/data/entity/trackList")
+            .and_then(|v| v.as_array())
+        {
             for track in track_list {
                 let title = track.get("title").and_then(|t| t.as_str()).unwrap_or("");
                 let artist = track.get("subtitle").and_then(|a| a.as_str()).unwrap_or("");
@@ -229,7 +233,7 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
         }
         return Ok(queries);
     }
-    
+
     Err("Could not parse Spotify playlist data".to_string())
 }
 
@@ -393,11 +397,16 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
         let url = format!("https://open.spotify.com/embed/playlist/{}", playlist_id);
         let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
         let text = res.text().await.map_err(|e| e.to_string())?;
-        let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#).unwrap();
+        let re = Regex::new(r#"<script id="__NEXT_DATA__" type="application/json">(.*?)</script>"#)
+            .unwrap();
         if let Some(caps) = re.captures(&text) {
             let json_str = &caps[1];
-            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
-            if let Some(name) = v.pointer("/props/pageProps/state/data/entity/name").and_then(|v| v.as_str()) {
+            let v: serde_json::Value =
+                serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(name) = v
+                .pointer("/props/pageProps/state/data/entity/name")
+                .and_then(|v| v.as_str())
+            {
                 return Ok(name.to_string());
             }
         }
@@ -409,14 +418,17 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
         let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
         if let Some(caps) = re.captures(&text) {
             let json_str = &caps[1];
-            let v: serde_json::Value = serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
-            if let Some(title) = v.pointer("/header/playlistHeaderRenderer/title/simpleText").and_then(|v| v.as_str()) {
+            let v: serde_json::Value =
+                serde_json::from_str(json_str).unwrap_or(serde_json::Value::Null);
+            if let Some(title) = v
+                .pointer("/header/playlistHeaderRenderer/title/simpleText")
+                .and_then(|v| v.as_str())
+            {
                 return Ok(title.to_string());
             }
         }
         return Ok("Imported YouTube Playlist".to_string());
     }
-    
+
     Err("Unknown platform".to_string())
 }
-

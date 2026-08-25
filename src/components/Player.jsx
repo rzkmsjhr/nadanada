@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Subtitles } from 'lucide-react';
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
 
 const Player = React.forwardRef(function Player({ 
@@ -30,11 +30,40 @@ const Player = React.forwardRef(function Player({
   const [streamUrl, setStreamUrl] = useState(null);
   const [isExtractingStream, setIsExtractingStream] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const [captions, setCaptions] = useState([]);
+  const [activeCaptionCode, setActiveCaptionCode] = useState(null);
+  const [isVideoHovered, setIsVideoHovered] = useState(false);
+  const [isCaptionMenuOpen, setIsCaptionMenuOpen] = useState(false);
+  const hasAutoSelectedCaptionRef = useRef(false);
   
   // Track how many times this specific song has repeated for 'repeat once' mode
   const [playCount, setPlayCount] = useState(0);
 
   const stallTimeoutRef = useRef(null);
+
+  const handleCaptionsReceived = (tracks) => {
+    setCaptions(tracks || []);
+    if (tracks && tracks.length > 0 && !hasAutoSelectedCaptionRef.current) {
+      hasAutoSelectedCaptionRef.current = true;
+      // Prefer Indonesian or non-English/non-auto translated tracks first, fallback to first track
+      const preferred = tracks.find(t => t.languageCode === 'id') || 
+                        tracks.find(t => t.languageCode !== 'en' && t.languageCode !== 'en-US' && t.languageCode !== 'a.en') || 
+                        tracks[0];
+      if (preferred && playerRef.current && playerRef.current.setCaption) {
+        playerRef.current.setCaption(preferred.languageCode);
+        setActiveCaptionCode(preferred.languageCode);
+      }
+    }
+  };
+  
+  const selectCaption = (code) => {
+    if (playerRef.current && playerRef.current.setCaption) {
+      playerRef.current.setCaption(code || false);
+    }
+    setActiveCaptionCode(code);
+    setIsCaptionMenuOpen(false);
+  };
+  
 
   const handleStallStart = () => {
     setIsBuffering(true);
@@ -99,6 +128,9 @@ const Player = React.forwardRef(function Player({
     }
     if (songId) {
       setStreamUrl(null);
+      hasAutoSelectedCaptionRef.current = false;
+      setCaptions([]);
+      setActiveCaptionCode(null);
       setIsExtractingStream(false);
       setIsBuffering(true);
       setIsPlaying(false);
@@ -487,7 +519,10 @@ const Player = React.forwardRef(function Player({
     <div style={{ display: 'flex', flexDirection: 'column', flex: isMaximized ? 1 : 'none', overflow: 'hidden', minHeight: 0 }}>
       {/* Video area wrapper — must be a sized flex container so height:100% resolves on child */}
       <div style={{ flex: isMaximized ? 1 : 'none', height: isMaximized ? 0 : 'auto', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden', containerType: isMaximized ? 'size' : 'normal' }}>
-        <div style={isMaximized ? {
+        <div 
+          onMouseEnter={() => setIsVideoHovered(true)}
+          onMouseLeave={() => { setIsVideoHovered(false); setIsCaptionMenuOpen(false); }}
+          style={isMaximized ? {
           /* Maximized: Use container queries to guarantee exact 16:9 fit within the parent without black bars */
           width: '100cqw',
           maxWidth: 'calc(100cqh * (16 / 9))',
@@ -515,6 +550,7 @@ const Player = React.forwardRef(function Player({
             {currentSong && !currentSong.is_local && !streamUrl && !isExtractingStream && (
               <ProxyYouTube
                 videoId={currentSong.id}
+                onCaptionsReceived={handleCaptionsReceived}
                 opts={opts}
                 onReady={onReady}
                 onStateChange={onStateChange}
@@ -543,6 +579,86 @@ const Player = React.forwardRef(function Player({
                 style={{ width: '100%', height: '100%' }}
                 iframeClassName="youtube-iframe"
               />
+            )}
+            {captions.length > 0 && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  zIndex: 100,
+                  opacity: isVideoHovered || isCaptionMenuOpen ? 1 : 0,
+                  transition: 'opacity 0.2s',
+                  pointerEvents: isVideoHovered || isCaptionMenuOpen ? 'auto' : 'none'
+                }}
+              >
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => setIsCaptionMenuOpen(!isCaptionMenuOpen)}
+                    style={{
+                      background: 'rgba(0, 0, 0, 0.6)',
+                      color: activeCaptionCode ? 'var(--accent-color)' : '#fff',
+                      backdropFilter: 'blur(4px)',
+                      border: '1px solid rgba(255,255,255,0.1)'
+                    }}
+                  >
+                    <Subtitles size={20} />
+                  </button>
+                  {isCaptionMenuOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '4px',
+                      background: 'var(--bg-color)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '8px',
+                      padding: '4px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      minWidth: '120px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '2px',
+                      maxHeight: '200px',
+                      overflowY: 'auto'
+                    }}>
+                      <button 
+                        onClick={() => selectCaption(null)}
+                        style={{
+                          background: !activeCaptionCode ? 'var(--text-main)' : 'transparent',
+                          color: !activeCaptionCode ? 'var(--bg-color)' : 'var(--text-main)',
+                          padding: '6px 12px',
+                          border: 'none',
+                          borderRadius: '4px',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          fontSize: '0.9rem'
+                        }}
+                      >Off</button>
+                      {captions.map(c => (
+                        <button
+                          key={c.languageCode}
+                          onClick={() => selectCaption(c.languageCode)}
+                          style={{
+                            background: activeCaptionCode === c.languageCode ? 'var(--text-main)' : 'transparent',
+                            color: activeCaptionCode === c.languageCode ? 'var(--bg-color)' : 'var(--text-main)',
+                            padding: '6px 12px',
+                            border: 'none',
+                            borderRadius: '4px',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '0.9rem',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {c.languageName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
             {isExtractingStream && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(0,0,0,0.5)' }}>

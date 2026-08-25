@@ -17,7 +17,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 const WORKER_EMBED_URL = 'https://nadanada-yt.kdmp.workers.dev';
 
-const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, iframeClassName }) => {
+const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptionsReceived, style, iframeClassName }) => {
   const iframeRef = useRef(null);
   const latestTime = useRef(0);
   const latestDuration = useRef(0);
@@ -47,6 +47,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
     mute: () => sendCommand('mute'),
     unMute: () => sendCommand('unmute'),
     loadVideoById: (id, startSecs) => sendCommand('loadVideoById', { videoId: id, startSeconds: startSecs }),
+    setCaption: (lang) => sendCommand('setCaption', { value: lang }),
     // Synchronous getters return cached values updated via postMessage
     getCurrentTime: () => latestTime.current,
     getDuration: () => latestDuration.current,
@@ -62,6 +63,7 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
     playerProxy.current.mute = () => sendCommand('mute');
     playerProxy.current.unMute = () => sendCommand('unmute');
     playerProxy.current.loadVideoById = (id, startSecs) => sendCommand('loadVideoById', { videoId: id, startSeconds: startSecs });
+    playerProxy.current.setCaption = (lang) => sendCommand('setCaption', { value: lang });
   }, [sendCommand]);
 
   // Listen for postMessage events from the iframe
@@ -83,6 +85,9 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, style, i
         case 'yt-proxy-time':
           latestTime.current = msg.currentTime || 0;
           latestDuration.current = msg.duration || 0;
+          break;
+        case 'yt-proxy-captions':
+          if (onCaptionsReceived) onCaptionsReceived(msg.data);
           break;
       }
     };

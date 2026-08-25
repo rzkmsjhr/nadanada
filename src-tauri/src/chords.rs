@@ -1,4 +1,3 @@
-
 #[tauri::command]
 pub async fn scrape_chords(
     id: String,
@@ -71,7 +70,8 @@ pub async fn scrape_chords(
     let window_label = format!("scraper_{}_{}_{}", safe_id, ts, counter);
 
     // JS uses format! (not r#) so we can embed the google_fallback_url at compile time
-    let js_code = format!(r#"
+    let js_code = format!(
+        r#"
         (function() {{
             // ── GOOGLE FALLBACK HANDLER ─────────────────────────────────────────
             if (window.location.hostname.includes("google.")) {{
@@ -239,7 +239,8 @@ pub async fn scrape_chords(
                 }}
             }}, 500);
         }})();
-    "#);
+    "#
+    );
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
@@ -382,4 +383,3 @@ pub async fn scrape_chords(
 
     Ok(result_str)
 }
-

@@ -13,8 +13,20 @@ pub fn start_embed_server() -> u16 {
             if url.starts_with("/embed") {
                 let html = include_str!("embed.html");
                 let response = tiny_http::Response::from_string(html)
-                    .with_header(tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html; charset=utf-8"[..]).unwrap())
-                    .with_header(tiny_http::Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
+                    .with_header(
+                        tiny_http::Header::from_bytes(
+                            &b"Content-Type"[..],
+                            &b"text/html; charset=utf-8"[..],
+                        )
+                        .unwrap(),
+                    )
+                    .with_header(
+                        tiny_http::Header::from_bytes(
+                            &b"Access-Control-Allow-Origin"[..],
+                            &b"*"[..],
+                        )
+                        .unwrap(),
+                    );
                 let _ = request.respond(response);
             } else {
                 let _ = request.respond(tiny_http::Response::empty(404));

@@ -1,4 +1,6 @@
+
 #[tauri::command]
-pub fn quit_app(_app: tauri::AppHandle) {
-    std::process::exit(0);
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
+

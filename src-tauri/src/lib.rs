@@ -1,10 +1,10 @@
+pub mod app_commands;
+pub mod chords;
+pub mod downloads;
 pub mod models;
+pub mod playlists;
 pub mod server;
 pub mod youtube;
-pub mod downloads;
-pub mod chords;
-pub mod playlists;
-pub mod app_commands;
 
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -14,6 +14,7 @@ use tauri::{
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {

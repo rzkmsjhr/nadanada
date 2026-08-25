@@ -7,6 +7,7 @@ import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPl
 import ChordDisplay from "./components/ChordDisplay";
 import ResizeBorder from "./components/ResizeBorder";
 import { invoke } from '@tauri-apps/api/core';
+import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
