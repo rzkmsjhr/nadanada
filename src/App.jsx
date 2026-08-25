@@ -125,29 +125,6 @@ const staticStyles = {
   }
 };
 function App() {
-  const {
-    isFetchingEndless,
-    failedEndlessFetch,
-    setFailedEndlessFetch,
-    isImporting,
-    importProgress,
-    importUrl,
-    setImportUrl,
-    isFetchingTrending,
-    trendingType,
-    setTrendingType,
-    handleImportPlaylist,
-    handleLoadTrending
-  } = useMusicDiscovery({
-    playlist,
-    setPlaylist,
-    currentIndex,
-    isEndlessPlay,
-    cachedSearchVideosRef,
-    setCachedVideo,
-    setGlobalError,
-    setShowTrendingDropdown
-  });
   const appWindow = getCurrentWindow();
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isMaximized, setIsMaximized] = useState(false);
@@ -317,6 +294,29 @@ function App() {
   const downloadedIdsStr = downloadedSongs.map(s => s.id).sort().join(',');
   const downloadedIds = useMemo(() => new Set(downloadedSongs.map(s => s.id)), [downloadedIdsStr]);
   const [successMessage, setSuccessMessage] = useState(null);
+  const {
+    isFetchingEndless,
+    failedEndlessFetch,
+    setFailedEndlessFetch,
+    isImporting,
+    importProgress,
+    importUrl,
+    setImportUrl,
+    isFetchingTrending,
+    trendingType,
+    setTrendingType,
+    handleImportPlaylist,
+    handleLoadTrending
+  } = useMusicDiscovery({
+    playlist,
+    setPlaylist,
+    currentIndex,
+    isEndlessPlay,
+    cachedSearchVideosRef,
+    setCachedVideo,
+    setGlobalError,
+    setShowTrendingDropdown
+  });
   useEffect(() => {
     if (showDownloadedList) {
       loadDownloadedSongs();
