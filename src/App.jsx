@@ -1347,10 +1347,6 @@ function App() {
   };
 
   const handleAddSong = (video) => {
-    if (previewSong) {
-      setPreviewSong(null);
-      previewSavedStateRef.current = null;
-    }
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
     }
@@ -1365,10 +1361,6 @@ function App() {
   };
 
   const handleAddMultiple = (videos) => {
-    if (previewSong) {
-      setPreviewSong(null);
-      previewSavedStateRef.current = null;
-    }
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
     }
