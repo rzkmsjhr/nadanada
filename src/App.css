@@ -4,11 +4,11 @@
   --modal-bg: rgba(255, 219, 237, 0.85);
   --panel-bg: rgba(142, 147, 203, 0.15); /* Lavender Steel glass */
   --panel-border: rgba(142, 147, 203, 0.25);
-  --text-main: #8E93CB; /* Lavender Steel */
-  --text-muted: rgba(142, 147, 203, 0.7);
-  --accent-color: #F8769C; /* Coral Rush */
-  --accent-hover: #e06085;
-  --glass-shadow: 0 8px 32px 0 rgba(248, 118, 156, 0.1);
+  --text-main: #454A85; /* Darkened Lavender Steel for better contrast */
+  --text-muted: rgba(69, 74, 133, 0.75);
+  --accent-color: #E34877; /* Darkened Coral Rush */
+  --accent-hover: #c93562;
+  --glass-shadow: 0 8px 32px 0 rgba(227, 72, 119, 0.15);
 }
 
 [data-theme="mahogany-dusk"] {
@@ -28,11 +28,11 @@
   --modal-bg: rgba(230, 212, 190, 0.85);
   --panel-bg: rgba(103, 159, 158, 0.15); /* Tidal Sage glass */
   --panel-border: rgba(103, 159, 158, 0.3);
-  --text-main: #679F9E; /* Tidal Sage */
-  --text-muted: rgba(103, 159, 158, 0.8);
-  --accent-color: #7EADDB; /* Glacial Periwinkle */
-  --accent-hover: #6997c4;
-  --glass-shadow: 0 8px 32px 0 rgba(103, 159, 158, 0.15);
+  --text-main: #2A5A59; /* Darkened Tidal Sage */
+  --text-muted: rgba(42, 90, 89, 0.75);
+  --accent-color: #3A74A6; /* Darkened Glacial Periwinkle */
+  --accent-hover: #295b87;
+  --glass-shadow: 0 8px 32px 0 rgba(58, 116, 166, 0.15);
 }
 
 [data-theme="sangria-deep"] {

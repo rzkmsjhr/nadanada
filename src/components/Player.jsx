@@ -277,6 +277,12 @@ const Player = React.forwardRef(function Player({
       setIsPlaying(true);
       setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(true);
+      
+      // Force volume application on every track change, as YouTube sometimes resets it
+      if (!activeFadeIntervalRef.current) {
+        try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
+      }
+
       if (startSecs > 0 && !hasSeekedInitialRef.current) {
         hasSeekedInitialRef.current = true;
         try {
@@ -625,7 +631,11 @@ const Player = React.forwardRef(function Player({
             <button 
               className="btn btn-icon" 
               onClick={onToggleShuffle} 
-              style={{ color: isShuffle ? 'var(--accent-color)' : 'var(--text-muted)' }}
+              style={{ 
+                color: isShuffle ? 'var(--bg-color)' : 'var(--text-muted)',
+                background: isShuffle ? 'var(--text-main)' : 'transparent',
+                boxShadow: isShuffle ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'
+              }}
             >
               <Shuffle size={20} />
             </button>
@@ -641,7 +651,11 @@ const Player = React.forwardRef(function Player({
             <button 
               className="btn btn-icon" 
               onClick={onToggleRepeat} 
-              style={{ color: repeatMode > 0 ? 'var(--accent-color)' : 'var(--text-muted)' }}
+              style={{ 
+                color: repeatMode > 0 ? 'var(--bg-color)' : 'var(--text-muted)',
+                background: repeatMode > 0 ? 'var(--text-main)' : 'transparent',
+                boxShadow: repeatMode > 0 ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'
+              }}
             >
               {repeatMode === 2 ? <Repeat1 size={20} /> : <Repeat size={20} />}
             </button>
