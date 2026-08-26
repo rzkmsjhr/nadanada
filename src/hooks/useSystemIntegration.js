@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { LogicalSize } from '@tauri-apps/api/dpi';
+import { LogicalSize, PhysicalSize } from '@tauri-apps/api/dpi';
 
 export function useSystemIntegration(appWindow, setShowClosePrompt) {
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
@@ -113,6 +113,9 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       try {
         await appWindow.setMinSize(null);
         await appWindow.setSize(new LogicalSize(320, 180));
+        // Fallback for Windows if LogicalSize fails
+        const scale = await appWindow.scaleFactor();
+        await appWindow.setSize(new PhysicalSize(320 * scale, 180 * scale));
         await appWindow.setMinSize(new LogicalSize(320, 180));
       } catch (err) {
         console.error("Failed to resize window:", err);
