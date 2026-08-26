@@ -13,6 +13,7 @@ import LoadPlaylistModal from './components/modals/LoadPlaylistModal';
 import AddToPlaylistModal from './components/modals/AddToPlaylistModal';
 import ErrorModal from './components/modals/ErrorModal';
 import SuccessModal from './components/modals/SuccessModal';
+import Titlebar from './components/Titlebar';
 import ChordDisplay from "./components/ChordDisplay";
 import ResizeBorder from "./components/ResizeBorder";
 import { api } from './services/api';
@@ -929,40 +930,7 @@ function App() {
     }} />
 
       {/* Native/Custom Titlebar */}
-      <div className={`titlebar ${navigator.userAgent.toUpperCase().indexOf('MAC') >= 0 ? 'mac' : ''}`} onMouseDown={e => {
-      if (e.target === e.currentTarget || e.target.classList.contains('titlebar-logo') || e.target.classList.contains('titlebar-center')) {
-        appWindow.startDragging().catch(() => {});
-      }
-    }}>
-        {navigator.userAgent.toUpperCase().indexOf('MAC') >= 0 ? <>
-            <div className="titlebar-buttons mac">
-              <div className="mac-btn close" onClick={() => appWindow.close()} />
-              <div className="mac-btn minimize" onClick={() => appWindow.minimize()} />
-              <div className="mac-btn maximize" onClick={() => appWindow.toggleMaximize()} />
-            </div>
-            <div className="titlebar-center">
-               <Music2 size={14} /> NadaNada
-            </div>
-            <div style={{
-          width: '70px'
-        }}></div>
-          </> : <>
-            <div className="titlebar-logo">
-              <Music2 size={14} /> NadaNada
-            </div>
-            <div className="titlebar-buttons">
-              <div className="titlebar-button" onClick={() => appWindow.minimize()}>
-                <Minus size={14} />
-              </div>
-              <div className="titlebar-button" onClick={() => appWindow.toggleMaximize()}>
-                <Square size={12} />
-              </div>
-              <div className="titlebar-button close" onClick={() => appWindow.close()}>
-                <X size={14} />
-              </div>
-            </div>
-          </>}
-      </div>
+      <Titlebar appWindow={appWindow} />
 
       {/* ── UNIFIED MAIN CONTENT ──
           Single JSX tree — styles switch via isMaximized.
