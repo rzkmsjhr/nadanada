@@ -253,15 +253,15 @@ function App() {
 
   const { albumInfo, isLoadingAlbum, albumCache } = useAlbumInfo(playlist, currentIndex);
 
-  const handleAlbumClick = async (info) => {
+  const handleAlbumClick = async (info, clickedVideoId) => {
     if (!info?.album) return;
     try {
       let tracks = null;
+      const targetVideoId = clickedVideoId || currentSong?.id || '';
 
       if (info.albumPlaylistId) {
         // Use the OLAK5uy_ playlist ID scraped from the video page (correct YouTube Music album)
-        const firstVideoId = currentSong?.id || '';
-        tracks = await api.getYouTubePlaylist(info.albumPlaylistId, firstVideoId);
+        tracks = await api.getYouTubePlaylist(info.albumPlaylistId, targetVideoId);
       }
 
       if (!tracks || tracks.length === 0) {
@@ -284,7 +284,9 @@ function App() {
           queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
         }));
         setPlaylist(albumTracks);
-        setCurrentIndex(0);
+        // Find if the clicked song is in the album, else play first track
+        const currentIdxInAlbum = tracks.findIndex(t => t.id === targetVideoId);
+        setCurrentIndex(currentIdxInAlbum !== -1 ? currentIdxInAlbum : 0);
         setIsAudioPlaying(true);
       } else {
         setGlobalError('Could not find this album on YouTube.');
