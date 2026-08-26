@@ -269,7 +269,7 @@ const Player = React.forwardRef(function Player({
                   {currentSong.title}
                 </div>
                 <div data-tauri-drag-region style={{ fontSize: '0.75rem', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {currentSong.artist || currentSong.uploader}
+                  {albumInfo?.artist || (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim()}
                 </div>
               </div>
 
