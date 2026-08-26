@@ -48,7 +48,8 @@ export function useMusicDiscovery({
   savedPlaylist,
   setSavedPlaylist,
   setCurrentIndex,
-  setIsAudioPlaying
+  setIsAudioPlaying,
+  handleAddMultiple
 }) {
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
