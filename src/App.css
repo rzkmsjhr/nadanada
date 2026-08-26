@@ -586,5 +586,5 @@ body {
 
 .album-link:hover {
   color: var(--accent-color);
-  border-bottom: 1px dotted var(--accent-color);
+  border-bottom: 1px solid var(--accent-color);
 }
