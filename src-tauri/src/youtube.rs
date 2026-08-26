@@ -470,7 +470,6 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
 
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 

@@ -21,6 +21,8 @@ export function useAlbumInfo(playlist, currentIndex) {
     }
   }, [albumCache]);
 
+  const inFlightRef = useRef(new Set());
+
   useEffect(() => {
     if (!playlist || playlist.length === 0) return;
 
@@ -47,28 +49,31 @@ export function useAlbumInfo(playlist, currentIndex) {
       while (queueRef.current.length > 0) {
         const videoId = queueRef.current.shift();
         
-        // Skip if another instance fetched it
-        setAlbumCache(prev => {
-          if (prev[videoId]) return prev;
+        // Skip if currently fetching or already fetched in this session
+        if (inFlightRef.current.has(videoId)) continue;
+        inFlightRef.current.add(videoId);
+        
+        try {
+          const info = await api.getVideoAlbumInfo(videoId);
+          let artist = info.artist || '';
+          artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
           
-          // Actually fetch
-          api.getVideoAlbumInfo(videoId).then(info => {
-            let artist = info.artist || '';
-            artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
-            
-            const result = {
-              album: info.album || '',
-              artist: artist,
-              albumPlaylistId: info.album_playlist_id || ''
-            };
-            setAlbumCache(p => ({ ...p, [videoId]: result }));
-          }).catch(err => {
-            console.error('Failed to fetch album info for', videoId, err);
-            setAlbumCache(p => ({ ...p, [videoId]: { album: '', artist: '', albumPlaylistId: '' } }));
-          });
+          const result = {
+            album: info.album || '',
+            artist: artist,
+            albumPlaylistId: info.album_playlist_id || ''
+          };
           
-          return prev;
-        });
+          setAlbumCache(prev => ({ ...prev, [videoId]: result }));
+        } catch (err) {
+          console.error('Failed to fetch album info for', videoId, err);
+          // On network error or crash, remove from inFlight so it can be retried later
+          inFlightRef.current.delete(videoId);
+          
+          // Pause queue briefly on error to prevent rapid-fire failures if offline
+          await new Promise(r => setTimeout(r, 5000));
+          continue; 
+        }
 
         // Throttle requests to avoid yt-dlp spam / rate limits
         await new Promise(r => setTimeout(r, 1500));
