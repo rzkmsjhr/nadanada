@@ -19,6 +19,7 @@ pub struct Video {
 pub struct AlbumInfo {
     pub album: String,
     pub artist: String,
+    pub album_playlist_id: String,
 }
 
 #[derive(serde::Serialize, Clone)]

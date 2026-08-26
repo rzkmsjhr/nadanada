@@ -256,14 +256,24 @@ function App() {
   const handleAlbumClick = async (info) => {
     if (!info?.album) return;
     try {
-      const searchQuery = `${info.album} ${info.artist}`.trim();
-      const results = await api.searchYouTube(searchQuery, 'album');
-      const albumResult = results?.[0];
-      if (!albumResult || !albumResult.first_video_id) {
-        setGlobalError('Could not find this album on YouTube.');
-        return;
+      let tracks = null;
+
+      if (info.albumPlaylistId) {
+        // Use the OLAK5uy_ playlist ID scraped from the video page (correct YouTube Music album)
+        const firstVideoId = currentSong?.id || '';
+        tracks = await api.getYouTubePlaylist(info.albumPlaylistId, firstVideoId);
       }
-      const tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id);
+
+      if (!tracks || tracks.length === 0) {
+        // Fallback: search for the album
+        const searchQuery = `${info.album} ${info.artist}`.trim();
+        const results = await api.searchYouTube(searchQuery, 'album');
+        const albumResult = results?.[0];
+        if (albumResult?.first_video_id) {
+          tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id);
+        }
+      }
+
       if (tracks && tracks.length > 0) {
         if (!savedPlaylist) {
           setSavedPlaylist([...playlist]);
@@ -277,7 +287,7 @@ function App() {
         setCurrentIndex(0);
         setIsAudioPlaying(true);
       } else {
-        setGlobalError('Album has no playable tracks.');
+        setGlobalError('Could not find this album on YouTube.');
       }
     } catch (e) {
       console.error('Failed to load album:', e);
@@ -501,6 +511,8 @@ function App() {
               setSongToAddToPlaylist={setSongToAddToPlaylist}
               shouldScrollPlaylistToBottom={shouldScrollPlaylistToBottom}
               setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
+              albumInfo={albumInfo}
+              onAlbumClick={handleAlbumClick}
             />
           </div>
         </div>

@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Trash2, GripVertical, Plus, Check, Download, Loader2, ListPlus } from 'lucide-react';
 
-const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist }) => {
+const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist, albumInfo, onAlbumClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const textRef = useRef(null);
@@ -51,7 +51,28 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
         </div>
         {song.channel && (
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {song.channel.replace(/\s*-\s*Topic$/i, '')}
+            {(() => {
+              const cleanChannel = song.channel.replace(/\s*-\s*Topic$/i, '');
+              const artist = (albumInfo?.artist) || cleanChannel;
+              const album = albumInfo?.album || '';
+              return (
+                <>
+                  <span>{artist}</span>
+                  {album && (
+                    <>
+                      <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
+                      <span 
+                        onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
+                        style={{ color: 'var(--accent-color)', cursor: 'pointer', borderBottom: '1px dotted var(--accent-color)' }}
+                        title={`Browse "${album}" album`}
+                      >
+                        {album}
+                      </span>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -146,7 +167,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   );
 });
 
-export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone, albumInfo, onAlbumClick }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
   const containerRef = useRef(null);
@@ -236,6 +257,8 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
                downloadedIds={downloadedIds}
                onRemove={onRemove}
                onAddToSavedPlaylist={onAddToSavedPlaylist}
+               albumInfo={isActive ? albumInfo : null}
+               onAlbumClick={isActive ? onAlbumClick : null}
             />
           );
         })}

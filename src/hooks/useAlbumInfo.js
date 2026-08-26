@@ -4,7 +4,7 @@ import { api } from '../services/api';
 export function useAlbumInfo(currentSong) {
   const [albumInfo, setAlbumInfo] = useState(null);
   const [isLoadingAlbum, setIsLoadingAlbum] = useState(false);
-  const cacheRef = useRef({}); // { videoId: { album, artist } }
+  const cacheRef = useRef({}); // { videoId: { album, artist, albumPlaylistId } }
 
   useEffect(() => {
     if (!currentSong || currentSong.is_local) {
@@ -33,7 +33,8 @@ export function useAlbumInfo(currentSong) {
       
       const result = {
         album: info.album || '',
-        artist: artist
+        artist: artist,
+        albumPlaylistId: info.album_playlist_id || ''
       };
       
       cacheRef.current[videoId] = result;

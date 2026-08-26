@@ -30,7 +30,9 @@ export default function PlaylistViews({
   downloadedIds,
   setSongToAddToPlaylist,
   shouldScrollPlaylistToBottom,
-  setShouldScrollPlaylistToBottom
+  setShouldScrollPlaylistToBottom,
+  albumInfo,
+  onAlbumClick
 }) {
   if (showSearch) {
     return (
@@ -108,7 +110,9 @@ export default function PlaylistViews({
       downloadedIds={downloadedIds} 
       onAddToSavedPlaylist={song => setSongToAddToPlaylist(song)} 
       shouldScrollToBottom={shouldScrollPlaylistToBottom} 
-      onScrollToBottomDone={() => setShouldScrollPlaylistToBottom(false)} 
+      onScrollToBottomDone={() => setShouldScrollPlaylistToBottom(false)}
+      albumInfo={albumInfo}
+      onAlbumClick={onAlbumClick}
     />
   );
 }

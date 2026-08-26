@@ -1,5 +1,4 @@
 use crate::models::{AlbumInfo, KworbTrack, SpotifyTrack, Video};
-use crate::downloads::get_yt_dlp_path;
 use regex::Regex;
 
 #[tauri::command]
@@ -458,65 +457,49 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
 #[tauri::command]
 pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
-    let exe_path = get_yt_dlp_path().await?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
 
-    let mut cmd = tokio::process::Command::new(exe_path);
-    cmd.stdin(std::process::Stdio::null())
-        .arg("--print")
-        .arg("%(album)s|||%(artist)s")
-        .arg("--no-download")
-        .arg("--no-warnings")
-        .arg(&url);
+    let res = client.get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+        .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+478")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
 
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
+    let text = res.text().await.map_err(|e| e.to_string())?;
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let current_path =
-            std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
-        cmd.env(
-            "PATH",
-            format!(
-                "{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin",
-                current_path
-            ),
-        );
-    }
+    // 1. Find OLAK5uy_ album playlist ID (YouTube Music album playlists)
+    let olak_re = Regex::new(r"OLAK5uy_[a-zA-Z0-9_-]+").unwrap();
+    let album_playlist_id = olak_re.find(&text)
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_default();
 
-    let output_result =
-        tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await;
+    // 2. Extract album & artist from the music metadata section in ytInitialData
+    //    YouTube embeds structured music info for Topic/auto-generated tracks in infoRowRenderers:
+    //    "title":{"simpleText":"Album"} ... "defaultMetadata":{"simpleText":"<album_name>"}
+    let album_re = Regex::new(
+        r#""title":\{"simpleText":"Album"\}.{0,300}"defaultMetadata":\{"simpleText":"([^"]+)"\}"#
+    ).unwrap();
+    let album = album_re.captures(&text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_default();
 
-    let output = match output_result {
-        Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(format!("Failed to run yt-dlp: {}", e)),
-        Err(_) => return Err("Album info extraction timed out".to_string()),
-    };
+    let artist_re = Regex::new(
+        r#""title":\{"simpleText":"Artists?"\}.{0,300}"defaultMetadata":\{"simpleText":"([^"]+)"\}"#
+    ).unwrap();
+    let artist = artist_re.captures(&text)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str().to_string())
+        .unwrap_or_default();
 
-    if output.status.success() {
-        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let parts: Vec<&str> = raw.splitn(2, "|||").collect();
-        if parts.len() == 2 {
-            let album = parts[0].trim().to_string();
-            let artist = parts[1].trim().to_string();
-
-            // yt-dlp returns "NA" for missing fields
-            let album_clean = if album == "NA" { String::new() } else { album };
-            let artist_clean = if artist == "NA" { String::new() } else { artist };
-
-            return Ok(AlbumInfo {
-                album: album_clean,
-                artist: artist_clean,
-            });
-        }
-    }
-
-    // Fallback: return empty info rather than failing
     Ok(AlbumInfo {
-        album: String::new(),
-        artist: String::new(),
+        album,
+        artist,
+        album_playlist_id,
     })
 }
