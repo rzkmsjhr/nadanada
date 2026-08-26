@@ -610,10 +610,9 @@ body {
   will-change: transform;
 }
 .mini-player-mode:hover .mini-player-marquee-text {
-  animation: scrollTextContinuous 8s linear infinite alternate;
-  animation-delay: 1s;
+  animation: scrollTextContinuous 5s linear infinite alternate;
 }
 @keyframes scrollTextContinuous {
-  0%, 15% { transform: translateX(0); }
-  85%, 100% { transform: translateX(min(0px, calc(-100% + 100cqw))); }
+  0%, 10% { transform: translateX(0); }
+  90%, 100% { transform: translateX(min(0px, calc(-100% + 100cqw))); }
 }
