@@ -197,19 +197,41 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
             spaced_videos.push(pending.remove(0));
         }
         
+        let get_artist = |v: &Video| -> String {
+            let title = v.title.to_lowercase();
+            if let Some(parts) = title.split_once(" - ") {
+                parts.0.trim().to_string()
+            } else if let Some(parts) = title.split_once(" ~ ") {
+                parts.0.trim().to_string()
+            } else {
+                v.channel.to_lowercase().replace(" - topic", "").replace("vevo", "").trim().to_string()
+            }
+        };
+        
         while !pending.is_empty() {
             let mut found_index = 0; // Default to first available if we can't find a non-conflicting track
             
-            // Try to find a track whose channel hasn't appeared in the last 6 tracks
+            // Try to find a track whose artist hasn't appeared in the last 6 tracks
             for (i, v) in pending.iter().enumerate() {
-                let clean_channel = v.channel.to_lowercase().replace(" - topic", "");
+                let current_artist = get_artist(v);
                 let mut recent_conflict = false;
                 
                 let check_len = std::cmp::min(spaced_videos.len(), 6);
                 for recent_v in spaced_videos.iter().rev().take(check_len) {
-                    if recent_v.channel.to_lowercase().replace(" - topic", "") == clean_channel {
+                    let recent_artist = get_artist(recent_v);
+                    
+                    // Direct match
+                    if current_artist == recent_artist {
                         recent_conflict = true;
                         break;
+                    }
+                    
+                    // Substring match (e.g. if one is "Avenged Sevenfold" and the other channel is "AvengedSevenfoldVEVO")
+                    if current_artist.len() > 4 && recent_artist.len() > 4 {
+                        if current_artist.contains(&recent_artist) || recent_artist.contains(&current_artist) {
+                            recent_conflict = true;
+                            break;
+                        }
                     }
                 }
                 
