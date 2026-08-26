@@ -19,6 +19,7 @@ import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
 import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
+import { useSearchPreview } from "./hooks/useSearchPreview";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -147,6 +148,7 @@ function App() {
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
   const playerRef = useRef(null);
+  const [currentTime, setCurrentTime] = useState(0);
   // Stable refs for next/prev so the keyboard handler never becomes stale
   const handleNextRef = useRef(null);
   const handlePreviousRef = useRef(null);
@@ -211,66 +213,20 @@ function App() {
   const [shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
 
-  // Search Preview State
-  const [previewSong, setPreviewSong] = useState(null);
-  const [restoredSong, setRestoredSong] = useState(null);
-  const previewSavedStateRef = useRef(null);
-  const handlePlayPreview = async video => {
-    if (!previewSavedStateRef.current) {
-      let currentTimeSeconds = currentTime;
-      if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
-        try {
-          const t = await playerRef.current.getCurrentTime();
-          if (typeof t === 'number' && !isNaN(t)) {
-            currentTimeSeconds = t;
-          }
-        } catch (e) {}
-      }
-      previewSavedStateRef.current = {
-        song: playlist[currentIndex],
-        time: currentTimeSeconds,
-        wasPlaying: isAudioPlaying
-      };
-    }
-
-    // Smoothly fade out currently playing main track
-    if (playerRef.current && typeof playerRef.current.fadeOut === 'function') {
-      await playerRef.current.fadeOut(200);
-    }
-    setRestoredSong(null);
-    setPreviewSong(video);
-    setIsAudioPlaying(true);
-
-    // Smoothly fade in preview track
-    setTimeout(() => {
-      if (playerRef.current && typeof playerRef.current.fadeIn === 'function') {
-        playerRef.current.fadeIn(350);
-      }
-    }, 120);
-  };
-  const handleStopPreview = async () => {
-    const saved = previewSavedStateRef.current;
-    previewSavedStateRef.current = null;
-
-    // Smoothly fade out preview track
-    if (playerRef.current && typeof playerRef.current.fadeOut === 'function') {
-      await playerRef.current.fadeOut(200);
-    }
-    setPreviewSong(null);
-    if (saved && saved.song) {
-      const restoredItem = {
-        ...saved.song,
-        startSeconds: Math.floor(saved.time || 0)
-      };
-      setRestoredSong(restoredItem);
-      setIsAudioPlaying(saved.wasPlaying);
-      setTimeout(() => {
-        if (playerRef.current && typeof playerRef.current.fadeIn === 'function') {
-          playerRef.current.fadeIn(400);
-        }
-      }, 150);
-    }
-  };
+  const {
+    previewSong, setPreviewSong,
+    restoredSong, setRestoredSong,
+    previewSavedStateRef,
+    handlePlayPreview,
+    handleStopPreview
+  } = useSearchPreview({
+    currentTime,
+    playerRef,
+    playlist,
+    currentIndex,
+    isAudioPlaying,
+    setIsAudioPlaying
+  });
   const handleToggleSearch = () => {
     if (showSearch) {
       // Closing search view
@@ -465,7 +421,6 @@ function App() {
     syncOffset, setSyncOffset, 
     transposeOffset, setTransposeOffset 
   } = useChords(currentSong, isAudioPlaying, api);
-  const [currentTime, setCurrentTime] = useState(0);
   const artistFact = useArtistFact(currentSong);
   // Reset the failed state whenever the user manually plays a different song or adds a song
   useEffect(() => {
