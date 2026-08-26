@@ -194,7 +194,7 @@ const Player = React.forwardRef(function Player({
             {core.isExtractingStream && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(0,0,0,0.5)' }}>
                 <Loader2 className="spinning" style={{ color: 'var(--accent-color)', marginBottom: '16px' }} size={40} />
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Bypassing embed block...</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>Bypassing embed block...</div>
               </div>
             )}
             {currentSong && (currentSong.is_local || core.streamUrl) && (
@@ -202,7 +202,7 @@ const Player = React.forwardRef(function Player({
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{currentSong.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{currentSong.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
                   id="local-audio-player"
                   src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : core.streamUrl}
@@ -235,7 +235,7 @@ const Player = React.forwardRef(function Player({
           </div>
 
           {!currentSong && (
-            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255, 255, 255, 0.6)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
               No song playing.<br/>Search for music to get started!
             </div>
           )}
