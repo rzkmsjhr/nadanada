@@ -179,12 +179,6 @@ function App() {
   const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 
-  useEffect(() => {
-    if (globalError && isMiniPlayer) {
-      toggleMiniPlayer();
-    }
-  }, [globalError, isMiniPlayer, toggleMiniPlayer]);
-
 
   const {
     showDownloadedList, setShowDownloadedList,
@@ -195,6 +189,12 @@ function App() {
     handleDownloadSong
   } = useDownloadManager(api, setGlobalError);
   const [successMessage, setSuccessMessage] = useState(null);
+
+  useEffect(() => {
+    if ((globalError || successMessage) && isMiniPlayer) {
+      toggleMiniPlayer();
+    }
+  }, [globalError, successMessage, isMiniPlayer, toggleMiniPlayer]);
   const {
     isFetchingEndless,
     failedEndlessFetch,
