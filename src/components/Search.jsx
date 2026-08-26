@@ -4,7 +4,8 @@ import { Loader2, Plus, Check, X, Disc, Music, Play, Square } from 'lucide-react
 
 const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId, onPlayPreview, onStopPreview, isPreviewing }) => {
   const isAlbum = video.is_playlist;
-  const isAdded = !isAlbum && playlist.some(s => s.id === video.id);
+  const [albumAdded, setAlbumAdded] = useState(false);
+  const isAdded = (!isAlbum && playlist.some(s => s.id === video.id)) || albumAdded;
   const isLoading = loadingAlbumId === video.id;
   
   const [isHovered, setIsHovered] = useState(false);
@@ -69,11 +70,14 @@ const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId
 
         <button 
           className={`btn btn-icon ${isAdded ? '' : 'btn-primary'}`} 
-          onClick={(e) => { 
+          onClick={async (e) => { 
             e.stopPropagation(); 
             if (isLoading) return;
             if (isAlbum) {
-              handleAddAlbum(video);
+              const success = await handleAddAlbum(video);
+              if (success) {
+                setAlbumAdded(true);
+              }
             } else if (!isAdded) {
               onAdd(video); 
             }
@@ -132,12 +136,12 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
   const handleAddAlbum = async (album) => {
     if (!album.first_video_id) {
       onError("Cannot fetch playlist without a starting video.");
-      return;
+      return false;
     }
     
     if (!navigator.onLine) {
       onError("No internet connection.");
-      return;
+      return false;
     }
     
     setLoadingAlbumId(album.id);
@@ -152,10 +156,13 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
           onError(`Album is too large. Only the first 50 tracks were added to prevent performance issues.`);
         }
         onAddMultiple(tracks);
+        return true;
       }
+      return false;
     } catch (err) {
       console.error(err);
       onError('Failed to load album: ' + err);
+      return false;
     } finally {
       setLoadingAlbumId(null);
     }
