@@ -118,12 +118,6 @@ function App() {
     toggleMiniPlayer
   } = useSystemIntegration(appWindow, setShowClosePrompt);
 
-  useEffect(() => {
-    if (globalError && isMiniPlayer) {
-      toggleMiniPlayer();
-    }
-  }, [globalError, isMiniPlayer, toggleMiniPlayer]);
-
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
@@ -183,6 +177,12 @@ function App() {
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
   const [globalError, setGlobalError] = useState(null);
+
+  useEffect(() => {
+    if (globalError && isMiniPlayer) {
+      toggleMiniPlayer();
+    }
+  }, [globalError, isMiniPlayer, toggleMiniPlayer]);
 
 
   const {
