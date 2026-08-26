@@ -32,6 +32,7 @@ export default function PlaylistViews({
   shouldScrollPlaylistToBottom,
   setShouldScrollPlaylistToBottom,
   albumInfo,
+  albumCache,
   onAlbumClick
 }) {
   if (showSearch) {
@@ -88,6 +89,7 @@ export default function PlaylistViews({
         isTrendingMode={true} 
         isDownloadedView={true} 
         onAddSong={() => {}} 
+        albumCache={albumCache}
       />
     );
   }
@@ -112,6 +114,7 @@ export default function PlaylistViews({
       shouldScrollToBottom={shouldScrollPlaylistToBottom} 
       onScrollToBottomDone={() => setShouldScrollPlaylistToBottom(false)}
       albumInfo={albumInfo}
+      albumCache={albumCache}
       onAlbumClick={onAlbumClick}
     />
   );

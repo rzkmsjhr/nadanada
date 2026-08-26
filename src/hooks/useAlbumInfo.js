@@ -1,53 +1,73 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 
-export function useAlbumInfo(currentSong) {
-  const [albumInfo, setAlbumInfo] = useState(null);
-  const [isLoadingAlbum, setIsLoadingAlbum] = useState(false);
-  const cacheRef = useRef({}); // { videoId: { album, artist, albumPlaylistId } }
+export function useAlbumInfo(playlist, currentIndex) {
+  const [albumCache, setAlbumCache] = useState({}); // { videoId: { album, artist, albumPlaylistId } }
+  const queueRef = useRef([]);
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
-    if (!currentSong || currentSong.is_local) {
-      setAlbumInfo(null);
-      return;
+    if (!playlist || playlist.length === 0) return;
+
+    // Prioritize current song, then upcoming songs, then previous songs
+    const missing = [];
+    const current = playlist[currentIndex];
+    
+    if (current && !current.is_local && !albumCache[current.id]) {
+      missing.push(current.id);
+    }
+    for (let i = currentIndex + 1; i < playlist.length; i++) {
+      if (!playlist[i].is_local && !albumCache[playlist[i].id]) missing.push(playlist[i].id);
+    }
+    for (let i = 0; i < currentIndex; i++) {
+      if (!playlist[i].is_local && !albumCache[playlist[i].id]) missing.push(playlist[i].id);
     }
 
-    const videoId = currentSong.id;
+    queueRef.current = Array.from(new Set(missing));
 
-    // Check cache first
-    if (cacheRef.current[videoId]) {
-      setAlbumInfo(cacheRef.current[videoId]);
-      return;
-    }
-
-    let cancelled = false;
-    setAlbumInfo(null);
-    setIsLoadingAlbum(true);
-
-    api.getVideoAlbumInfo(videoId).then(info => {
-      if (cancelled) return;
+    const processQueue = async () => {
+      if (isFetchingRef.current) return;
+      isFetchingRef.current = true;
       
-      // Clean up artist: remove "- Topic" suffix
-      let artist = info.artist || '';
-      artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
-      
-      const result = {
-        album: info.album || '',
-        artist: artist,
-        albumPlaylistId: info.album_playlist_id || ''
-      };
-      
-      cacheRef.current[videoId] = result;
-      setAlbumInfo(result);
-    }).catch(err => {
-      console.error('Failed to fetch album info:', err);
-      if (!cancelled) setAlbumInfo(null);
-    }).finally(() => {
-      if (!cancelled) setIsLoadingAlbum(false);
-    });
+      while (queueRef.current.length > 0) {
+        const videoId = queueRef.current.shift();
+        
+        // Skip if another instance fetched it
+        setAlbumCache(prev => {
+          if (prev[videoId]) return prev;
+          
+          // Actually fetch
+          api.getVideoAlbumInfo(videoId).then(info => {
+            let artist = info.artist || '';
+            artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
+            
+            const result = {
+              album: info.album || '',
+              artist: artist,
+              albumPlaylistId: info.album_playlist_id || ''
+            };
+            setAlbumCache(p => ({ ...p, [videoId]: result }));
+          }).catch(err => {
+            console.error('Failed to fetch album info for', videoId, err);
+            setAlbumCache(p => ({ ...p, [videoId]: { album: '', artist: '', albumPlaylistId: '' } }));
+          });
+          
+          return prev;
+        });
 
-    return () => { cancelled = true; };
-  }, [currentSong?.id]);
+        // Throttle requests to avoid yt-dlp spam / rate limits
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      
+      isFetchingRef.current = false;
+    };
 
-  return { albumInfo, isLoadingAlbum };
+    processQueue();
+  }, [playlist, currentIndex]); // Don't depend on albumCache to avoid infinite loops
+
+  const currentSong = playlist?.[currentIndex];
+  const albumInfo = currentSong ? albumCache[currentSong.id] : null;
+  const isLoadingAlbum = currentSong && !currentSong.is_local && !albumCache[currentSong.id];
+
+  return { albumInfo, isLoadingAlbum, albumCache };
 }

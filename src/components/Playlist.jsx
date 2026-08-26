@@ -175,7 +175,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   );
 });
 
-export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone, albumInfo, onAlbumClick }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone, albumInfo, albumCache, onAlbumClick }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
   const containerRef = useRef(null);
@@ -265,8 +265,8 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
                downloadedIds={downloadedIds}
                onRemove={onRemove}
                onAddToSavedPlaylist={onAddToSavedPlaylist}
-               albumInfo={isActive ? albumInfo : null}
-               onAlbumClick={isActive ? onAlbumClick : null}
+               albumInfo={isActive ? albumInfo : (albumCache?.[song.id] || null)}
+               onAlbumClick={onAlbumClick}
             />
           );
         })}

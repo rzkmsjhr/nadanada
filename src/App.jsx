@@ -251,7 +251,7 @@ function App() {
     }
   }, [currentIndex, playlist]);
 
-  const { albumInfo, isLoadingAlbum } = useAlbumInfo(currentSong);
+  const { albumInfo, isLoadingAlbum, albumCache } = useAlbumInfo(playlist, currentIndex);
 
   const handleAlbumClick = async (info) => {
     if (!info?.album) return;
@@ -512,6 +512,7 @@ function App() {
               shouldScrollPlaylistToBottom={shouldScrollPlaylistToBottom}
               setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
               albumInfo={albumInfo}
+              albumCache={albumCache}
               onAlbumClick={handleAlbumClick}
             />
           </div>
