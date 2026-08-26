@@ -34,11 +34,11 @@ const Titlebar = ({ appWindow, onToggleMiniPlayer, isMiniPlayer }) => {
             <Music2 size={14} /> NadaNada
           </div>
           <div className="titlebar-buttons">
-            <div className="titlebar-button" onClick={() => onToggleMiniPlayer?.()} title={isMiniPlayer ? "Exit Mini Player" : "Mini Player"}>
-              <PictureInPicture2 size={14} />
-            </div>
             <div className="titlebar-button" onClick={() => appWindow.minimize()}>
               <Minus size={14} />
+            </div>
+            <div className="titlebar-button" onClick={() => onToggleMiniPlayer?.()} title={isMiniPlayer ? "Exit Mini Player" : "Mini Player"}>
+              <PictureInPicture2 size={14} />
             </div>
             <div className="titlebar-button" onClick={() => appWindow.toggleMaximize()}>
               <Square size={12} />

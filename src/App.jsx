@@ -344,9 +344,12 @@ function App() {
     'A♯': 'A#',
     'B♯': 'C'
   };
-  return <div className="app-container" style={{
+  return (
+    <>
+      <div className="app-container" style={{
     position: 'relative',
     width: '100vw',
+    background: isMiniPlayer ? 'transparent' : 'var(--bg-color)',
     height: '100vh',
     display: 'flex',
     flexDirection: 'column',
@@ -355,10 +358,10 @@ function App() {
 
 
       {/* Invisible Resize Borders */}
-      <WindowBorders appWindow={appWindow} />
+      {!isMiniPlayer && <WindowBorders appWindow={appWindow} />}
 
       {/* Native/Custom Titlebar */}
-      <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />
+      {!isMiniPlayer && <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />}
 
       {/* ── UNIFIED MAIN CONTENT ──
           Single JSX tree — styles switch via isMaximized.
@@ -379,14 +382,14 @@ function App() {
     }}>
 
         {/* ── Player Panel ── */}
-        <div className={isMaximized ? 'glass-panel' : 'top-section glass-panel'} style={isMaximized ? {
+        <div className={isMaximized ? 'glass-panel' : isMiniPlayer ? '' : 'top-section glass-panel'} style={isMaximized ? {
         flex: '0 0 70%',
         display: 'flex',
         flexDirection: 'column',
         borderRadius: '16px',
         overflow: 'hidden',
         minHeight: 0
-      } : topPanelStyle}>
+      } : isMiniPlayer ? { flex: 1, display: 'flex', flexDirection: 'column' } : topPanelStyle}>
           <div style={{
           display: 'grid',
           gridTemplateRows: (showSearch && !isMaximized) || isMiniPlayer ? '0fr' : '1fr',
@@ -431,6 +434,7 @@ function App() {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
+          padding: isMiniPlayer ? 0 : '16px',
           flex: isMiniPlayer ? 1 : 'unset'
         }}>
             <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={setCurrentTime} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
@@ -438,7 +442,7 @@ function App() {
             setIsShuffle(newVal);
             if (newVal) setIsEndlessPlay(false);
           }} onSongEnded={handleNext} onRestoreHandled={() => setRestoredMainTime(null)}
-            albumInfo={albumInfo} isLoadingAlbum={isLoadingAlbum} onAlbumClick={handleAlbumClick} />
+            albumInfo={albumInfo} isLoadingAlbum={isLoadingAlbum} onAlbumClick={handleAlbumClick} isMiniPlayer={isMiniPlayer} onToggleMiniPlayer={toggleMiniPlayer} />
           </div>
         </div>
 

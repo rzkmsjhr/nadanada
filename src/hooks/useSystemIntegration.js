@@ -110,8 +110,8 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       if (await appWindow.isMaximized()) {
         await appWindow.unmaximize();
       }
-      await appWindow.setMinSize(new LogicalSize(320, 140));
-      await appWindow.setSize(new LogicalSize(320, 140));
+      await appWindow.setMinSize(new LogicalSize(320, 180));
+      await appWindow.setSize(new LogicalSize(320, 180));
     }
   };
 

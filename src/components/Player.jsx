@@ -1,7 +1,7 @@
 import React, { useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
 import PlayerControls from './PlayerControls';
-import { Loader2, Subtitles } from 'lucide-react';
+import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
@@ -9,7 +9,7 @@ import { usePlayerCore } from '../hooks/usePlayerCore';
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded,
-  albumInfo, isLoadingAlbum, onAlbumClick
+  albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer
 }, ref) {
   
   const core = usePlayerCore({
@@ -241,41 +241,85 @@ const Player = React.forwardRef(function Player({
             </div>
           )}
           
+          {/* Mini Player hover overlay */}
+          {isMiniPlayer && currentSong && (
+            <div 
+              data-tauri-drag-region 
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: core.isVideoHovered ? 'rgba(0,0,0,0.6)' : 'transparent',
+                opacity: core.isVideoHovered ? 1 : 0,
+                transition: 'all 0.2s ease',
+                zIndex: 20,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '16px',
+                borderRadius: '12px'
+              }}
+            >
+              <button 
+                onClick={onToggleMiniPlayer}
+                style={{
+                  position: 'absolute', top: '12px', right: '12px',
+                  background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff',
+                  borderRadius: '50%', padding: '6px', cursor: 'pointer', zIndex: 25,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}
+              >
+                <X size={16} />
+              </button>
+
+              <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious} style={{ zIndex: 25, color: '#fff', background: 'transparent' }}>
+                <SkipBack size={24} />
+              </button>
+              <button className="btn btn-icon" onClick={core.togglePlay} style={{ background: 'var(--accent-color)', color: '#fff', borderRadius: '50%', padding: '12px', zIndex: 25 }}>
+                {core.isPlaying ? <Pause size={24} /> : <Play size={24} />}
+              </button>
+              <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} style={{ zIndex: 25, color: '#fff', background: 'transparent' }}>
+                <SkipForward size={24} />
+              </button>
+            </div>
+          )}
+
           {/* Invisible overlay */}
-          {currentSong && <div style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+          {!isMiniPlayer && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
         </div>
       </div>
 
-      <PlayerControls
-        currentSong={currentSong}
-        isPlaying={core.isPlaying}
-        isBuffering={core.isBuffering}
-        currentTime={core.currentTime}
-        duration={core.duration}
-        masterVolume={core.masterVolume}
-        isMuted={core.isMuted}
-        repeatMode={repeatMode}
-        isShuffle={isShuffle}
-        hasNext={hasNext}
-        hasPrevious={hasPrevious}
-        isSearchExpanded={isSearchExpanded}
-        isVolumeHovered={core.isVolumeHovered}
-        setIsVolumeHovered={core.setIsVolumeHovered}
-        handleSeekChange={core.handleSeekChange}
-        handleSeekMouseDown={core.handleSeekMouseDown}
-        handleSeekMouseUp={core.handleSeekMouseUp}
-        onToggleShuffle={onToggleShuffle}
-        onPrevious={onPrevious}
-        togglePlay={core.togglePlay}
-        onNext={onNext}
-        onToggleRepeat={onToggleRepeat}
-        handleVolumeChange={core.handleVolumeChange}
-        toggleMute={core.toggleMute}
-        formatTime={core.formatTime}
-        albumInfo={albumInfo}
-        isLoadingAlbum={isLoadingAlbum}
-        onAlbumClick={onAlbumClick}
-      />
+      {!isMiniPlayer && (
+        <PlayerControls
+          currentSong={currentSong}
+          isPlaying={core.isPlaying}
+          isBuffering={core.isBuffering}
+          currentTime={core.currentTime}
+          duration={core.duration}
+          masterVolume={core.masterVolume}
+          isMuted={core.isMuted}
+          repeatMode={repeatMode}
+          isShuffle={isShuffle}
+          hasNext={hasNext}
+          hasPrevious={hasPrevious}
+          isSearchExpanded={isSearchExpanded}
+          isVolumeHovered={core.isVolumeHovered}
+          setIsVolumeHovered={core.setIsVolumeHovered}
+          handleSeekChange={core.handleSeekChange}
+          handleSeekMouseDown={core.handleSeekMouseDown}
+          handleSeekMouseUp={core.handleSeekMouseUp}
+          onToggleShuffle={onToggleShuffle}
+          onPrevious={onPrevious}
+          togglePlay={core.togglePlay}
+          onNext={onNext}
+          onToggleRepeat={onToggleRepeat}
+          handleVolumeChange={core.handleVolumeChange}
+          toggleMute={core.toggleMute}
+          formatTime={core.formatTime}
+          albumInfo={albumInfo}
+          isLoadingAlbum={isLoadingAlbum}
+          onAlbumClick={onAlbumClick}
+        />
+      )}
     </div>
   );
 });
