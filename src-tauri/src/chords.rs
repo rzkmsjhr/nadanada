@@ -254,6 +254,10 @@ pub async fn scrape_chords(
     )
     .incognito(true)
     .visible(false)
+    .decorations(false)
+    .transparent(true)
+    .skip_taskbar(true)
+    .always_on_bottom(true)
     .initialization_script(&js_code)
     .on_navigation(move |url| {
         println!("Navigating to: {}", url.as_str());
@@ -334,6 +338,10 @@ pub async fn scrape_chords(
         )
         .incognito(true)
         .visible(false)
+        .decorations(false)
+        .transparent(true)
+        .skip_taskbar(true)
+        .always_on_bottom(true)
         .initialization_script(&js_code)
         .on_navigation(move |url| {
             println!("[Google fallback] Navigating to: {}", url.as_str());

@@ -6,6 +6,13 @@ import Playlist from './components/Playlist';
 import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle, ListPlus, Pencil, Check } from 'lucide-react';
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
 import WelcomeModal from './components/WelcomeModal';
+import ClosePromptModal from './components/modals/ClosePromptModal';
+import ClearPlaylistModal from './components/modals/ClearPlaylistModal';
+import SavePlaylistModal from './components/modals/SavePlaylistModal';
+import LoadPlaylistModal from './components/modals/LoadPlaylistModal';
+import AddToPlaylistModal from './components/modals/AddToPlaylistModal';
+import ErrorModal from './components/modals/ErrorModal';
+import SuccessModal from './components/modals/SuccessModal';
 import ChordDisplay from "./components/ChordDisplay";
 import ResizeBorder from "./components/ResizeBorder";
 import { api } from './services/api';
@@ -400,8 +407,6 @@ function App() {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
   const [songToAddToPlaylist, setSongToAddToPlaylist] = useState(null);
-  const [addToPlaylistName, setAddToPlaylistName] = useState('');
-  const [savePlaylistName, setSavePlaylistName] = useState('');
   // Saved playlists — persisted to %LOCALAPPDATA%\NadaNada\playlists.json
   // so they survive localStorage wipes. Falls back to localStorage on error
   // and auto-migrates existing data on first run.
@@ -1459,365 +1464,77 @@ function App() {
 
       {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
 
-      {showClosePrompt && <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon-container">
-              <Disc className="modal-icon" />
-            </div>
-            <div>
-              <h3 className="modal-title">Keep the music playing?</h3>
-              <p className="modal-desc">
-                You can minimize NadaNada to the system tray so it continues playing in the background.
-              </p>
-            </div>
-            
-            <div className="modal-actions">
-              <button onClick={async () => {
-            setShowClosePrompt(false);
-            await getCurrentWindow().hide();
-          }} className="btn btn-primary btn-large">
-                Minimize to Tray
-              </button>
-              <button onClick={async () => {
-            setShowClosePrompt(false);
-            await api.quitApp();
-          }} className="btn btn-secondary btn-large">
-                Quit App
-              </button>
-              <button onClick={() => setShowClosePrompt(false)} className="btn btn-cancel btn-large">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>}
+      {showClosePrompt && <ClosePromptModal onClose={() => setShowClosePrompt(false)} />}
 
-      {showClearPrompt && <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon-container">
-              <AlertTriangle className="modal-icon" style={{
-            color: '#ef4444',
-            animation: 'none'
-          }} />
-            </div>
-            <div>
-              <h3 className="modal-title">Clear Playlist?</h3>
-              <p className="modal-desc">
-                Are you sure you want to clear your current playlist? This action cannot be undone.
-              </p>
-            </div>
-            
-            <div className="modal-actions">
-              <button onClick={() => {
-            setPlaylist([]);
-            setSavedPlaylist(null);
-            setCurrentIndex(0);
-            setIsAudioPlaying(false);
-            setShowClearPrompt(false);
-          }} className="btn btn-primary btn-large" style={{
-            background: '#ef4444',
-            borderColor: '#ef4444'
-          }}>
-                Clear All
-              </button>
-              <button onClick={() => setShowClearPrompt(false)} className="btn btn-secondary btn-large">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>}
+      {showClearPrompt && <ClearPlaylistModal onClear={() => {
+        setPlaylist([]);
+        setSavedPlaylist(null);
+        setCurrentIndex(0);
+        setIsAudioPlaying(false);
+        setShowClearPrompt(false);
+      }} onClose={() => setShowClearPrompt(false)} />}
 
-      {showSavePrompt && <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon-container">
-              <Save className="modal-icon" style={{
-            animation: 'none'
-          }} />
-            </div>
-            <div style={{
-          width: '100%'
-        }}>
-              <h3 className="modal-title">Save Playlist</h3>
-              <p className="modal-desc">
-                Enter a name for your current mix.
-              </p>
-              <input type="text" className="input" value={savePlaylistName} onChange={e => setSavePlaylistName(e.target.value)} placeholder="My Awesome Playlist..." style={{
-            marginBottom: '24px'
-          }} autoFocus onKeyDown={e => {
-            if (e.key === 'Enter' && savePlaylistName.trim()) {
-              setSavedPlaylists(prev => [...prev, {
-                id: Date.now().toString(),
-                name: savePlaylistName.trim(),
-                items: playlist
-              }]);
-              setSavePlaylistName('');
-              setShowSavePrompt(false);
+      {showSavePrompt && <SavePlaylistModal onSave={(name) => {
+        setSavedPlaylists(prev => [...prev, {
+          id: Date.now().toString(),
+          name,
+          items: playlist
+        }]);
+        setShowSavePrompt(false);
+      }} onClose={() => setShowSavePrompt(false)} />}
+
+      {showLoadPrompt && <LoadPlaylistModal 
+        savedPlaylists={savedPlaylists}
+        onSelect={(playlistItem) => {
+          setPlaylist(playlistItem.items);
+          setSavedPlaylist(null);
+          setCurrentIndex(0);
+          setShowLoadPrompt(false);
+        }}
+        onDelete={(id) => {
+          setSavedPlaylists(prev => prev.filter(p => p.id !== id));
+        }}
+        onRename={(id, newName) => {
+          setSavedPlaylists(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+        }}
+        onClose={() => setShowLoadPrompt(false)}
+        importUrl={importUrl}
+        setImportUrl={setImportUrl}
+        isImporting={isImporting}
+        importProgress={importProgress}
+        handleImportPlaylist={handleImportPlaylist}
+      />}
+
+
+      {songToAddToPlaylist && <AddToPlaylistModal 
+        songToAddToPlaylist={songToAddToPlaylist}
+        savedPlaylists={savedPlaylists}
+        onAddToPlaylist={(playlistItem) => {
+          setSavedPlaylists(prev => prev.map(p => {
+            if (p.id === playlistItem.id) {
+              if (p.items.some(s => s.id === songToAddToPlaylist.id)) return p;
+              return { ...p, items: [...p.items, songToAddToPlaylist] };
             }
-          }} />
-            </div>
-            
-            <div className="modal-actions">
-              <button onClick={() => {
-            if (savePlaylistName.trim()) {
-              setSavedPlaylists(prev => [...prev, {
-                id: Date.now().toString(),
-                name: savePlaylistName.trim(),
-                items: playlist
-              }]);
-              setSavePlaylistName('');
-              setShowSavePrompt(false);
-            }
-          }} className="btn btn-primary btn-large" disabled={!savePlaylistName.trim()}>
-                Save
-              </button>
-              <button onClick={() => setShowSavePrompt(false)} className="btn btn-secondary btn-large">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>}
+            return p;
+          }));
+          setSongToAddToPlaylist(null);
+          setSuccessMessage(`Added to ${playlistItem.name}`);
+        }}
+        onCreatePlaylist={(name) => {
+          setSavedPlaylists(prev => [...prev, {
+            id: Date.now().toString(),
+            name,
+            items: [songToAddToPlaylist]
+          }]);
+          setSongToAddToPlaylist(null);
+          setSuccessMessage(`Created and added to ${name}`);
+        }}
+        onClose={() => setSongToAddToPlaylist(null)}
+      />}
 
-      {showLoadPrompt && <div className="modal-overlay">
-          <div className="modal-content" style={{
-        maxWidth: '400px'
-      }}>
-            <div style={{
-          width: '100%'
-        }}>
-              <h3 className="modal-title" style={{
-            marginBottom: '20px'
-          }}>Your Playlists</h3>
-              {savedPlaylists.length === 0 ? <p className="modal-desc">You haven't saved any playlists yet.</p> : <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            maxHeight: '300px',
-            overflowY: 'auto',
-            marginBottom: '24px',
-            paddingRight: '8px',
-            width: '100%'
-          }}>
-                  {savedPlaylists.map(pl => <SavedPlaylistItem key={pl.id} pl={pl} onSelect={playlistItem => {
-              setPlaylist(playlistItem.items);
-              setSavedPlaylist(null);
-              setCurrentIndex(0);
-              setShowLoadPrompt(false);
-            }} onDelete={id => {
-              setSavedPlaylists(prev => prev.filter(p => p.id !== id));
-            }} onRename={(id, newName) => {
-              setSavedPlaylists(prev => prev.map(p => p.id === id ? {
-                ...p,
-                name: newName
-              } : p));
-            }} />)}
-                </div>}
-            </div>
-            
-            <div style={{
-          width: '100%',
-          marginTop: '16px',
-          marginBottom: '24px',
-          borderTop: '1px solid var(--panel-border)',
-          paddingTop: '16px'
-        }}>
-              <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-            marginBottom: '8px'
-          }}>
-                <div style={{
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-              color: 'var(--text-main)'
-            }}>Import Playlist</div>
-                <img src="/youtube.svg" alt="YouTube" title="YouTube supported" style={{
-              height: '12px',
-              width: 'auto',
-              objectFit: 'contain',
-              position: 'relative',
-              top: '2px'
-            }} />
-                <img src="/spotify.svg" alt="Spotify" title="Spotify supported" style={{
-              height: '12px',
-              width: 'auto',
-              objectFit: 'contain',
-              position: 'relative',
-              top: '1px'
-            }} />
-              </div>
-              <div style={{
-            display: 'flex',
-            gap: '8px'
-          }}>
-                <input type="text" className="input" value={importUrl} onChange={e => setImportUrl(e.target.value)} placeholder="Your playlist url" style={{
-              flex: 1
-            }} onKeyDown={e => {
-              if (e.key === 'Enter') handleImportPlaylist();
-            }} disabled={isImporting} />
-                <button onClick={handleImportPlaylist} className="btn btn-primary" disabled={!importUrl.trim() || isImporting} style={{
-              padding: '8px 16px',
-              minWidth: '120px'
-            }}>
-                  {isImporting ? <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px'
-              }}>
-                      <Loader2 size={16} className="animate-spin" />
-                      <span style={{
-                  fontSize: '0.8rem'
-                }}>{importProgress || 'Importing'}</span>
-                    </div> : 'Import'}
-                </button>
-              </div>
-            </div>
+      <ErrorModal error={globalError} onClose={() => setGlobalError(null)} />
 
-            <div className="modal-actions">
-              <button onClick={() => setShowLoadPrompt(false)} className="btn btn-secondary btn-large">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>}
-
-
-      {songToAddToPlaylist && <div className="modal-overlay">
-          <div className="modal-content" style={{
-        width: '90%',
-        maxWidth: '400px'
-      }}>
-            <div className="modal-icon-container">
-              <ListPlus className="modal-icon" />
-            </div>
-            <h3 className="modal-title">Add to Playlist</h3>
-            <div style={{
-          width: '100%',
-          marginTop: '16px'
-        }}>
-              {savedPlaylists.length > 0 && <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-            maxHeight: '200px',
-            overflowY: 'auto',
-            marginBottom: '16px',
-            paddingRight: '8px'
-          }}>
-                  {savedPlaylists.map(pl => <SavedPlaylistButtonItem key={pl.id} pl={pl} onClick={playlistItem => {
-              setSavedPlaylists(prev => prev.map(p => {
-                if (p.id === playlistItem.id) {
-                  if (p.items.some(s => s.id === songToAddToPlaylist.id)) return p;
-                  return {
-                    ...p,
-                    items: [...p.items, songToAddToPlaylist]
-                  };
-                }
-                return p;
-              }));
-              setSongToAddToPlaylist(null);
-              setSuccessMessage(`Added to ${playlistItem.name}`);
-            }} />)}
-                </div>}
-              
-              <div style={{
-            borderTop: '1px solid var(--panel-border)',
-            paddingTop: '16px'
-          }}>
-                <div style={{
-              fontSize: '0.85rem',
-              fontWeight: 'bold',
-              marginBottom: '8px',
-              color: 'var(--text-main)'
-            }}>Create New Playlist</div>
-                <div style={{
-              display: 'flex',
-              gap: '8px'
-            }}>
-                  <input type="text" className="input" value={addToPlaylistName} onChange={e => setAddToPlaylistName(e.target.value)} placeholder="Playlist name..." style={{
-                flex: 1
-              }} onKeyDown={e => {
-                if (e.key === 'Enter' && addToPlaylistName.trim()) {
-                  setSavedPlaylists(prev => [...prev, {
-                    id: Date.now().toString(),
-                    name: addToPlaylistName.trim(),
-                    items: [songToAddToPlaylist]
-                  }]);
-                  setAddToPlaylistName('');
-                  setSongToAddToPlaylist(null);
-                  setSuccessMessage(`Created and added to ${addToPlaylistName.trim()}`);
-                }
-              }} />
-                  <button className="btn btn-primary" disabled={!addToPlaylistName.trim()} onClick={() => {
-                setSavedPlaylists(prev => [...prev, {
-                  id: Date.now().toString(),
-                  name: addToPlaylistName.trim(),
-                  items: [songToAddToPlaylist]
-                }]);
-                setAddToPlaylistName('');
-                setSongToAddToPlaylist(null);
-                setSuccessMessage(`Created and added to ${addToPlaylistName.trim()}`);
-              }}>
-                    Create
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div className="modal-actions" style={{
-          marginTop: '24px'
-        }}>
-              <button onClick={() => {
-            setSongToAddToPlaylist(null);
-            setAddToPlaylistName('');
-          }} className="btn btn-secondary btn-large" style={{
-            width: '100%'
-          }}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>}
-
-      {globalError && <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon-container">
-              <AlertTriangle className="modal-icon" style={{
-            color: '#ef4444',
-            animation: 'none'
-          }} />
-            </div>
-            <h3 className="modal-title">Error</h3>
-            <p className="modal-desc">{globalError}</p>
-            <div className="modal-actions">
-              <button onClick={() => setGlobalError(null)} className="btn btn-secondary btn-large" style={{
-            width: '100%'
-          }}>
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>}
-
-      {successMessage && <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon-container">
-              <CheckCircle className="modal-icon" style={{
-            color: 'var(--accent-color)',
-            animation: 'none'
-          }} />
-            </div>
-            <h3 className="modal-title">Success</h3>
-            <p className="modal-desc">{successMessage}</p>
-            <div className="modal-actions">
-              <button onClick={() => setSuccessMessage(null)} className="btn btn-primary btn-large" style={{
-            width: '100%'
-          }}>
-                OK
-              </button>
-            </div>
-          </div>
-        </div>}
+      <SuccessModal message={successMessage} onClose={() => setSuccessMessage(null)} />
     </div>;
 }
 export default App;
