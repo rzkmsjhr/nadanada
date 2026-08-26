@@ -18,6 +18,7 @@ import ChordDisplay from "./components/ChordDisplay";
 import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
 import { useArtistFact } from "./hooks/useArtistFact";
+import { useDownloadManager } from "./hooks/useDownloadManager";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -293,18 +294,20 @@ function App() {
   const [savedPlaylist, setSavedPlaylist] = useState(null);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   const [globalError, setGlobalError] = useState(null);
-  const [showDownloadedList, setShowDownloadedList] = useState(false);
-  const [downloadedSongs, setDownloadedSongs] = useState([]);
-  const [downloadingSongId, setDownloadingSongId] = useState(null);
 
   // Playback control states
   const [repeatMode, setRepeatMode] = useState(0); // 0=off, 1=repeat, 2=repeat once
   const [isShuffle, setIsShuffle] = useState(false);
   const [shuffleHistory, setShuffleHistory] = useState([]);
 
-  // Derive Set so it maintains a stable reference unless the actual song IDs change
-  const downloadedIdsStr = downloadedSongs.map(s => s.id).sort().join(',');
-  const downloadedIds = useMemo(() => new Set(downloadedSongs.map(s => s.id)), [downloadedIdsStr]);
+  const {
+    showDownloadedList, setShowDownloadedList,
+    downloadedSongs, setDownloadedSongs,
+    downloadingSongId,
+    downloadedIds,
+    loadDownloadedSongs,
+    handleDownloadSong
+  } = useDownloadManager(api, setGlobalError);
   const [successMessage, setSuccessMessage] = useState(null);
   const {
     isFetchingEndless,
@@ -329,25 +332,6 @@ function App() {
     setShowTrendingDropdown
   });
   useEffect(() => {
-    if (showDownloadedList) {
-      loadDownloadedSongs();
-    }
-  }, [showDownloadedList]);
-  const loadDownloadedSongs = async () => {
-    try {
-      const songs = await api.getDownloadedSongs();
-      setDownloadedSongs(prev => {
-        if (prev.length === songs.length && prev.every((s, i) => s.id === songs[i].id)) return prev;
-        return songs;
-      });
-    } catch (e) {
-      console.error('Failed to load downloaded songs:', e);
-    }
-  };
-  useEffect(() => {
-    loadDownloadedSongs();
-    const interval = setInterval(loadDownloadedSongs, 5000);
-
     // Debounce the online event by 1.5s to let the network stack fully stabilise
     // before reloading, and show a visual indicator so the reload doesn't feel
     // like a crash.
@@ -360,42 +344,10 @@ function App() {
     };
     window.addEventListener('online', handleOnline);
     return () => {
-      clearInterval(interval);
       window.removeEventListener('online', handleOnline);
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, []);
-  const handleDownloadSong = async song => {
-    if (downloadingSongId) return; // Prevent multiple simultaneous downloads
-    setDownloadingSongId(song.id);
-    try {
-      let title = song.title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
-      let artist = '';
-      const parts = title.split(' - ');
-      if (parts.length > 1) {
-        artist = parts[0].trim();
-        title = parts.slice(1).join(' - ').trim();
-      } else {
-        artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
-      }
-      await api.downloadSong(song.id, title, artist);
-      if (showDownloadedList) {
-        loadDownloadedSongs();
-      }
-      setDownloadedSongs(prev => {
-        if (prev.find(s => s.id === song.id)) return prev;
-        return [...prev, {
-          id: song.id,
-          file_path: ''
-        }]; // Optimistic update
-      });
-    } catch (e) {
-      console.error('Download failed:', e);
-      setGlobalError(`Failed to download song: ${e.toString()}`);
-    } finally {
-      setDownloadingSongId(null);
-    }
-  };
 
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
