@@ -22,6 +22,7 @@ import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
 import { usePlayback } from "./hooks/usePlayback";
 import { usePlaylistManager } from "./hooks/usePlaylistManager";
+import { useSystemIntegration } from "./hooks/useSystemIntegration";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -141,12 +142,16 @@ const staticStyles = {
 };
 function App() {
   const appWindow = getCurrentWindow();
-  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
-  const [isMaximized, setIsMaximized] = useState(false);
-  const [isVideoHidden, setIsVideoHidden] = useState(false);
-  const [isReconnecting, setIsReconnecting] = useState(false);
+
+  const [showClosePrompt, setShowClosePrompt] = useState(false);
+  const {
+    theme, toggleTheme,
+    isMaximized,
+    isVideoHidden,
+    isReconnecting
+  } = useSystemIntegration(appWindow, setShowClosePrompt);
+
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
-  const isMaximizedRef = useRef(false);
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
   const playerRef = useRef(null);
@@ -154,48 +159,6 @@ function App() {
   // Stable refs for next/prev so the keyboard handler never becomes stale
   const handleNextRef = useRef(null);
   const handlePreviousRef = useRef(null);
-  useEffect(() => {
-    // Sync initial maximized state (no animation needed on load)
-    appWindow.isMaximized().then(v => {
-      isMaximizedRef.current = v;
-      setIsMaximized(v);
-    }).catch(() => {});
-    let debounceTimer = null;
-    let showTimer = null;
-    const unlisten = appWindow.onResized(async () => {
-      // Debounce: onResized fires repeatedly during the Windows maximize/restore
-      // animation. Wait until resize events stop before acting so we never
-      // switch the layout mid-animation.
-      clearTimeout(debounceTimer);
-      clearTimeout(showTimer);
-      debounceTimer = setTimeout(async () => {
-        try {
-          const maximized = await appWindow.isMaximized();
-          if (maximized === isMaximizedRef.current) return; // not a maximize change
-
-          // Step 1 — hide video now (synchronous state update)
-          setIsVideoHidden(true);
-
-          // Step 2 — wait two animation frames so the hide actually paints
-          // before we touch the layout (double-rAF = guaranteed post-paint)
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              isMaximizedRef.current = maximized;
-              setIsMaximized(maximized);
-
-              // Step 3 — reveal video after the new layout has settled
-              showTimer = setTimeout(() => setIsVideoHidden(false), 250);
-            });
-          });
-        } catch {}
-      }, 150); // 150ms debounce — longer than Windows Aero animation (~100ms)
-    });
-    return () => {
-      unlisten.then(f => f()).catch(() => {});
-      clearTimeout(debounceTimer);
-      clearTimeout(showTimer);
-    };
-  }, []);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
 
@@ -249,7 +212,6 @@ function App() {
   };
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
-  const [showClosePrompt, setShowClosePrompt] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 
 
@@ -284,23 +246,6 @@ function App() {
     setGlobalError,
     setShowTrendingDropdown
   });
-  useEffect(() => {
-    // Debounce the online event by 1.5s to let the network stack fully stabilise
-    // before reloading, and show a visual indicator so the reload doesn't feel
-    // like a crash.
-    let reconnectTimer = null;
-    const handleOnline = () => {
-      setIsReconnecting(true);
-      reconnectTimer = setTimeout(() => {
-        window.location.reload();
-      }, 1500);
-    };
-    window.addEventListener('online', handleOnline);
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-    };
-  }, []);
 
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
@@ -318,27 +263,9 @@ function App() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('nadanada-theme', theme);
-  }, [theme]);
-  useEffect(() => {
-    const unlisten = listen('close-requested', () => {
-      setShowClosePrompt(true);
-    });
-    return () => {
-      unlisten.then(f => f());
-    };
-  }, []);
 
   // audioSpectrum state moved to Visualizer component for performance
 
-  const toggleTheme = () => {
-    const themes = ['lavender-steel', 'mahogany-dusk', 'tidal-sage', 'sangria-deep', 'midnight-static', 'obsidian-root', 'nox-noir', 'crimson-night'];
-    const currentThemeIndex = themes.indexOf(theme);
-    const nextIndex = (currentThemeIndex + 1) % themes.length;
-    setTheme(themes[nextIndex]);
-  };
   const currentSong = useMemo(() => {
     if (previewSong) {
       return {
