@@ -593,6 +593,6 @@ body {
 
 .app-container:not(.mini-player-mode) { min-height: 568px; }
 
-.mini-player-mode { opacity: 0.5; transition: opacity 0.2s ease; }
+.mini-player-mode { opacity: 0.3; transition: opacity 0.2s ease; }
 
 .mini-player-mode:hover { opacity: 1; }
