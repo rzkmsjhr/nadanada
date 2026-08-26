@@ -263,13 +263,14 @@ const Player = React.forwardRef(function Player({
                 position: 'absolute', top: '12px', left: '12px',
                 display: 'flex', flexDirection: 'column', gap: '2px',
                 color: '#fff', zIndex: 25, maxWidth: 'calc(100% - 48px)',
-                textShadow: '0 1px 4px rgba(0,0,0,0.8)'
+                textShadow: '0 1px 4px rgba(0,0,0,0.8)',
+                overflow: 'hidden'
               }}>
-                <div data-tauri-drag-region style={{ fontSize: '0.9rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {currentSong.title}
+                <div data-tauri-drag-region className="mini-player-marquee-container" style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                  <span data-tauri-drag-region className="mini-player-marquee-text">{currentSong.title}</span>
                 </div>
-                <div data-tauri-drag-region style={{ fontSize: '0.75rem', opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {albumInfo?.artist || (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim()}
+                <div data-tauri-drag-region className="mini-player-marquee-container" style={{ fontSize: '0.75rem', opacity: 0.8 }}>
+                  <span data-tauri-drag-region className="mini-player-marquee-text">{albumInfo?.artist || (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim()}</span>
                 </div>
               </div>
 

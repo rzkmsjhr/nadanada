@@ -596,3 +596,24 @@ body {
 .mini-player-mode { opacity: 0.25; transition: opacity 0.2s ease; }
 
 .mini-player-mode:hover { opacity: 1; }
+
+/* Mini Player Marquee */
+.mini-player-marquee-container {
+  overflow: hidden;
+  container-type: inline-size;
+  width: 100%;
+}
+.mini-player-marquee-text {
+  display: block;
+  white-space: nowrap;
+  width: max-content;
+  will-change: transform;
+}
+.mini-player-mode:hover .mini-player-marquee-text {
+  animation: scrollTextContinuous 8s linear infinite alternate;
+  animation-delay: 1s;
+}
+@keyframes scrollTextContinuous {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(min(0px, calc(-100% + 100cqw))); }
+}
