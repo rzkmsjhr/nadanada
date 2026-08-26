@@ -4,11 +4,16 @@ import { Trash2, GripVertical, Plus, Check, Download, Loader2, ListPlus } from '
 const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist, albumInfo, onAlbumClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
+  const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
   const textRef = useRef(null);
+  const subtitleRef = useRef(null);
 
   const handleMouseEnter = () => {
     if (textRef.current) {
       setShouldScroll(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+    if (subtitleRef.current) {
+      setShouldScrollSubtitle(subtitleRef.current.scrollWidth > subtitleRef.current.clientWidth);
     }
     setIsHovered(true);
   };
@@ -16,6 +21,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   const handleMouseLeave = () => {
     setIsHovered(false);
     setShouldScroll(false);
+    setShouldScrollSubtitle(false);
   };
 
   return (
@@ -50,29 +56,31 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
           <div ref={textRef} className={`song-title ${isHovered && shouldScroll ? 'scrolling' : ''}`}>{song.title}</div>
         </div>
         {song.channel && (
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {(() => {
-              const cleanChannel = song.channel.replace(/\s*-\s*Topic$/i, '');
-              const artist = (albumInfo?.artist) || cleanChannel;
-              const album = albumInfo?.album || '';
-              return (
-                <>
-                  <span>{artist}</span>
-                  {album && (
-                    <>
-                      <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
-                      <span 
-                        onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
-                        className="album-link"
-                        title={`Browse "${album}" album`}
-                      >
-                        {album}
-                      </span>
-                    </>
-                  )}
-                </>
-              );
-            })()}
+          <div className="song-title-wrapper" style={{ marginTop: '2px' }}>
+            <div ref={subtitleRef} className={`song-title ${isHovered && shouldScrollSubtitle ? 'scrolling' : ''}`} style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400, paddingBottom: 0 }}>
+              {(() => {
+                const cleanChannel = song.channel.replace(/\s*-\s*Topic$/i, '');
+                const artist = (albumInfo?.artist) || cleanChannel;
+                const album = albumInfo?.album || '';
+                return (
+                  <>
+                    <span>{artist}</span>
+                    {album && (
+                      <>
+                        <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
+                        <span 
+                          onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
+                          className="album-link"
+                          title={`Browse "${album}" album`}
+                        >
+                          {album}
+                        </span>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
       </div>
