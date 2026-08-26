@@ -21,6 +21,7 @@ import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
 import { usePlayback } from "./hooks/usePlayback";
+import { usePlaylistManager } from "./hooks/usePlaylistManager";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -196,24 +197,22 @@ function App() {
     };
   }, []);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
-  const [playlist, setPlaylist] = useState(() => {
-    try {
-      const saved = localStorage.getItem('nadanada-session-playlist');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      console.error('Failed to parse session playlist:', e);
-      return [];
-    }
-  });
-  const [currentIndex, setCurrentIndex] = useState(() => {
-    const saved = localStorage.getItem('nadanada-session-index');
-    const parsed = saved ? parseInt(saved, 10) : 0;
-    return isNaN(parsed) ? 0 : parsed;
-  });
-  const [showSearch, setShowSearch] = useState(false);
-  const [shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
 
+  const [showSearch, setShowSearch] = useState(false);
+  const {
+    playlist, setPlaylist,
+    currentIndex, setCurrentIndex,
+    savedPlaylist, setSavedPlaylist,
+    savedPlaylists, setSavedPlaylists,
+    shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
+    handleAddSong, handleAddMultiple,
+    handleRemoveSong, handleReorder
+  } = usePlaylistManager({
+    api,
+    showSearch,
+    hasAddedSongInSearchRef
+  });
   const {
     previewSong, setPreviewSong,
     restoredSong, setRestoredSong,
@@ -229,12 +228,14 @@ function App() {
     setIsAudioPlaying
   });
   const handleToggleSearch = () => {
+    console.log("Toggle Search. hasAdded:", hasAddedSongInSearchRef.current, "showSearch:", showSearch);
     if (showSearch) {
       // Closing search view
       if (previewSavedStateRef.current || previewSong) {
         handleStopPreview();
       }
       if (hasAddedSongInSearchRef.current) {
+        console.log("Setting should scroll to true");
         setShouldScrollPlaylistToBottom(true);
         hasAddedSongInSearchRef.current = false;
       }
@@ -248,7 +249,6 @@ function App() {
   };
   const [isEndlessPlay, setIsEndlessPlay] = useState(false);
   const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
-  const [savedPlaylist, setSavedPlaylist] = useState(null);
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 
@@ -306,44 +306,6 @@ function App() {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
   const [songToAddToPlaylist, setSongToAddToPlaylist] = useState(null);
-  // Saved playlists — persisted to %LOCALAPPDATA%\NadaNada\playlists.json
-  // so they survive localStorage wipes. Falls back to localStorage on error
-  // and auto-migrates existing data on first run.
-  const [savedPlaylists, setSavedPlaylists] = useState([]);
-  const playlistsLoadedRef = useRef(false);
-  useEffect(() => {
-    const loadPlaylists = async () => {
-      try {
-        const data = await api.loadPlaylists();
-        const parsed = JSON.parse(data);
-        if (parsed && parsed.length > 0) {
-          setSavedPlaylists(parsed);
-        } else {
-          // One-time migration from localStorage
-          const lsData = localStorage.getItem('nadanada-saved-playlists');
-          if (lsData) {
-            try {
-              const lsParsed = JSON.parse(lsData);
-              if (lsParsed && lsParsed.length > 0) {
-                setSavedPlaylists(lsParsed);
-                await api.savePlaylists(lsData);
-                localStorage.removeItem('nadanada-saved-playlists');
-              }
-            } catch {}
-          }
-        }
-      } catch (e) {
-        console.error('Failed to load playlists from file, using localStorage fallback:', e);
-        try {
-          const lsData = localStorage.getItem('nadanada-saved-playlists');
-          if (lsData) setSavedPlaylists(JSON.parse(lsData));
-        } catch {}
-      } finally {
-        playlistsLoadedRef.current = true;
-      }
-    };
-    loadPlaylists();
-  }, []);
   const trendingRef = useRef(null);
   useEffect(() => {
     const handleClickOutside = event => {
@@ -356,20 +318,6 @@ function App() {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlist));
-      localStorage.setItem('nadanada-session-index', currentIndex.toString());
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [playlist, currentIndex]);
-  useEffect(() => {
-    if (!playlistsLoadedRef.current) return; // Don't overwrite the file before we've loaded it
-    const timer = setTimeout(() => {
-      api.savePlaylists(JSON.stringify(savedPlaylists)).catch(e => console.error('Failed to save playlists to file:', e));
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [savedPlaylists]);
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('nadanada-theme', theme);
@@ -438,72 +386,7 @@ function App() {
     setRestoredSong
   });
 
-  const handleAddSong = video => {
-    if (showSearch) {
-      hasAddedSongInSearchRef.current = true;
-    }
-    setFailedEndlessFetch(false);
-    const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    const newSong = {
-      ...video,
-      queueId
-    };
-    if (savedPlaylist) {
-      setSavedPlaylist(prev => [...prev, newSong]);
-    } else {
-      setPlaylist(prev => [...prev, newSong]);
-    }
-  };
-  const handleAddMultiple = videos => {
-    if (showSearch) {
-      hasAddedSongInSearchRef.current = true;
-    }
-    setFailedEndlessFetch(false);
-    const timestamp = Date.now();
-    const newSongs = videos.map((video, idx) => ({
-      ...video,
-      queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9)
-    }));
-    setPlaylist(prev => [...prev, ...newSongs]);
-    if (savedPlaylist) {
-      setSavedPlaylist(prev => [...prev, ...newSongs]);
-    }
-  };
-  const handleRemoveSong = index => {
-    const isLast = index >= playlist.length - 1;
-    setPlaylist(prev => {
-      const newPlaylist = [...prev];
-      newPlaylist.splice(index, 1);
-      return newPlaylist;
-    });
-    setCurrentIndex(prev => {
-      if (index < prev) {
-        return prev - 1;
-      } else if (index === prev && isLast) {
-        return Math.max(0, prev - 1);
-      }
-      return prev;
-    });
-  };
-  const handleReorder = (fromIndex, toIndex) => {
-    if (fromIndex === toIndex) return;
-    setPlaylist(prev => {
-      const newPlaylist = [...prev];
-      const [movedItem] = newPlaylist.splice(fromIndex, 1);
-      newPlaylist.splice(toIndex, 0, movedItem);
-      return newPlaylist;
-    });
-    setCurrentIndex(prev => {
-      if (prev === fromIndex) {
-        return toIndex;
-      } else if (fromIndex < prev && toIndex >= prev) {
-        return prev - 1;
-      } else if (fromIndex > prev && toIndex <= prev) {
-        return prev + 1;
-      }
-      return prev;
-    });
-  };
+
 
   // \u2500\u2500 Keyboard shortcuts \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Keep refs current so the effect registered once never becomes stale

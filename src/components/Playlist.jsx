@@ -152,13 +152,23 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
   const containerRef = useRef(null);
 
   React.useEffect(() => {
+    let timer;
     if (shouldScrollToBottom && containerRef.current) {
-      containerRef.current.scrollTop = containerRef.current.scrollHeight;
-      if (onScrollToBottomDone) {
-        onScrollToBottomDone();
-      }
+      timer = setTimeout(() => {
+        if (containerRef.current) {
+          containerRef.current.scrollTo({
+            top: containerRef.current.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+        if (onScrollToBottomDone) {
+          onScrollToBottomDone();
+        }
+      }, 300);
     }
-  }, [shouldScrollToBottom, onScrollToBottomDone]);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldScrollToBottom]);
 
   const handleDragStart = (e, index) => {
     e.dataTransfer.setData('text/plain', index);
