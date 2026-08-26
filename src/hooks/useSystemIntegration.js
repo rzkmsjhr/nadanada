@@ -9,8 +9,14 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
+  const isMiniPlayerRef = useRef(false);
   const isMaximizedRef = useRef(false);
   const prevSizeRef = useRef(null);
+
+  // Sync ref with state
+  useEffect(() => {
+    isMiniPlayerRef.current = isMiniPlayer;
+  }, [isMiniPlayer]);
 
   useEffect(() => {
     // Sync initial maximized state (no animation needed on load)
@@ -79,13 +85,32 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
   }, [theme]);
 
   useEffect(() => {
-    const unlisten = listen('close-requested', () => {
+    const unlisten = listen('close-requested', async () => {
+      if (isMiniPlayerRef.current) {
+        setIsMiniPlayer(false);
+        try {
+          if (prevSizeRef.current) {
+            await invoke('force_resize_window', { 
+              width: prevSizeRef.current.width, 
+              height: prevSizeRef.current.height, 
+              minWidth: 375, 
+              minHeight: 580,
+              alwaysOnTop: false
+            });
+            if (prevSizeRef.current.wasMaximized) {
+              await appWindow.maximize();
+            }
+          }
+        } catch (err) {
+          console.error("Failed to restore window on close:", err);
+        }
+      }
       setShowClosePrompt(true);
     });
     return () => {
       unlisten.then(f => f());
     };
-  }, [setShowClosePrompt]);
+  }, [setShowClosePrompt, appWindow]);
 
   const toggleTheme = () => {
     const themes = ['lavender-steel', 'mahogany-dusk', 'tidal-sage', 'sangria-deep', 'midnight-static', 'obsidian-root', 'nox-noir', 'crimson-night'];

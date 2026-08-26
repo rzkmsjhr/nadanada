@@ -112,7 +112,7 @@ const Player = React.forwardRef(function Player({
                 iframeClassName="youtube-iframe"
               />
             )}
-            {core.captions.length > 0 && (
+            {core.captions.length > 0 && !isMiniPlayer && (
               <div
                 style={{
                   position: 'absolute',
