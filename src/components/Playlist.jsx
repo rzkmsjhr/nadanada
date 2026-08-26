@@ -63,7 +63,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
                       <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
                       <span 
                         onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
-                        style={{ color: 'var(--accent-color)', cursor: 'pointer', borderBottom: '1px dotted var(--accent-color)' }}
+                        className="album-link"
                         title={`Browse "${album}" album`}
                       >
                         {album}

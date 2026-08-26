@@ -95,7 +95,7 @@ export default function PlayerControls({
                       {i === subtitleParts.length - 1 && albumInfo?.album && part === albumInfo.album ? (
                         <span 
                           onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
-                          style={{ cursor: 'pointer', color: 'var(--accent-color)', borderBottom: '1px dotted var(--accent-color)', paddingBottom: '1px' }}
+                          className="album-link"
                           title={`Browse "${albumInfo.album}" album`}
                         >
                           {part}

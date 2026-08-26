@@ -575,3 +575,16 @@ body {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+.album-link {
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+.album-link:hover {
+  color: var(--accent-color);
+  border-bottom: 1px dotted var(--accent-color);
+}
