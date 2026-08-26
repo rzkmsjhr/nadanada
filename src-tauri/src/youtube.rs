@@ -457,74 +457,72 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
 #[tauri::command]
 pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    
+    // 1. Run yt-dlp for reliable album/artist extraction (YouTube's JSON structure is too flaky)
+    let exe_path = crate::downloads::get_yt_dlp_path().await?;
+    let mut cmd = tokio::process::Command::new(exe_path);
+    cmd.stdin(std::process::Stdio::null())
+        .arg("--print")
+        .arg("%(album)s|||%(artist)s")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(&url);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let current_path =
+            std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin",
+                current_path
+            ),
+        );
+    }
+
+    // 2. Scrape the page for the OLAK5uy_ playlist ID
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-
-    let res = client.get(&url)
+        
+    let mut album_playlist_id = String::new();
+    if let Ok(res) = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
         .header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+478")
         .send()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let text = res.text().await.map_err(|e| e.to_string())?;
-
-    // 1. Find OLAK5uy_ album playlist ID (YouTube Music album playlists)
-    let olak_re = Regex::new(r"OLAK5uy_[a-zA-Z0-9_\-]+").unwrap();
-    let album_playlist_id = olak_re.find(&text)
-        .map(|m| m.as_str().to_string())
-        .unwrap_or_default();
+        .await 
+    {
+        if let Ok(text) = res.text().await {
+            let olak_re = Regex::new(r"OLAK5uy_[a-zA-Z0-9_\-]+").unwrap();
+            album_playlist_id = olak_re.find(&text)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+        }
+    }
 
     let mut album = String::new();
     let mut artist = String::new();
 
-    // 2. Parse ytInitialData JSON and walk engagement panels for music metadata
-    let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
-    if let Some(caps) = re.captures(&text) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&caps[1]) {
-            // Navigate: engagementPanels[] -> content -> structuredDescriptionContentRenderer -> items[]
-            if let Some(panels) = v.get("engagementPanels").and_then(|p| p.as_array()) {
-                'outer: for panel in panels {
-                    let items = panel
-                        .pointer("/engagementPanelSectionListRenderer/content/structuredDescriptionContentRenderer/items");
-                    if let Some(items_arr) = items.and_then(|i| i.as_array()) {
-                        for item in items_arr {
-                            if let Some(music_section) = item.get("videoDescriptionMusicSectionRenderer") {
-                                // Found the music section — extract info rows from carouselLockups
-                                if let Some(lockups) = music_section.get("carouselLockups").and_then(|l| l.as_array()) {
-                                    for lockup in lockups {
-                                        if let Some(rows) = lockup.pointer("/carouselLockupRenderer/infoRows").and_then(|r| r.as_array()) {
-                                            for row in rows {
-                                                if let Some(renderer) = row.get("infoRowRenderer") {
-                                                    let title = renderer.pointer("/title/simpleText")
-                                                        .and_then(|t| t.as_str())
-                                                        .unwrap_or("");
-                                                    let value = renderer.pointer("/defaultMetadata/simpleText")
-                                                        .and_then(|t| t.as_str())
-                                                        .or_else(|| {
-                                                            renderer.pointer("/defaultMetadata/runs/0/text")
-                                                                .and_then(|t| t.as_str())
-                                                        })
-                                                        .unwrap_or("");
+    let output_res = tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await;
 
-                                                    match title {
-                                                        "Album" => album = value.to_string(),
-                                                        "Artist" | "Artists" => artist = value.to_string(),
-                                                        _ => {}
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        break 'outer;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+    if let Ok(Ok(output)) = output_res {
+        if output.status.success() {
+            let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let parts: Vec<&str> = raw.splitn(2, "|||").collect();
+            if parts.len() == 2 {
+                album = parts[0].trim().to_string();
+                artist = parts[1].trim().to_string();
+                if album == "NA" { album = String::new(); }
+                if artist == "NA" { artist = String::new(); }
             }
         }
     }
