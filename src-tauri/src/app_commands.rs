@@ -24,7 +24,9 @@ pub fn force_resize_window(window: tauri::Window, width: f64, height: f64, min_w
             let mut new_y = current_pos.y;
             
             let right_bound = monitor_pos.x + monitor_size.width as i32;
-            let bottom_bound = monitor_pos.y + monitor_size.height as i32;
+            // Subtract 48 logical pixels (scaled) to account for Windows taskbar
+            let taskbar_padding = (48.0 * scale).round() as i32;
+            let bottom_bound = monitor_pos.y + monitor_size.height as i32 - taskbar_padding;
             
             if new_x + target_physical_width > right_bound {
                 new_x = right_bound - target_physical_width;
