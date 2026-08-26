@@ -107,6 +107,9 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
             minHeight: 568,
             alwaysOnTop: false
           });
+          if (prevSizeRef.current.wasMaximized) {
+            await appWindow.maximize();
+          }
         } else {
           await invoke('force_resize_window', { width: 320, height: 568, minWidth: 320, minHeight: 568, alwaysOnTop: false });
         }
@@ -115,12 +118,18 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       }
     } else {
       setIsMiniPlayer(true);
-      const currentSize = await appWindow.outerSize();
+      const isMax = await appWindow.isMaximized();
+      const currentSize = await appWindow.innerSize();
       const scale = await appWindow.scaleFactor();
-      prevSizeRef.current = currentSize.toLogical(scale);
+      const logicalSize = currentSize.toLogical(scale);
+      prevSizeRef.current = {
+        width: logicalSize.width,
+        height: logicalSize.height,
+        wasMaximized: isMax
+      };
       
       appWindow.setAlwaysOnTop(true);
-      if (await appWindow.isMaximized()) {
+      if (isMax) {
         await appWindow.unmaximize();
       }
       try {
