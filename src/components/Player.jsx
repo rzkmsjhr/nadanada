@@ -260,9 +260,9 @@ const Player = React.forwardRef(function Player({
               }}
             >
               <div data-tauri-drag-region style={{
-                position: 'absolute', top: '12px', left: '12px',
+                position: 'absolute', top: '12px', left: '12px', right: '48px',
                 display: 'flex', flexDirection: 'column', gap: '2px',
-                color: '#fff', zIndex: 25, maxWidth: 'calc(100% - 48px)',
+                color: '#fff', zIndex: 25,
                 textShadow: '0 1px 4px rgba(0,0,0,0.8)',
                 overflow: 'hidden'
               }}>
