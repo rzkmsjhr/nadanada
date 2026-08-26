@@ -358,7 +358,7 @@ function App() {
 
 
       {/* Invisible Resize Borders */}
-      {!isMiniPlayer && <WindowBorders appWindow={appWindow} />}
+      {!isMaximized && !isMiniPlayer && <WindowBorders appWindow={appWindow} />}
 
       {/* Native/Custom Titlebar */}
       {!isMiniPlayer && <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />}
@@ -592,6 +592,8 @@ function App() {
         setGlobalError={setGlobalError}
         successMessage={successMessage}
       />
-    </div>;
+    </div>
+    </>
+  );
 }
 export default App;
