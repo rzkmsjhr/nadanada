@@ -9,14 +9,46 @@ export const parseDuration = (durationStr) => {
   return 0;
 };
 
+const getCachedVideo = query => {
+  try {
+    const raw = localStorage.getItem('nadanada-yt-cache');
+    if (!raw) return null;
+    const cache = JSON.parse(raw);
+    const normalizedKey = query.toLowerCase().trim();
+    return cache[normalizedKey] || null;
+  } catch (e) {
+    return null;
+  }
+};
+
+const setCachedVideo = (query, videoObj) => {
+  try {
+    const raw = localStorage.getItem('nadanada-yt-cache') || '{}';
+    const cache = JSON.parse(raw);
+    const normalizedKey = query.toLowerCase().trim();
+    const { queueId, rank, ...cleanVideo } = videoObj;
+    cache[normalizedKey] = cleanVideo;
+    const keys = Object.keys(cache);
+    if (keys.length > 500) {
+      delete cache[keys[0]];
+    }
+    localStorage.setItem('nadanada-yt-cache', JSON.stringify(cache));
+  } catch (e) {
+    console.error("Failed to save yt-cache:", e);
+  }
+};
+
 export function useMusicDiscovery({
   playlist, 
   setPlaylist, 
   currentIndex, 
   isEndlessPlay, 
-  setCachedVideo, 
   setGlobalError,
-  setShowTrendingDropdown
+  setShowTrendingDropdown,
+  savedPlaylist,
+  setSavedPlaylist,
+  setCurrentIndex,
+  setIsAudioPlaying
 }) {
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
@@ -292,7 +324,7 @@ export function useMusicDiscovery({
       }
     } catch (e) {
       console.error("Failed to fetch trending:", e);
-      setGlobalError("Failed to fetch trending music. Please check your connection.");
+      setGlobalError(`Failed to fetch trending music: ${e.message || e}`);
     } finally {
       setIsFetchingTrending(false);
     }

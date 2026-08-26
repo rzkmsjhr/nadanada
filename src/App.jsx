@@ -14,6 +14,8 @@ import AddToPlaylistModal from './components/modals/AddToPlaylistModal';
 import ErrorModal from './components/modals/ErrorModal';
 import SuccessModal from './components/modals/SuccessModal';
 import Titlebar from './components/Titlebar';
+import PlayerHeader from './components/PlayerHeader';
+import PlaylistHeader from './components/PlaylistHeader';
 import ChordDisplay from "./components/ChordDisplay";
 import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
@@ -30,37 +32,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
-const getCachedVideo = query => {
-  try {
-    const raw = localStorage.getItem('nadanada-yt-cache');
-    if (!raw) return null;
-    const cache = JSON.parse(raw);
-    const normalizedKey = query.toLowerCase().trim();
-    return cache[normalizedKey] || null;
-  } catch (e) {
-    return null;
-  }
-};
-const setCachedVideo = (query, videoObj) => {
-  try {
-    const raw = localStorage.getItem('nadanada-yt-cache') || '{}';
-    const cache = JSON.parse(raw);
-    const normalizedKey = query.toLowerCase().trim();
-    const {
-      queueId,
-      rank,
-      ...cleanVideo
-    } = videoObj;
-    cache[normalizedKey] = cleanVideo;
-    const keys = Object.keys(cache);
-    if (keys.length > 500) {
-      delete cache[keys[0]];
-    }
-    localStorage.setItem('nadanada-yt-cache', JSON.stringify(cache));
-  } catch (e) {
-    console.error("Failed to save yt-cache:", e);
-  }
-};
 const basePanelStyle = {
   margin: '0 auto 8px auto',
   maxWidth: '800px',
@@ -240,9 +211,12 @@ function App() {
     setPlaylist,
     currentIndex,
     isEndlessPlay,
-    setCachedVideo,
     setGlobalError,
-    setShowTrendingDropdown
+    setShowTrendingDropdown,
+    savedPlaylist,
+    setSavedPlaylist,
+    setCurrentIndex,
+    setIsAudioPlaying
   });
 
   const [showClearPrompt, setShowClearPrompt] = useState(false);
@@ -380,187 +354,27 @@ function App() {
             <div style={{
             overflow: 'hidden'
           }}>
-              <header className="header" style={isMaximized ? {
-              display: 'flex',
-              alignItems: 'center',
-              height: '80px',
-              padding: '0 16px',
-              flexShrink: 0,
-              boxShadow: '0 1px 0 0 var(--panel-border)'
-            } : {
-              paddingBottom: '12px',
-              display: 'flex',
-              alignItems: 'center',
-              minHeight: '60px',
-              height: 'auto',
-              opacity: showSearch && !isMaximized ? 0 : 1,
-              transition: 'opacity 0.2s ease',
-              pointerEvents: showSearch && !isMaximized ? 'none' : 'auto'
-            }}>
-            <div style={{
-                flex: 1,
-                display: 'flex',
-                paddingRight: '16px',
-                height: '100%',
-                minWidth: 0
-              }}>
-              {showChords ? <ChordDisplay data={chordsData} time={currentTime + syncOffset} transpose={transposeOffset} isLoading={isFetchingChords} error={chordsError} onRetry={() => {
-                  setChordsData(null);
-                  setChordsError(null);
-                }} /> : <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  height: '100%',
-                  paddingLeft: '8px',
-                  overflow: 'hidden',
-                  flex: 1
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'center',
-                    minWidth: 0,
-                    paddingRight: '16px',
-                    flex: 1,
-                    width: '100%'
-                  }}>
-                    <div style={{
-                      fontSize: '0.75rem',
-                      color: 'var(--text-muted)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '1px',
-                      marginBottom: '2px'
-                    }}>
-                      {artistFact ? 'Artist Fact' : 'Up Next'}
-                    </div>
-                    <div className="marquee-container">
-                      <div className={artistFact ? 'running-text' : ''} style={{
-                        fontSize: '0.85rem',
-                        fontWeight: '500',
-                        color: 'var(--text-main)',
-                        whiteSpace: 'nowrap',
-                        fontStyle: artistFact ? 'italic' : 'normal'
-                      }}>
-                        {artistFact ? `"${artistFact}"` : playlist[currentIndex + 1] ? playlist[currentIndex + 1].title : isFetchingEndless ? 'Loading Mix...' : 'End of Playlist'}
-                      </div>
-                    </div>
-                  </div>
-                </div>}
-            </div>
-            <div style={{
-                flexShrink: 0,
-                display: 'flex',
-                gap: '8px',
-                alignItems: 'center'
-              }}>
-              {showChords && chordsData && !isFetchingChords && !chordsError && <div style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '4px',
-                  marginRight: '4px'
-                }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '0.7rem',
-                    background: 'var(--panel-bg)',
-                    border: '1px solid var(--panel-border)',
-                    borderRadius: '8px',
-                    padding: '2px 6px',
-                    color: 'var(--text-muted)'
-                  }}>
-                    <span style={{
-                      marginRight: '4px'
-                    }}>Key:</span>
-                    <button onClick={() => setTransposeOffset(s => (s - 1) % 12)} style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      padding: '0 4px',
-                      fontSize: '0.9rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }} title="Transpose Down">-</button>
-                    <span style={{
-                      minWidth: '24px',
-                      textAlign: 'center',
-                      fontWeight: 'bold',
-                      color: 'var(--text-main)'
-                    }}>{transposeOffset > 0 ? '+' : ''}{transposeOffset}</span>
-                    <button onClick={() => setTransposeOffset(s => (s + 1) % 12)} style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      padding: '0 4px',
-                      fontSize: '0.9rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }} title="Transpose Up">+</button>
-                  </div>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '0.7rem',
-                    background: 'var(--panel-bg)',
-                    border: '1px solid var(--panel-border)',
-                    borderRadius: '8px',
-                    padding: '2px 6px',
-                    color: 'var(--text-muted)'
-                  }}>
-                    <span style={{
-                      marginRight: '4px'
-                    }}>Sync:</span>
-                    <button onClick={() => setSyncOffset(s => Math.max(-30, s - 0.25))} style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      padding: '0 4px',
-                      fontSize: '0.9rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }} title="Delay Chords">-</button>
-                    <span style={{
-                      minWidth: '32px',
-                      textAlign: 'center',
-                      fontWeight: 'bold',
-                      color: 'var(--text-main)'
-                    }}>{syncOffset > 0 ? '+' : ''}{syncOffset}s</span>
-                    <button onClick={() => setSyncOffset(s => Math.min(30, s + 0.25))} style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'inherit',
-                      cursor: 'pointer',
-                      padding: '0 4px',
-                      fontSize: '0.9rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }} title="Advance Chords">+</button>
-                  </div>
-                </div>}
-              <button className={`btn btn-icon ${showChords ? 'active' : ''}`} onClick={() => setShowChords(!showChords)} title="Toggle Chords" style={{
-                  background: showChords ? 'var(--button-hover)' : 'transparent',
-                  boxShadow: 'none',
-                  color: showChords ? 'var(--accent-color)' : 'inherit'
-                }}>
-                <ListMusic size={20} />
-              </button>
-              <button className="btn btn-icon" onClick={toggleTheme} title="Switch Theme" style={{
-                  background: 'transparent',
-                  boxShadow: 'none'
-                }}>
-                <Palette size={20} />
-              </button>
-            </div>
-          </header>
+              <PlayerHeader 
+                isMaximized={isMaximized}
+                showSearch={showSearch}
+                showChords={showChords}
+                setShowChords={setShowChords}
+                chordsData={chordsData}
+                isFetchingChords={isFetchingChords}
+                chordsError={chordsError}
+                setChordsData={setChordsData}
+                setChordsError={setChordsError}
+                currentTime={currentTime}
+                syncOffset={syncOffset}
+                setSyncOffset={setSyncOffset}
+                transposeOffset={transposeOffset}
+                setTransposeOffset={setTransposeOffset}
+                artistFact={artistFact}
+                playlist={playlist}
+                currentIndex={currentIndex}
+                isFetchingEndless={isFetchingEndless}
+                toggleTheme={toggleTheme}
+              />
             </div>
           </div>
 
@@ -594,185 +408,40 @@ function App() {
         overflow: 'hidden',
         minHeight: 0
       } : bottomPanelStyle}>
-          <div style={staticStyles.headerBar}>
-            <div style={staticStyles.headerTitle}>
-              {showSearch ? 'Search YouTube' : showDownloadedList ? <button onClick={() => {
-              setShowDownloadedList(false);
-              if (savedPlaylist) {
-                setPlaylist(savedPlaylist);
-                setSavedPlaylist(null);
-              }
-            }} style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontWeight: 'inherit',
-              fontSize: 'inherit',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }} title="Return to your original playlist">
-                  <ArrowLeft size={18} style={{
-                marginTop: '2px'
-              }} /> Back to My Playlist
-                </button> : isFetchingEndless ? <span>Finding next song...</span> : savedPlaylist ? <button onClick={() => {
-              setPlaylist(savedPlaylist);
-              setSavedPlaylist(null);
-            }} style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-main)',
-              fontWeight: 'inherit',
-              fontSize: 'inherit',
-              fontFamily: 'inherit',
-              cursor: 'pointer',
-              padding: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }} title="Return to your original playlist">
-                  <ArrowLeft size={18} style={{
-                marginTop: '2px'
-              }} /> Back to My Playlist
-                </button> : `Up Next (${playlist.length})`}
-              {!showSearch && !showDownloadedList && failedEndlessFetch && <button onClick={() => setFailedEndlessFetch(false)} style={{
-              fontSize: '0.75rem',
-              background: 'rgba(239,68,68,0.2)',
-              border: '1px solid #ef4444',
-              color: '#ef4444',
-              borderRadius: '4px',
-              padding: '2px 8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }} title="Click to retry loading Endless Mix">
-                  <AlertTriangle size={12} /> Mix Failed (Retry)
-                </button>}
-            </div>
-            <div style={staticStyles.headerIcons}>
-              {!showSearch && !showDownloadedList && <>
-                  {!savedPlaylist && <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
-                      <FolderOpen size={18} />
-                    </button>}
-                  {playlist.length > 0 && <button className="btn btn-icon" onClick={() => setShowSavePrompt(true)} title="Save Playlist" style={staticStyles.iconBtn}>
-                      <Save size={18} />
-                    </button>}
-                  {playlist.length > 0 && !savedPlaylist && <button className="btn btn-icon" onClick={() => setShowClearPrompt(true)} title="Clear Playlist" style={staticStyles.iconBtnDanger}>
-                      <Trash2 size={18} />
-                    </button>}
-                  <div style={staticStyles.separator} />
-                  <button className={`btn btn-icon ${isEndlessPlay ? 'active' : ''}`} onClick={() => {
-                const newVal = !isEndlessPlay;
-                setIsEndlessPlay(newVal);
-                if (newVal) setIsShuffle(false);
-              }} title="Endless Play" style={{
-                padding: '6px',
-                color: isEndlessPlay ? 'var(--accent-color)' : 'inherit'
-              }}>
-                    {isFetchingEndless ? <Loader2 size={18} className="animate-spin" /> : <Infinity size={18} />}
-                  </button>
-                  <div style={{
-                position: 'relative',
-                zIndex: 50
-              }} ref={trendingRef}>
-                    <button className={`btn btn-icon ${isFetchingTrending || showTrendingDropdown ? 'active' : ''}`} onClick={() => setShowTrendingDropdown(!showTrendingDropdown)} title="Load Trending" disabled={isFetchingTrending} style={{
-                  padding: '6px',
-                  color: isFetchingTrending || showTrendingDropdown ? 'var(--accent-color)' : 'inherit'
-                }}>
-                      {isFetchingTrending ? <Loader2 size={18} className="animate-spin" /> : <TrendingUp size={18} />}
-                    </button>
-                    {showTrendingDropdown && <div style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '8px',
-                  background: 'var(--bg-color)',
-                  border: '1px solid var(--panel-border)',
-                  borderRadius: '8px',
-                  padding: '4px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '2px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                  zIndex: 100,
-                  minWidth: '120px'
-                }}>
-                        <button className="btn" onClick={() => handleLoadTrending('indonesia')} style={{
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    border: 'none',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    width: '100%'
-                  }}>Indonesia</button>
-                        <button className="btn" onClick={() => handleLoadTrending('global')} style={{
-                    padding: '8px 12px',
-                    textAlign: 'left',
-                    border: 'none',
-                    color: 'var(--text-main)',
-                    fontSize: '0.9rem',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    width: '100%'
-                  }}>Worldwide</button>
-                      </div>}
-                  </div>
-                </>}
-              <button className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`} onClick={() => {
-              if (previewSavedStateRef.current || previewSong) {
-                handleStopPreview();
-              }
-              if (showSearch && hasAddedSongInSearchRef.current) {
-                setShouldScrollPlaylistToBottom(true);
-                hasAddedSongInSearchRef.current = false;
-              }
-              if (showDownloadedList && savedPlaylist) {
-                setPlaylist(savedPlaylist);
-                setSavedPlaylist(null);
-              }
-              setShowDownloadedList(!showDownloadedList);
-              setShowSearch(false);
-            }} title="Downloaded Songs" style={{
-              padding: '6px',
-              color: showDownloadedList ? 'var(--accent-color)' : 'inherit'
-            }}>
-                <Download size={18} />
-              </button>
-              {showDownloadedList && <button className="btn btn-icon" onClick={async () => {
-              try {
-                const filePath = await open({
-                  multiple: false,
-                  filters: [{
-                    name: 'Audio',
-                    extensions: ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm']
-                  }]
-                });
-                if (filePath) {
-                  await api.addLocalSong(filePath);
-                  loadDownloadedSongs();
-                }
-              } catch (e) {
-                console.error('Failed to add local song:', e);
-                setGlobalError('Failed to add local song.');
-              }
-            }} title="Add Local Audio File" style={{
-              padding: '6px'
-            }}>
-                  <FolderPlus size={18} />
-                </button>}
-              {!savedPlaylist && !showDownloadedList && <button className="btn btn-icon" onClick={handleToggleSearch} title={showSearch ? 'Close Search' : 'Search Music'} style={{
-              padding: '6px'
-            }}>
-                  {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
-                </button>}
-            </div>
-          </div>
+          <PlaylistHeader 
+            showSearch={showSearch}
+            showDownloadedList={showDownloadedList}
+            setShowDownloadedList={setShowDownloadedList}
+            savedPlaylist={savedPlaylist}
+            setSavedPlaylist={setSavedPlaylist}
+            playlist={playlist}
+            setPlaylist={setPlaylist}
+            isFetchingEndless={isFetchingEndless}
+            failedEndlessFetch={failedEndlessFetch}
+            setFailedEndlessFetch={setFailedEndlessFetch}
+            setShowLoadPrompt={setShowLoadPrompt}
+            setShowSavePrompt={setShowSavePrompt}
+            setShowClearPrompt={setShowClearPrompt}
+            isEndlessPlay={isEndlessPlay}
+            setIsEndlessPlay={setIsEndlessPlay}
+            setIsShuffle={setIsShuffle}
+            trendingRef={trendingRef}
+            isFetchingTrending={isFetchingTrending}
+            showTrendingDropdown={showTrendingDropdown}
+            setShowTrendingDropdown={setShowTrendingDropdown}
+            handleLoadTrending={handleLoadTrending}
+            previewSavedStateRef={previewSavedStateRef}
+            previewSong={previewSong}
+            handleStopPreview={handleStopPreview}
+            hasAddedSongInSearchRef={hasAddedSongInSearchRef}
+            setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
+            setShowSearch={setShowSearch}
+            handleToggleSearch={handleToggleSearch}
+            api={api}
+            loadDownloadedSongs={loadDownloadedSongs}
+            setGlobalError={setGlobalError}
+            staticStyles={staticStyles}
+          />
 
           <div style={staticStyles.playlistContainer}>
             {showSearch ? <div style={staticStyles.searchContainer}>

@@ -28,6 +28,7 @@ pub async fn search_youtube(
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+478")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -120,6 +121,7 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+478")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -253,6 +255,7 @@ pub async fn get_youtube_playlist(
     let res = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
+        .header("Cookie", "CONSENT=YES+cb.20210328-17-p0.en+FX+478")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -341,18 +344,30 @@ pub async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> 
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
 
-    let res = client
+    let res = match client
         .get(url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         .header("Accept-Language", "en-US,en;q=0.9")
         .send()
-        .await
-        .map_err(|e| e.to_string())?;
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                println!("reqwest error: {}", e);
+                return Err(e.to_string());
+            }
+        };
 
-    let text = res.text().await.map_err(|e| e.to_string())?;
+    let text = match res.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            println!("res.text error: {}", e);
+            return Err(e.to_string());
+        }
+    };
+    println!("Kworb HTML fetched successfully. Length: {}", text.len());
 
-    let re_cell = Regex::new(r#"<td class="text mp"><div>(.*?)</div></td>"#).unwrap();
-    let re_tag = Regex::new(r"<[^>]*>").unwrap();
+    let re_cell = Regex::new(r#"(?s)<td class="text mp"><div>(.*?)</div></td>"#).unwrap();
+    let re_tag = Regex::new(r#"(?s)<[^>]*>"#).unwrap();
 
     let mut tracks = Vec::new();
     let mut rank = 1;
@@ -364,11 +379,15 @@ pub async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> 
         let raw_content = &caps[1];
         let clean_text = re_tag.replace_all(raw_content, "").trim().to_string();
         let decoded = clean_text
+            .replace("\n", " ")
+            .replace("\r", " ")
             .replace("&amp;", "&")
             .replace("&#39;", "'")
             .replace("&quot;", "\"")
             .replace("&lt;", "<")
             .replace("&gt;", ">");
+        
+        let decoded = Regex::new(r"\s+").unwrap().replace_all(&decoded, " ").trim().to_string();
 
         if !decoded.is_empty() {
             tracks.push(KworbTrack {
@@ -380,9 +399,11 @@ pub async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> 
     }
 
     if tracks.is_empty() {
+        println!("Failed to parse tracks from HTML!");
         return Err("Failed to parse Kworb chart data".to_string());
     }
 
+    println!("Successfully parsed {} tracks from Kworb.", tracks.len());
     Ok(tracks)
 }
 
