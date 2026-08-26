@@ -2,9 +2,24 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api';
 
 export function useAlbumInfo(playlist, currentIndex) {
-  const [albumCache, setAlbumCache] = useState({}); // { videoId: { album, artist, albumPlaylistId } }
+  const [albumCache, setAlbumCache] = useState(() => {
+    try {
+      const stored = localStorage.getItem('nadanada_album_cache');
+      return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+      return {};
+    }
+  }); // { videoId: { album, artist, albumPlaylistId } }
   const queueRef = useRef([]);
   const isFetchingRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('nadanada_album_cache', JSON.stringify(albumCache));
+    } catch (e) {
+      console.error('Failed to save album cache:', e);
+    }
+  }, [albumCache]);
 
   useEffect(() => {
     if (!playlist || playlist.length === 0) return;
