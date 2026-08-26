@@ -108,7 +108,7 @@ export function usePlayerCore({
               else {
                 setIsPlaying(false);
                 if (onPlayStateChange) onPlayStateChange(false);
-                if (onError) onError("Failed to stream track from YouTube.");
+                if (onError) onError(`Failed to stream track from YouTube: ${err.message || err}`);
               }
             });
         }, 15000); // 15 seconds to be safe for slow connections

@@ -212,7 +212,7 @@ export default function PlaylistHeader({
               }
             } catch (e) {
               console.error('Failed to add local song:', e);
-              setGlobalError('Failed to add local song.');
+              setGlobalError(`Failed to add local song: ${e.message || e}`);
             }
           }} title="Add Local Audio File" style={{ padding: '6px' }}>
             <FolderPlus size={18} />

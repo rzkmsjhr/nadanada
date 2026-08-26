@@ -232,7 +232,7 @@ export function useMusicDiscovery({
         } catch (e) {
           console.error("Endless play fetch error:", e);
           setFailedEndlessFetch(true);
-          setGlobalError("Endless play mix failed to load. Please check your connection.");
+          setGlobalError(`Endless play mix failed to load: ${e.message || e}`);
         } finally {
           setIsFetchingEndless(false);
         }

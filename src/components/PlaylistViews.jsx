@@ -68,7 +68,7 @@ export default function PlaylistViews({
             loadDownloadedSongs();
           } catch (e) {
             console.error('Failed to delete song:', e);
-            setGlobalError('Failed to delete song.');
+            setGlobalError(`Failed to delete song: ${e.message || e}`);
           }
         }} 
         onReorder={(dragIndex, dropIndex) => {
