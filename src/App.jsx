@@ -21,6 +21,7 @@ import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
 import { usePlayback } from "./hooks/usePlayback";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePlaylistManager } from "./hooks/usePlaylistManager";
 import { useSystemIntegration } from "./hooks/useSystemIntegration";
 import { api } from './services/api';
@@ -156,9 +157,6 @@ function App() {
   // Ref to Player's imperative handle — used by keyboard shortcuts
   const playerRef = useRef(null);
   const [currentTime, setCurrentTime] = useState(0);
-  // Stable refs for next/prev so the keyboard handler never becomes stale
-  const handleNextRef = useRef(null);
-  const handlePreviousRef = useRef(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
 
@@ -315,45 +313,12 @@ function App() {
 
 
 
-  // \u2500\u2500 Keyboard shortcuts \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-  // Keep refs current so the effect registered once never becomes stale
-  handleNextRef.current = handleNext;
-  handlePreviousRef.current = handlePrevious;
-  useEffect(() => {
-    const handleKeyDown = e => {
-      // Don't fire shortcuts while the user is typing
-      const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          playerRef.current?.togglePlay();
-          break;
-        case 'ArrowRight':
-          e.preventDefault();
-          handleNextRef.current?.();
-          break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          handlePreviousRef.current?.();
-          break;
-        case 'm':
-        case 'M':
-          playerRef.current?.toggleMute();
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault();
-          // Toggle search view
-          handleToggleSearch();
-          break;
-        default:
-          break;
-      }
-    };
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []); // Registered once — relies on refs for always-current functions
+  useKeyboardShortcuts({
+    playerRef,
+    handleNext,
+    handlePrevious,
+    handleToggleSearch
+  });
 
   const SHARPS_MAP = {
     'C♯': 'C#',
