@@ -95,8 +95,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
   const [isSearching, setIsSearching] = useState(false);
   const [loadingAlbumId, setLoadingAlbumId] = useState(null);
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
+  const performSearch = async (typeOverride = null) => {
     if (!query.trim()) return;
     
     if (!navigator.onLine) {
@@ -104,15 +103,29 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
       return;
     }
     
+    const typeToSearch = typeOverride || searchType;
+    
     setIsSearching(true);
     try {
-      const videos = await invoke('search_youtube', { query, searchType });
+      const videos = await invoke('search_youtube', { query, searchType: typeToSearch });
       setResults(videos);
     } catch (err) {
       console.error(err);
       onError('Search failed: ' + err);
     } finally {
       setIsSearching(false);
+    }
+  };
+
+  const handleSearch = async (e) => {
+    if (e) e.preventDefault();
+    performSearch();
+  };
+
+  const handleTypeSwitch = (type) => {
+    setSearchType(type);
+    if (query.trim()) {
+      performSearch(type);
     }
   };
 
@@ -184,7 +197,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             type="button"
             className={`btn ${searchType === 'song' ? 'btn-primary' : ''}`}
             style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'song' ? '' : 'var(--bg-color)' }}
-            onClick={() => setSearchType('song')}
+            onClick={() => handleTypeSwitch('song')}
           >
             <Music size={14} /> Songs
           </button>
@@ -192,7 +205,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             type="button"
             className={`btn ${searchType === 'album' ? 'btn-primary' : ''}`}
             style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'album' ? '' : 'var(--bg-color)' }}
-            onClick={() => setSearchType('album')}
+            onClick={() => handleTypeSwitch('album')}
           >
             <Disc size={14} /> Albums
           </button>
