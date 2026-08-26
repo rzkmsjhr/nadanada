@@ -98,21 +98,32 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     if (isMiniPlayer) {
       setIsMiniPlayer(false);
       appWindow.setAlwaysOnTop(false);
-      await appWindow.setMinSize(new LogicalSize(320, 568));
-      if (prevSizeRef.current) {
-        await appWindow.setSize(prevSizeRef.current);
+      try {
+        if (prevSizeRef.current) {
+          await invoke('force_resize_window', { 
+            width: prevSizeRef.current.width, 
+            height: prevSizeRef.current.height, 
+            minWidth: 320, 
+            minHeight: 568 
+          });
+        } else {
+          await invoke('force_resize_window', { width: 320, height: 568, minWidth: 320, minHeight: 568 });
+        }
+      } catch (err) {
+        console.error("Failed to restore window:", err);
       }
     } else {
       setIsMiniPlayer(true);
       const currentSize = await appWindow.outerSize();
-      prevSizeRef.current = currentSize;
+      const scale = await appWindow.scaleFactor();
+      prevSizeRef.current = currentSize.toLogical(scale);
       
       appWindow.setAlwaysOnTop(true);
       if (await appWindow.isMaximized()) {
         await appWindow.unmaximize();
       }
       try {
-        await invoke('force_resize_window', { width: 320, height: 180 });
+        await invoke('force_resize_window', { width: 320, height: 180, minWidth: 320, minHeight: 180 });
       } catch (err) {
         console.error("Failed to resize window:", err);
       }
