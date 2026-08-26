@@ -1,18 +1,10 @@
 import { useMusicDiscovery, parseDuration } from "./hooks/useMusicDiscovery";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Player from './components/Player';
-import Search from './components/Search';
-import Playlist from './components/Playlist';
 import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle, ListPlus, Pencil, Check } from 'lucide-react';
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
-import WelcomeModal from './components/WelcomeModal';
-import ClosePromptModal from './components/modals/ClosePromptModal';
-import ClearPlaylistModal from './components/modals/ClearPlaylistModal';
-import SavePlaylistModal from './components/modals/SavePlaylistModal';
-import LoadPlaylistModal from './components/modals/LoadPlaylistModal';
-import AddToPlaylistModal from './components/modals/AddToPlaylistModal';
-import ErrorModal from './components/modals/ErrorModal';
-import SuccessModal from './components/modals/SuccessModal';
+import AppModals from './components/AppModals';
+import PlaylistViews from './components/PlaylistViews';
 import Titlebar from './components/Titlebar';
 import PlayerHeader from './components/PlayerHeader';
 import PlaylistHeader from './components/PlaylistHeader';
@@ -444,38 +436,36 @@ function App() {
           />
 
           <div style={staticStyles.playlistContainer}>
-            {showSearch ? <div style={staticStyles.searchContainer}>
-                <Search onAdd={handleAddSong} onAddMultiple={handleAddMultiple} playlist={playlist} onError={setGlobalError} onPlayPreview={handlePlayPreview} onStopPreview={handleStopPreview} previewSongId={previewSong?.id} />
-              </div> : showDownloadedList ? <Playlist playlist={downloadedSongs} currentIndex={downloadedSongs.findIndex(s => s.id === currentSong?.id)} onSelectIndex={idx => {
-            if (!savedPlaylist && playlist !== downloadedSongs) {
-              setSavedPlaylist(playlist);
-            }
-            setPlaylist(downloadedSongs);
-            setCurrentIndex(idx);
-            setIsAudioPlaying(true);
-          }} onRemove={async idx => {
-            const song = downloadedSongs[idx];
-            try {
-              await api.deleteDownloadedSong(song.file_path);
-              loadDownloadedSongs();
-            } catch (e) {
-              console.error('Failed to delete song:', e);
-              setGlobalError('Failed to delete song.');
-            }
-          }} onReorder={(dragIndex, dropIndex) => {
-            const newPlaylist = [...downloadedSongs];
-            const [draggedItem] = newPlaylist.splice(dragIndex, 1);
-            newPlaylist.splice(dropIndex, 0, draggedItem);
-            setDownloadedSongs(newPlaylist);
-            if (playlist === downloadedSongs) {
-              setPlaylist(newPlaylist);
-              if (currentIndex === dragIndex) setCurrentIndex(dropIndex);else if (currentIndex > dragIndex && currentIndex <= dropIndex) setCurrentIndex(currentIndex - 1);else if (currentIndex < dragIndex && currentIndex >= dropIndex) setCurrentIndex(currentIndex + 1);
-            }
-          }} isTrendingMode={true} isDownloadedView={true} onAddSong={() => {}} /> : <Playlist playlist={playlist} currentIndex={currentIndex} onSelectIndex={setCurrentIndex} onRemove={handleRemoveSong} onReorder={handleReorder} isTrendingMode={!!savedPlaylist} onAddSong={song => {
-            if (savedPlaylist) {
-              setSavedPlaylist([...savedPlaylist, song]);
-            }
-          }} onDownloadSong={handleDownloadSong} downloadingSongId={downloadingSongId} downloadedIds={downloadedIds} onAddToSavedPlaylist={song => setSongToAddToPlaylist(song)} shouldScrollToBottom={shouldScrollPlaylistToBottom} onScrollToBottomDone={() => setShouldScrollPlaylistToBottom(false)} />}
+            <PlaylistViews
+              showSearch={showSearch}
+              showDownloadedList={showDownloadedList}
+              playlist={playlist}
+              downloadedSongs={downloadedSongs}
+              currentSong={currentSong}
+              currentIndex={currentIndex}
+              savedPlaylist={savedPlaylist}
+              setSavedPlaylist={setSavedPlaylist}
+              setPlaylist={setPlaylist}
+              setCurrentIndex={setCurrentIndex}
+              setIsAudioPlaying={setIsAudioPlaying}
+              api={api}
+              loadDownloadedSongs={loadDownloadedSongs}
+              setDownloadedSongs={setDownloadedSongs}
+              setGlobalError={setGlobalError}
+              handleAddSong={handleAddSong}
+              handleAddMultiple={handleAddMultiple}
+              handlePlayPreview={handlePlayPreview}
+              handleStopPreview={handleStopPreview}
+              previewSong={previewSong}
+              handleRemoveSong={handleRemoveSong}
+              handleReorder={handleReorder}
+              handleDownloadSong={handleDownloadSong}
+              downloadingSongId={downloadingSongId}
+              downloadedIds={downloadedIds}
+              setSongToAddToPlaylist={setSongToAddToPlaylist}
+              shouldScrollPlaylistToBottom={shouldScrollPlaylistToBottom}
+              setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
+            />
           </div>
         </div>
 
@@ -512,79 +502,36 @@ function App() {
           </div>
         </div>}
 
-      {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
-
-      {showClosePrompt && <ClosePromptModal onClose={() => setShowClosePrompt(false)} />}
-
-      {showClearPrompt && <ClearPlaylistModal onClear={() => {
-        setPlaylist([]);
-        setSavedPlaylist(null);
-        setCurrentIndex(0);
-        setIsAudioPlaying(false);
-        setShowClearPrompt(false);
-      }} onClose={() => setShowClearPrompt(false)} />}
-
-      {showSavePrompt && <SavePlaylistModal onSave={(name) => {
-        setSavedPlaylists(prev => [...prev, {
-          id: Date.now().toString(),
-          name,
-          items: playlist
-        }]);
-        setShowSavePrompt(false);
-      }} onClose={() => setShowSavePrompt(false)} />}
-
-      {showLoadPrompt && <LoadPlaylistModal 
+      <AppModals
+        showWelcome={showWelcome}
+        setShowWelcome={setShowWelcome}
+        showClosePrompt={showClosePrompt}
+        setShowClosePrompt={setShowClosePrompt}
+        showClearPrompt={showClearPrompt}
+        setShowClearPrompt={setShowClearPrompt}
+        setPlaylist={setPlaylist}
+        setSavedPlaylist={setSavedPlaylist}
+        setCurrentIndex={setCurrentIndex}
+        setIsAudioPlaying={setIsAudioPlaying}
+        showSavePrompt={showSavePrompt}
+        setShowSavePrompt={setShowSavePrompt}
+        playlist={playlist}
+        setSavedPlaylists={setSavedPlaylists}
+        showLoadPrompt={showLoadPrompt}
+        setShowLoadPrompt={setShowLoadPrompt}
         savedPlaylists={savedPlaylists}
-        onSelect={(playlistItem) => {
-          setPlaylist(playlistItem.items);
-          setSavedPlaylist(null);
-          setCurrentIndex(0);
-          setShowLoadPrompt(false);
-        }}
-        onDelete={(id) => {
-          setSavedPlaylists(prev => prev.filter(p => p.id !== id));
-        }}
-        onRename={(id, newName) => {
-          setSavedPlaylists(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
-        }}
-        onClose={() => setShowLoadPrompt(false)}
         importUrl={importUrl}
         setImportUrl={setImportUrl}
         isImporting={isImporting}
         importProgress={importProgress}
         handleImportPlaylist={handleImportPlaylist}
-      />}
-
-
-      {songToAddToPlaylist && <AddToPlaylistModal 
         songToAddToPlaylist={songToAddToPlaylist}
-        savedPlaylists={savedPlaylists}
-        onAddToPlaylist={(playlistItem) => {
-          setSavedPlaylists(prev => prev.map(p => {
-            if (p.id === playlistItem.id) {
-              if (p.items.some(s => s.id === songToAddToPlaylist.id)) return p;
-              return { ...p, items: [...p.items, songToAddToPlaylist] };
-            }
-            return p;
-          }));
-          setSongToAddToPlaylist(null);
-          setSuccessMessage(`Added to ${playlistItem.name}`);
-        }}
-        onCreatePlaylist={(name) => {
-          setSavedPlaylists(prev => [...prev, {
-            id: Date.now().toString(),
-            name,
-            items: [songToAddToPlaylist]
-          }]);
-          setSongToAddToPlaylist(null);
-          setSuccessMessage(`Created and added to ${name}`);
-        }}
-        onClose={() => setSongToAddToPlaylist(null)}
-      />}
-
-      <ErrorModal error={globalError} onClose={() => setGlobalError(null)} />
-
-      <SuccessModal message={successMessage} onClose={() => setSuccessMessage(null)} />
+        setSongToAddToPlaylist={setSongToAddToPlaylist}
+        setSuccessMessage={setSuccessMessage}
+        globalError={globalError}
+        setGlobalError={setGlobalError}
+        successMessage={successMessage}
+      />
     </div>;
 }
 export default App;
