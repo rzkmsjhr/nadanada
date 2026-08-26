@@ -104,10 +104,11 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
             width: prevSizeRef.current.width, 
             height: prevSizeRef.current.height, 
             minWidth: 320, 
-            minHeight: 568 
+            minHeight: 568,
+            alwaysOnTop: false
           });
         } else {
-          await invoke('force_resize_window', { width: 320, height: 568, minWidth: 320, minHeight: 568 });
+          await invoke('force_resize_window', { width: 320, height: 568, minWidth: 320, minHeight: 568, alwaysOnTop: false });
         }
       } catch (err) {
         console.error("Failed to restore window:", err);
@@ -123,7 +124,7 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
         await appWindow.unmaximize();
       }
       try {
-        await invoke('force_resize_window', { width: 320, height: 180, minWidth: 320, minHeight: 180 });
+        await invoke('force_resize_window', { width: 320, height: 180, minWidth: 320, minHeight: 180, alwaysOnTop: true });
       } catch (err) {
         console.error("Failed to resize window:", err);
       }
