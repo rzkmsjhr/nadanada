@@ -473,29 +473,61 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
     let text = res.text().await.map_err(|e| e.to_string())?;
 
     // 1. Find OLAK5uy_ album playlist ID (YouTube Music album playlists)
-    let olak_re = Regex::new(r"OLAK5uy_[a-zA-Z0-9_-]+").unwrap();
+    let olak_re = Regex::new(r"OLAK5uy_[a-zA-Z0-9_\-]+").unwrap();
     let album_playlist_id = olak_re.find(&text)
         .map(|m| m.as_str().to_string())
         .unwrap_or_default();
 
-    // 2. Extract album & artist from the music metadata section in ytInitialData
-    //    YouTube embeds structured music info for Topic/auto-generated tracks in infoRowRenderers:
-    //    "title":{"simpleText":"Album"} ... "defaultMetadata":{"simpleText":"<album_name>"}
-    let album_re = Regex::new(
-        r#""title":\{"simpleText":"Album"\}.{0,300}"defaultMetadata":\{"simpleText":"([^"]+)"\}"#
-    ).unwrap();
-    let album = album_re.captures(&text)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .unwrap_or_default();
+    let mut album = String::new();
+    let mut artist = String::new();
 
-    let artist_re = Regex::new(
-        r#""title":\{"simpleText":"Artists?"\}.{0,300}"defaultMetadata":\{"simpleText":"([^"]+)"\}"#
-    ).unwrap();
-    let artist = artist_re.captures(&text)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str().to_string())
-        .unwrap_or_default();
+    // 2. Parse ytInitialData JSON and walk engagement panels for music metadata
+    let re = Regex::new(r"var ytInitialData = (\{.*?\});</script>").unwrap();
+    if let Some(caps) = re.captures(&text) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&caps[1]) {
+            // Navigate: engagementPanels[] -> content -> structuredDescriptionContentRenderer -> items[]
+            if let Some(panels) = v.get("engagementPanels").and_then(|p| p.as_array()) {
+                'outer: for panel in panels {
+                    let items = panel
+                        .pointer("/engagementPanelSectionListRenderer/content/structuredDescriptionContentRenderer/items");
+                    if let Some(items_arr) = items.and_then(|i| i.as_array()) {
+                        for item in items_arr {
+                            if let Some(music_section) = item.get("videoDescriptionMusicSectionRenderer") {
+                                // Found the music section — extract info rows from carouselLockups
+                                if let Some(lockups) = music_section.get("carouselLockups").and_then(|l| l.as_array()) {
+                                    for lockup in lockups {
+                                        if let Some(rows) = lockup.pointer("/carouselLockupRenderer/infoRows").and_then(|r| r.as_array()) {
+                                            for row in rows {
+                                                if let Some(renderer) = row.get("infoRowRenderer") {
+                                                    let title = renderer.pointer("/title/simpleText")
+                                                        .and_then(|t| t.as_str())
+                                                        .unwrap_or("");
+                                                    let value = renderer.pointer("/defaultMetadata/simpleText")
+                                                        .and_then(|t| t.as_str())
+                                                        .or_else(|| {
+                                                            renderer.pointer("/defaultMetadata/runs/0/text")
+                                                                .and_then(|t| t.as_str())
+                                                        })
+                                                        .unwrap_or("");
+
+                                                    match title {
+                                                        "Album" => album = value.to_string(),
+                                                        "Artist" | "Artists" => artist = value.to_string(),
+                                                        _ => {}
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        break 'outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     Ok(AlbumInfo {
         album,
