@@ -1,507 +1,37 @@
-import React, { useRef, useState, useEffect, useImperativeHandle } from 'react';
+import React, { useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Subtitles } from 'lucide-react';
+import PlayerControls from './PlayerControls';
+import { Loader2, Subtitles } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
+import { usePlayerCore } from '../hooks/usePlayerCore';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded
 }, ref) {
-  const playerRef = useRef(null);
   
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [masterVolume, setMasterVolume] = useState(() => {
-    const saved = localStorage.getItem('nadanada-volume');
-    const parsed = saved ? parseInt(saved, 10) : 100;
-    return isNaN(parsed) ? 100 : Math.max(0, Math.min(100, parsed));
+  const core = usePlayerCore({
+    currentSong,
+    onNext,
+    onPrevious,
+    hasNext,
+    hasPrevious,
+    onPlayStateChange,
+    onTimeUpdate,
+    onError,
+    repeatMode,
+    onSongEnded
   });
-  const [isMuted, setIsMuted] = useState(false);
-  
-  // Persist volume preference across sessions
-  useEffect(() => {
-    localStorage.setItem('nadanada-volume', masterVolume.toString());
-  }, [masterVolume]);
-
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  
-  const [streamUrl, setStreamUrl] = useState(null);
-  const [isExtractingStream, setIsExtractingStream] = useState(false);
-  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
-  const [captions, setCaptions] = useState([]);
-  const [activeCaptionCode, setActiveCaptionCode] = useState(null);
-  const [isVideoHovered, setIsVideoHovered] = useState(false);
-  const [isCaptionMenuOpen, setIsCaptionMenuOpen] = useState(false);
-  const hasAutoSelectedCaptionRef = useRef(false);
-  
-  // Track how many times this specific song has repeated for 'repeat once' mode
-  const [playCount, setPlayCount] = useState(0);
-
-  const stallTimeoutRef = useRef(null);
-
-  const handleCaptionsReceived = (tracks) => {
-    setCaptions(tracks || []);
-    if (tracks && tracks.length > 0 && !hasAutoSelectedCaptionRef.current) {
-      hasAutoSelectedCaptionRef.current = true;
-      // Prefer Indonesian or non-English/non-auto translated tracks first, fallback to first track
-      const preferred = tracks.find(t => t.languageCode === 'id') || 
-                        tracks.find(t => t.languageCode !== 'en' && t.languageCode !== 'en-US' && t.languageCode !== 'a.en') || 
-                        tracks[0];
-      if (preferred && playerRef.current && playerRef.current.setCaption) {
-        playerRef.current.setCaption(preferred.languageCode);
-        setActiveCaptionCode(preferred.languageCode);
-      }
-    }
-  };
-  
-  const selectCaption = (code) => {
-    if (playerRef.current && playerRef.current.setCaption) {
-      playerRef.current.setCaption(code || false);
-    }
-    setActiveCaptionCode(code);
-    setIsCaptionMenuOpen(false);
-  };
-  
-
-  const handleStallStart = () => {
-    setIsBuffering(true);
-    if (currentSong && !currentSong.is_local && !stallTimeoutRef.current) {
-      stallTimeoutRef.current = setTimeout(() => {
-        console.warn("Audio stream stalled for 10s. Skipping.");
-        if (hasNext) onNext();
-        else if (onError) onError("Stream stalled and failed to recover.");
-      }, 10000);
-    }
-  };
-
-  const handleStallClear = () => {
-    setIsBuffering(false);
-    if (stallTimeoutRef.current) {
-      clearTimeout(stallTimeoutRef.current);
-      stallTimeoutRef.current = null;
-    }
-  };
-
-  useEffect(() => {
-    let timeout;
-    if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
-      if (currentTime < 1) {
-        timeout = setTimeout(() => {
-          console.warn("YouTube iframe stuck buffering for 15s at start. Triggering fallback.");
-          setIsExtractingStream(true);
-          api.getStreamUrl(currentSong.id)
-            .then(url => {
-              setStreamUrl(url);
-              setIsExtractingStream(false);
-            })
-            .catch(err => {
-              console.error("Stream extraction fallback failed:", err);
-              setIsExtractingStream(false);
-              if (hasNext) onNext();
-              else {
-                setIsPlaying(false);
-                if (onPlayStateChange) onPlayStateChange(false);
-                if (onError) onError("Failed to stream track from YouTube.");
-              }
-            });
-        }, 15000); // 15 seconds to be safe for slow connections
-      }
-    }
-    return () => clearTimeout(timeout);
-  }, [isBuffering, streamUrl, isExtractingStream, currentSong, currentTime]);
-
-  const songId = currentSong?.id;
-  const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
-  const prevSongIdRef = useRef(null);
-  const hasSeekedInitialRef = useRef(false);
-
-  useEffect(() => {
-    hasSeekedInitialRef.current = false;
-  }, [songId, startSecs]);
-
-  useEffect(() => {
-    if (stallTimeoutRef.current) {
-      clearTimeout(stallTimeoutRef.current);
-      stallTimeoutRef.current = null;
-    }
-    if (songId) {
-      setStreamUrl(null);
-      hasAutoSelectedCaptionRef.current = false;
-      setCaptions([]);
-      setActiveCaptionCode(null);
-      setIsExtractingStream(false);
-      setIsBuffering(true);
-      setIsPlaying(false);
-      setCurrentTime(startSecs);
-      setDuration(0);
-      setPlayCount(0); // Reset repeat counter for new song
-
-      if (prevSongIdRef.current === songId && playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-        try {
-          playerRef.current.loadVideoById(songId, startSecs);
-        } catch (e) {
-          console.error("Failed to loadVideoById:", e);
-        }
-      }
-      prevSongIdRef.current = songId;
-    } else {
-      prevSongIdRef.current = null;
-      if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-        try { playerRef.current.stopVideo(); } catch (e) {}
-      }
-      setIsBuffering(false);
-      setIsPlaying(false);
-      setCurrentTime(0);
-      setDuration(0);
-      setPlayCount(0);
-    }
-  }, [songId, startSecs]);
-
-  // Time tracking
-  useEffect(() => {
-    let interval;
-    // Do not poll the YouTube player if we are using the local audio fallback (streamUrl is set)
-    if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local) && !streamUrl) {
-      interval = setInterval(async () => {
-        if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
-          try {
-            const time = await playerRef.current.getCurrentTime();
-            const dur = await playerRef.current.getDuration();
-            setCurrentTime(time || 0);
-            if (onTimeUpdate) onTimeUpdate(time || 0);
-            setDuration(dur || 0);
-          } catch (e) {}
-        }
-      }, 100);
-    }
-    return () => clearInterval(interval);
-  }, [isPlaying, isDragging, currentSong, streamUrl]);
-
-  // --- Media Session API Integration for SMTC ---
-  useEffect(() => {
-    if ('mediaSession' in navigator) {
-      if (currentSong) {
-        let title = currentSong.title;
-        let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic/i, '').trim() : 'Unknown Artist';
-        
-        const parts = currentSong.title.split('-');
-        if (parts.length > 1 && (!currentSong.channel || currentSong.channel.toLowerCase().includes('topic'))) {
-            artist = parts[0].trim();
-            title = parts.slice(1).join('-').trim();
-        }
-
-        title = title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
-
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: title || currentSong.title,
-          artist: artist,
-          artwork: currentSong.thumbnail ? [
-            { src: currentSong.thumbnail, sizes: '512x512', type: 'image/jpeg' }
-          ] : []
-        });
-      } else {
-        navigator.mediaSession.metadata = null;
-      }
-    }
-  }, [currentSong]);
-
-  useEffect(() => {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
-    }
-  }, [isPlaying]);
-
-  useEffect(() => {
-    if ('mediaSession' in navigator && currentSong && duration > 0) {
-      try {
-        navigator.mediaSession.setPositionState({
-          duration: duration,
-          playbackRate: 1.0,
-          position: currentTime
-        });
-      } catch (e) {}
-    }
-  }, [currentTime, duration, currentSong]);
-
-  // togglePlayRef and toggleMuteRef are assigned after those functions are defined below.
-  const togglePlayRef = useRef(null);
-  const toggleMuteRef = useRef(null);
-
-  useEffect(() => {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.setActionHandler('play', togglePlay);
-      navigator.mediaSession.setActionHandler('pause', togglePlay);
-      navigator.mediaSession.setActionHandler('previoustrack', hasPrevious ? () => onPrevious() : null);
-      navigator.mediaSession.setActionHandler('nexttrack', hasNext ? () => onNext() : null);
-    }
-  }, [isPlaying, hasPrevious, hasNext, onPrevious, onNext]);
-
-  const onReady = (event) => {
-    playerRef.current = event.target;
-    if (!activeFadeIntervalRef.current) {
-      event.target.setVolume(isMuted ? 0 : masterVolume);
-    }
-    if (startSecs > 0) {
-      try {
-        event.target.seekTo(startSecs, true);
-      } catch (e) {}
-    }
-    try {
-      event.target.playVideo();
-    } catch (e) {}
-  };
-
-  const handleTrackEnd = () => {
-    if (repeatMode === 1) {
-      // Repeat infinitely: just seek to 0 and play again
-      setCurrentTime(0);
-      if (onTimeUpdate) onTimeUpdate(0);
-      
-      if (streamUrl || (currentSong && currentSong.is_local)) {
-        const audioEl = document.getElementById('local-audio-player');
-        if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
-      } else if (playerRef.current) {
-        playerRef.current.seekTo(0, true);
-        playerRef.current.playVideo();
-      }
-    } else if (repeatMode === 2) {
-      // Repeat once: play twice in total
-      if (playCount < 1) {
-        setPlayCount(1);
-        setCurrentTime(0);
-        if (onTimeUpdate) onTimeUpdate(0);
-        
-        if (streamUrl || (currentSong && currentSong.is_local)) {
-          const audioEl = document.getElementById('local-audio-player');
-          if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
-        } else if (playerRef.current) {
-          playerRef.current.seekTo(0, true);
-          playerRef.current.playVideo();
-        }
-      } else {
-        // Already played twice, move to next
-        setIsPlaying(false);
-        setIsBuffering(false);
-        if (onPlayStateChange) onPlayStateChange(false);
-        setCurrentTime(0);
-        if (onTimeUpdate) onTimeUpdate(0);
-        
-        if (onSongEnded) onSongEnded();
-        else if (hasNext) onNext();
-      }
-    } else {
-      // Normal playback: move to next
-      setIsPlaying(false);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(false);
-      setCurrentTime(0);
-      if (onTimeUpdate) onTimeUpdate(0);
-      
-      if (onSongEnded) onSongEnded();
-      else if (hasNext) onNext();
-    }
-  };
-
-  const onStateChange = (event) => {
-    if (event.data === 1) { // PLAYING
-      setIsPlaying(true);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(true);
-      
-      // Force volume application on every track change, as YouTube sometimes resets it
-      if (!activeFadeIntervalRef.current) {
-        try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
-      }
-
-      if (startSecs > 0 && !hasSeekedInitialRef.current) {
-        hasSeekedInitialRef.current = true;
-        try {
-          event.target.seekTo(startSecs, true);
-        } catch (e) {}
-      }
-    } else if (event.data === 2) { // PAUSED
-      setIsPlaying(false);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(false);
-    } else if (event.data === 0) { // ENDED
-      handleTrackEnd();
-    } else if (event.data === 3) { // BUFFERING
-      setIsBuffering(true);
-    } else if (event.data === 5 || event.data === -1) {
-      // CUED (5) or UNSTARTED (-1)
-      setIsBuffering(true);
-      try {
-        event.target.playVideo();
-      } catch (e) {}
-    }
-  };
-
-  const togglePlay = () => {
-    if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
-      if (audioEl) {
-        if (isPlaying) audioEl.pause();
-        else audioEl.play();
-      }
-      return;
-    }
-    
-    if (!playerRef.current) return;
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-    } else {
-      playerRef.current.playVideo();
-    }
-  };
-
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
-      if (audioEl) audioEl.muted = !isMuted;
-      return;
-    }
-    
-    if (playerRef.current) {
-      if (!isMuted) playerRef.current.mute();
-      else {
-        playerRef.current.unMute();
-        playerRef.current.setVolume(masterVolume);
-      }
-    }
-  };
-
-  // Assign refs AFTER the functions are defined to avoid temporal dead zone.
-  // These stay current on every render so the keyboard handler in App always
-  // calls the latest version without needing to re-register the listener.
-  togglePlayRef.current = togglePlay;
-  toggleMuteRef.current = toggleMute;
-
-  const activeFadeIntervalRef = useRef(null);
-
-  const applyVolume = (vol) => {
-    if (playerRef.current && typeof playerRef.current.setVolume === 'function') {
-      try { playerRef.current.setVolume(vol); } catch (e) {}
-    }
-    const audioEl = document.getElementById('local-audio-player');
-    if (audioEl) {
-      try { audioEl.volume = Math.max(0, Math.min(1, vol / 100)); } catch (e) {}
-    }
-  };
 
   useImperativeHandle(ref, () => ({
-    togglePlay: () => togglePlayRef.current?.(),
-    toggleMute: () => toggleMuteRef.current?.(),
-    fadeOut: (durationMs = 250) => {
-      return new Promise((resolve) => {
-        if (activeFadeIntervalRef.current) {
-          clearInterval(activeFadeIntervalRef.current);
-          activeFadeIntervalRef.current = null;
-        }
-        const startVol = isMuted ? 0 : masterVolume;
-        if (startVol <= 0) {
-          applyVolume(0);
-          resolve();
-          return;
-        }
-        const steps = 10;
-        const stepTime = durationMs / steps;
-        let step = 0;
+    togglePlay: core.togglePlay,
+    toggleMute: core.toggleMute,
+    fadeOut: core.fadeOut,
+    fadeIn: core.fadeIn
+  }), [core]);
 
-        activeFadeIntervalRef.current = setInterval(() => {
-          step++;
-          const curVol = Math.max(0, Math.round(startVol * (1 - step / steps)));
-          applyVolume(curVol);
-          if (step >= steps || curVol <= 0) {
-            clearInterval(activeFadeIntervalRef.current);
-            activeFadeIntervalRef.current = null;
-            resolve();
-          }
-        }, stepTime);
-      });
-    },
-    fadeIn: (durationMs = 350) => {
-      return new Promise((resolve) => {
-        if (activeFadeIntervalRef.current) {
-          clearInterval(activeFadeIntervalRef.current);
-          activeFadeIntervalRef.current = null;
-        }
-        const targetVol = isMuted ? 0 : masterVolume;
-        if (targetVol <= 0) {
-          applyVolume(0);
-          resolve();
-          return;
-        }
-        applyVolume(0);
-        const steps = 12;
-        const stepTime = durationMs / steps;
-        let step = 0;
-
-        activeFadeIntervalRef.current = setInterval(() => {
-          step++;
-          const curVol = Math.min(targetVol, Math.round(targetVol * (step / steps)));
-          applyVolume(curVol);
-          if (step >= steps || curVol >= targetVol) {
-            clearInterval(activeFadeIntervalRef.current);
-            activeFadeIntervalRef.current = null;
-            applyVolume(targetVol);
-            resolve();
-          }
-        }, stepTime);
-      });
-    }
-  }), [masterVolume, isMuted]);
-
-  const handleVolumeChange = (e) => {
-    const val = parseInt(e.target.value);
-    setMasterVolume(val);
-    if (isMuted) {
-      setIsMuted(false);
-      if (playerRef.current) playerRef.current.unMute();
-    }
-    
-    if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
-      if (audioEl) {
-        audioEl.muted = false;
-        audioEl.volume = val / 100;
-      }
-      return;
-    }
-    
-    if (playerRef.current) playerRef.current.setVolume(val);
-  };
-
-  const handleSeekChange = (e) => {
-    setCurrentTime(Number(e.target.value));
-  };
-
-  const handleSeekMouseUp = (e) => {
-    setIsDragging(false);
-    if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
-      if (audioEl) {
-        audioEl.currentTime = Number(e.target.value);
-      }
-      return;
-    }
-    
-    if (playerRef.current) {
-      playerRef.current.seekTo(Number(e.target.value), true);
-    }
-  };
-
-  const handleSeekMouseDown = () => setIsDragging(true);
-
-  const formatTime = (seconds) => {
-    if (!seconds) return '0:00';
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+  const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
 
   const opts = {
     height: '100%',
@@ -521,8 +51,8 @@ const Player = React.forwardRef(function Player({
       {/* Video area wrapper — must be a sized flex container so height:100% resolves on child */}
       <div style={{ flex: isMaximized ? 1 : 'none', height: isMaximized ? 0 : 'auto', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden', containerType: isMaximized ? 'size' : 'normal' }}>
         <div 
-          onMouseEnter={() => setIsVideoHovered(true)}
-          onMouseLeave={() => { setIsVideoHovered(false); setIsCaptionMenuOpen(false); }}
+          onMouseEnter={() => core.setIsVideoHovered(true)}
+          onMouseLeave={() => { core.setIsVideoHovered(false); core.setIsCaptionMenuOpen(false); }}
           style={isMaximized ? {
           /* Maximized: Use container queries to guarantee exact 16:9 fit within the parent without black bars */
           width: '100cqw',
@@ -548,32 +78,32 @@ const Player = React.forwardRef(function Player({
         }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
-            {currentSong && !currentSong.is_local && !streamUrl && !isExtractingStream && (
+            {currentSong && !currentSong.is_local && !core.streamUrl && !core.isExtractingStream && (
               <ProxyYouTube
                 videoId={currentSong.id}
-                onCaptionsReceived={handleCaptionsReceived}
+                onCaptionsReceived={core.handleCaptionsReceived}
                 opts={opts}
-                onReady={onReady}
-                onStateChange={onStateChange}
+                onReady={core.onReady}
+                onStateChange={core.onStateChange}
                 onError={async (e) => {
                   console.error("YouTube Error:", e);
                   // Error codes 101/150 mean embedding is disabled. Fallback to extracting the raw stream!
-                  if (!streamUrl && !isExtractingStream) {
-                    setIsExtractingStream(true);
+                  if (!core.streamUrl && !core.isExtractingStream) {
+                    core.setIsExtractingStream(true);
                     try {
                       const url = await api.getStreamUrl(currentSong.id);
-                      setStreamUrl(url);
+                      core.setStreamUrl(url);
                     } catch (err) {
                       console.error("Stream extraction fallback failed:", err);
                       if (hasNext) {
                         onNext();
                       } else {
-                        setIsPlaying(false);
+                        core.setIsPlaying(false);
                         if (onPlayStateChange) onPlayStateChange(false);
                         if (onError) onError(`Failed to stream track from YouTube: ${err}`);
                       }
                     } finally {
-                      setIsExtractingStream(false);
+                      core.setIsExtractingStream(false);
                     }
                   }
                 }}
@@ -581,32 +111,32 @@ const Player = React.forwardRef(function Player({
                 iframeClassName="youtube-iframe"
               />
             )}
-            {captions.length > 0 && (
+            {core.captions.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
                   top: '8px',
                   right: '8px',
                   zIndex: 100,
-                  opacity: isVideoHovered || isCaptionMenuOpen ? 1 : 0,
+                  opacity: core.isVideoHovered || core.isCaptionMenuOpen ? 1 : 0,
                   transition: 'opacity 0.2s',
-                  pointerEvents: isVideoHovered || isCaptionMenuOpen ? 'auto' : 'none'
+                  pointerEvents: core.isVideoHovered || core.isCaptionMenuOpen ? 'auto' : 'none'
                 }}
               >
                 <div style={{ position: 'relative' }}>
                   <button
                     className="btn btn-icon"
-                    onClick={() => setIsCaptionMenuOpen(!isCaptionMenuOpen)}
+                    onClick={() => core.setIsCaptionMenuOpen(!core.isCaptionMenuOpen)}
                     style={{
                       background: 'rgba(0, 0, 0, 0.6)',
-                      color: activeCaptionCode ? 'var(--accent-color)' : '#fff',
+                      color: core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
                       backdropFilter: 'blur(4px)',
                       border: '1px solid rgba(255,255,255,0.1)'
                     }}
                   >
                     <Subtitles size={20} />
                   </button>
-                  {isCaptionMenuOpen && (
+                  {core.isCaptionMenuOpen && (
                     <div style={{
                       position: 'absolute',
                       top: '100%',
@@ -625,10 +155,10 @@ const Player = React.forwardRef(function Player({
                       overflowY: 'auto'
                     }}>
                       <button 
-                        onClick={() => selectCaption(null)}
+                        onClick={() => core.selectCaption(null)}
                         style={{
-                          background: !activeCaptionCode ? 'var(--text-main)' : 'transparent',
-                          color: !activeCaptionCode ? 'var(--bg-color)' : 'var(--text-main)',
+                          background: !core.activeCaptionCode ? 'var(--text-main)' : 'transparent',
+                          color: !core.activeCaptionCode ? 'var(--bg-color)' : 'var(--text-main)',
                           padding: '6px 12px',
                           border: 'none',
                           borderRadius: '4px',
@@ -637,13 +167,13 @@ const Player = React.forwardRef(function Player({
                           fontSize: '0.9rem'
                         }}
                       >Off</button>
-                      {captions.map(c => (
+                      {core.captions.map(c => (
                         <button
                           key={c.languageCode}
-                          onClick={() => selectCaption(c.languageCode)}
+                          onClick={() => core.selectCaption(c.languageCode)}
                           style={{
-                            background: activeCaptionCode === c.languageCode ? 'var(--text-main)' : 'transparent',
-                            color: activeCaptionCode === c.languageCode ? 'var(--bg-color)' : 'var(--text-main)',
+                            background: core.activeCaptionCode === c.languageCode ? 'var(--text-main)' : 'transparent',
+                            color: core.activeCaptionCode === c.languageCode ? 'var(--bg-color)' : 'var(--text-main)',
                             padding: '6px 12px',
                             border: 'none',
                             borderRadius: '4px',
@@ -661,13 +191,13 @@ const Player = React.forwardRef(function Player({
                 </div>
               </div>
             )}
-            {isExtractingStream && (
+            {core.isExtractingStream && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(0,0,0,0.5)' }}>
                 <Loader2 className="spinning" style={{ color: 'var(--accent-color)', marginBottom: '16px' }} size={40} />
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>Bypassing embed block...</div>
               </div>
             )}
-            {currentSong && (currentSong.is_local || streamUrl) && (
+            {currentSong && (currentSong.is_local || core.streamUrl) && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
@@ -675,30 +205,30 @@ const Player = React.forwardRef(function Player({
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{currentSong.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
                   id="local-audio-player"
-                  src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : streamUrl}
+                  src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : core.streamUrl}
                   autoPlay
-                  onPlay={() => { setIsPlaying(true); handleStallClear(); if (onPlayStateChange) onPlayStateChange(true); }}
-                  onPause={() => { setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
-                  onEnded={handleTrackEnd}
+                  onPlay={() => { core.setIsPlaying(true); core.handleStallClear(); if (onPlayStateChange) onPlayStateChange(true); }}
+                  onPause={() => { core.setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
+                  onEnded={core.handleTrackEnd}
                   onTimeUpdate={(e) => {
-                    if (!isDragging) {
-                      setCurrentTime(e.target.currentTime);
+                    if (!core.isDragging) {
+                      core.setCurrentTime(e.target.currentTime);
                       if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
                     }
                   }}
                   onLoadedMetadata={(e) => {
-                    setDuration(e.target.duration);
-                    e.target.volume = isMuted ? 0 : (masterVolume / 100);
+                    core.setDuration(e.target.duration);
+                    e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
                   }}
                   onError={(e) => {
                     console.error("Local audio error", e);
                     if (onError) onError("Failed to play local audio file.");
-                    handleStallClear();
+                    core.handleStallClear();
                   }}
-                  onWaiting={handleStallStart}
-                  onStalled={handleStallStart}
-                  onCanPlay={handleStallClear}
-                  onPlaying={handleStallClear}
+                  onWaiting={core.handleStallStart}
+                  onStalled={core.handleStallStart}
+                  onCanPlay={core.handleStallClear}
+                  onPlaying={core.handleStallClear}
                 />
               </div>
             )}
@@ -715,123 +245,33 @@ const Player = React.forwardRef(function Player({
         </div>
       </div>
 
-      <div style={{
-        display: 'grid',
-        gridTemplateRows: isSearchExpanded ? '0fr' : '1fr',
-        transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
-      }}>
-        <div style={{ overflow: 'hidden' }}>
-          <div style={{ padding: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '12px', opacity: isSearchExpanded ? 0 : 1, transition: 'opacity 0.25s ease', pointerEvents: isSearchExpanded ? 'none' : 'auto' }}>
-        <div style={{ width: '100%' }}>
-          <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {currentSong ? currentSong.title : 'Waiting for music...'}
-          </h3>
-        </div>
-
-        <div className="seek-bar-container">
-          <span>{formatTime(currentTime)}</span>
-          <input 
-            type="range" 
-            className="seek-bar"
-            min={0} 
-            max={duration || 100} 
-            value={currentTime}
-            onChange={handleSeekChange}
-            onMouseDown={handleSeekMouseDown}
-            onMouseUp={handleSeekMouseUp}
-            onTouchStart={handleSeekMouseDown}
-            onTouchEnd={handleSeekMouseUp}
-            disabled={!currentSong}
-            style={{
-              background: `linear-gradient(to right, var(--accent-color) ${(currentTime / (duration || 1)) * 100}%, var(--panel-border) ${(currentTime / (duration || 1)) * 100}%)`
-            }}
-          />
-          <span>{formatTime(duration)}</span>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-            <button 
-              className="btn btn-icon" 
-              onClick={onToggleShuffle} 
-              style={{ 
-                color: isShuffle ? 'var(--bg-color)' : 'var(--text-muted)',
-                background: isShuffle ? 'var(--text-main)' : 'transparent',
-                boxShadow: isShuffle ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              <Shuffle size={20} />
-            </button>
-            <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious}>
-              <SkipBack size={24} />
-            </button>
-            <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong || isBuffering} style={{ padding: '10px' }}>
-              {isBuffering ? <Loader2 size={24} className="animate-spin" /> : (isPlaying ? <Pause size={24} /> : <Play size={24} />)}
-            </button>
-            <button className="btn btn-icon" onClick={onNext} disabled={!hasNext}>
-              <SkipForward size={24} />
-            </button>
-            <button 
-              className="btn btn-icon" 
-              onClick={onToggleRepeat} 
-              style={{ 
-                color: repeatMode > 0 ? 'var(--bg-color)' : 'var(--text-muted)',
-                background: repeatMode > 0 ? 'var(--text-main)' : 'transparent',
-                boxShadow: repeatMode > 0 ? '0 2px 8px rgba(0,0,0,0.1)' : 'none'
-              }}
-            >
-              {repeatMode === 2 ? <Repeat1 size={20} /> : <Repeat size={20} />}
-            </button>
-          </div>
-
-          <div
-            style={{ display: 'flex', gap: '4px', alignItems: 'center' }}
-            onMouseEnter={() => setIsVolumeHovered(true)}
-            onMouseLeave={() => setIsVolumeHovered(false)}
-          >
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              {/* Floating % tooltip — appears above speaker on hover */}
-              <div style={{
-                position: 'absolute',
-                top: '-26px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                fontSize: '0.7rem',
-                fontVariantNumeric: 'tabular-nums',
-                color: 'var(--text-main)',
-                background: 'var(--panel-bg)',
-                border: '1px solid var(--panel-border)',
-                borderRadius: '4px',
-                padding: '1px 5px',
-                pointerEvents: 'none',
-                whiteSpace: 'nowrap',
-                opacity: isVolumeHovered ? 1 : 0,
-                transition: 'opacity 0.15s ease',
-                zIndex: 10,
-              }}>
-                {isMuted ? 0 : masterVolume}%
-              </div>
-              <button className="btn btn-icon" style={{ border: 'none', background: 'transparent' }} onClick={toggleMute}>
-                {isMuted || masterVolume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-              </button>
-            </div>
-            <input
-              type="range"
-              className="seek-bar"
-              min="0"
-              max="100"
-              value={isMuted ? 0 : masterVolume}
-              onChange={handleVolumeChange}
-              style={{
-                width: '70px',
-                background: `linear-gradient(to right, var(--accent-color) ${isMuted ? 0 : masterVolume}%, var(--panel-border) ${isMuted ? 0 : masterVolume}%)`
-              }}
-            />
-          </div>
-        </div>
-          </div>
-        </div>
-      </div>
+      <PlayerControls
+        currentSong={currentSong}
+        isPlaying={core.isPlaying}
+        isBuffering={core.isBuffering}
+        currentTime={core.currentTime}
+        duration={core.duration}
+        masterVolume={core.masterVolume}
+        isMuted={core.isMuted}
+        repeatMode={repeatMode}
+        isShuffle={isShuffle}
+        hasNext={hasNext}
+        hasPrevious={hasPrevious}
+        isSearchExpanded={isSearchExpanded}
+        isVolumeHovered={core.isVolumeHovered}
+        setIsVolumeHovered={core.setIsVolumeHovered}
+        handleSeekChange={core.handleSeekChange}
+        handleSeekMouseDown={core.handleSeekMouseDown}
+        handleSeekMouseUp={core.handleSeekMouseUp}
+        onToggleShuffle={onToggleShuffle}
+        onPrevious={onPrevious}
+        togglePlay={core.togglePlay}
+        onNext={onNext}
+        onToggleRepeat={onToggleRepeat}
+        handleVolumeChange={core.handleVolumeChange}
+        toggleMute={core.toggleMute}
+        formatTime={core.formatTime}
+      />
     </div>
   );
 });
