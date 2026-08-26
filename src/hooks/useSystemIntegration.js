@@ -97,21 +97,20 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
   const toggleMiniPlayer = async () => {
     if (isMiniPlayer) {
       setIsMiniPlayer(false);
-      appWindow.setAlwaysOnTop(false);
       try {
         if (prevSizeRef.current) {
           await invoke('force_resize_window', { 
             width: prevSizeRef.current.width, 
             height: prevSizeRef.current.height, 
-            minWidth: 320, 
-            minHeight: 568,
+            minWidth: 375, 
+            minHeight: 580,
             alwaysOnTop: false
           });
           if (prevSizeRef.current.wasMaximized) {
             await appWindow.maximize();
           }
         } else {
-          await invoke('force_resize_window', { width: 320, height: 568, minWidth: 320, minHeight: 568, alwaysOnTop: false });
+          await invoke('force_resize_window', { width: 375, height: 580, minWidth: 375, minHeight: 580, alwaysOnTop: false });
         }
       } catch (err) {
         console.error("Failed to restore window:", err);
@@ -128,7 +127,6 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
         wasMaximized: isMax
       };
       
-      appWindow.setAlwaysOnTop(true);
       if (isMax) {
         await appWindow.unmaximize();
       }

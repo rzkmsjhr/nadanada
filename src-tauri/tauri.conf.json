@@ -15,8 +15,8 @@
         "title": "NadaNada",
         "width": 400,
         "height": 770,
-        "minWidth": 320,
-        "minHeight": 180,
+        "minWidth": 375,
+        "minHeight": 580,
         "decorations": false,
         "transparent": true,
         "dragDropEnabled": false
