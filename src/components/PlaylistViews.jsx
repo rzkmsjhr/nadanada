@@ -1,40 +1,42 @@
 import React from 'react';
 import Search from './Search';
 import Playlist from './Playlist';
+import { useAppContext } from '../context/AppContext';
 
-export default function PlaylistViews({
-  showSearch,
-  showDownloadedList,
-  playlist,
-  downloadedSongs,
-  currentSong,
-  currentIndex,
-  savedPlaylist,
-  setSavedPlaylist,
-  setPlaylist,
-  setCurrentIndex,
-  setIsAudioPlaying,
-  api,
-  loadDownloadedSongs,
-  setDownloadedSongs,
-  setGlobalError,
-  handleAddSong,
-  handleAddMultiple,
-  handlePlayPreview,
-  handleStopPreview,
-  previewSong,
-  handleRemoveSong,
-  handleReorder,
-  handleDownloadSong,
-  downloadingSongId,
-  downloadedIds,
-  setSongToAddToPlaylist,
-  shouldScrollPlaylistToBottom,
-  setShouldScrollPlaylistToBottom,
-  albumInfo,
-  albumCache,
-  onAlbumClick
-}) {
+export default function PlaylistViews() {
+  const {
+    showSearch,
+    showDownloadedList,
+    playlist,
+    downloadedSongs,
+    currentSong,
+    currentIndex,
+    savedPlaylist,
+    setSavedPlaylist,
+    setPlaylist,
+    setCurrentIndex,
+    setIsAudioPlaying,
+    api,
+    loadDownloadedSongs,
+    setDownloadedSongs,
+    setGlobalError,
+    handleAddSong,
+    handleAddMultiple,
+    handlePlayPreview,
+    handleStopPreview,
+    previewSong,
+    handleRemoveSong,
+    handleReorder,
+    handleDownloadSong,
+    downloadingSongId,
+    downloadedIds,
+    setSongToAddToPlaylist,
+    shouldScrollPlaylistToBottom,
+    setShouldScrollPlaylistToBottom,
+    albumInfo,
+    albumCache,
+    onAlbumClick
+  } = useAppContext();
   if (showSearch) {
     return (
       <div style={{ padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }}>

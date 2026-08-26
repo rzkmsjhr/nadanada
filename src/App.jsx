@@ -5,6 +5,7 @@ import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Inf
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
 import AppModals from './components/AppModals';
 import PlaylistViews from './components/PlaylistViews';
+import { AppContext } from './context/AppContext';
 import Titlebar from './components/Titlebar';
 import PlayerHeader from './components/PlayerHeader';
 import PlaylistHeader from './components/PlaylistHeader';
@@ -353,8 +354,41 @@ function App() {
     'A♯': 'A#',
     'B♯': 'C'
   };
+
+  const contextValue = {
+    showSearch, setShowSearch,
+    showDownloadedList, setShowDownloadedList,
+    playlist, setPlaylist,
+    downloadedSongs, setDownloadedSongs,
+    currentSong,
+    currentIndex, setCurrentIndex,
+    savedPlaylist, setSavedPlaylist,
+    savedPlaylists, setSavedPlaylists,
+    setIsAudioPlaying,
+    api,
+    loadDownloadedSongs,
+    setGlobalError, globalError,
+    handleAddSong, handleAddMultiple,
+    handlePlayPreview, handleStopPreview,
+    previewSong,
+    handleRemoveSong, handleReorder,
+    handleDownloadSong,
+    downloadingSongId, downloadedIds,
+    songToAddToPlaylist, setSongToAddToPlaylist,
+    shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
+    albumInfo, albumCache, onAlbumClick: handleAlbumClick,
+    showWelcome, setShowWelcome,
+    showClosePrompt, setShowClosePrompt,
+    showClearPrompt, setShowClearPrompt,
+    showSavePrompt, setShowSavePrompt,
+    showLoadPrompt, setShowLoadPrompt,
+    importUrl, setImportUrl,
+    isImporting, importProgress, handleImportPlaylist,
+    successMessage, setSuccessMessage
+  };
+
   return (
-    <>
+    <AppContext.Provider value={contextValue}>
       <div className={`app-container ${isMiniPlayer ? 'mini-player-mode' : ''}`} style={{
     position: 'relative',
     width: '100vw',
@@ -500,39 +534,7 @@ function App() {
           />
 
           <div style={staticStyles.playlistContainer}>
-            <PlaylistViews
-              showSearch={showSearch}
-              showDownloadedList={showDownloadedList}
-              playlist={playlist}
-              downloadedSongs={downloadedSongs}
-              currentSong={currentSong}
-              currentIndex={currentIndex}
-              savedPlaylist={savedPlaylist}
-              setSavedPlaylist={setSavedPlaylist}
-              setPlaylist={setPlaylist}
-              setCurrentIndex={setCurrentIndex}
-              setIsAudioPlaying={setIsAudioPlaying}
-              api={api}
-              loadDownloadedSongs={loadDownloadedSongs}
-              setDownloadedSongs={setDownloadedSongs}
-              setGlobalError={setGlobalError}
-              handleAddSong={handleAddSong}
-              handleAddMultiple={handleAddMultiple}
-              handlePlayPreview={handlePlayPreview}
-              handleStopPreview={handleStopPreview}
-              previewSong={previewSong}
-              handleRemoveSong={handleRemoveSong}
-              handleReorder={handleReorder}
-              handleDownloadSong={handleDownloadSong}
-              downloadingSongId={downloadingSongId}
-              downloadedIds={downloadedIds}
-              setSongToAddToPlaylist={setSongToAddToPlaylist}
-              shouldScrollPlaylistToBottom={shouldScrollPlaylistToBottom}
-              setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
-              albumInfo={albumInfo}
-              albumCache={albumCache}
-              onAlbumClick={handleAlbumClick}
-            />
+            <PlaylistViews />
           </div>
         </div>
         )}
@@ -570,38 +572,9 @@ function App() {
           </div>
         </div>}
 
-      <AppModals
-        showWelcome={showWelcome}
-        setShowWelcome={setShowWelcome}
-        showClosePrompt={showClosePrompt}
-        setShowClosePrompt={setShowClosePrompt}
-        showClearPrompt={showClearPrompt}
-        setShowClearPrompt={setShowClearPrompt}
-        setPlaylist={setPlaylist}
-        setSavedPlaylist={setSavedPlaylist}
-        setCurrentIndex={setCurrentIndex}
-        setIsAudioPlaying={setIsAudioPlaying}
-        showSavePrompt={showSavePrompt}
-        setShowSavePrompt={setShowSavePrompt}
-        playlist={playlist}
-        setSavedPlaylists={setSavedPlaylists}
-        showLoadPrompt={showLoadPrompt}
-        setShowLoadPrompt={setShowLoadPrompt}
-        savedPlaylists={savedPlaylists}
-        importUrl={importUrl}
-        setImportUrl={setImportUrl}
-        isImporting={isImporting}
-        importProgress={importProgress}
-        handleImportPlaylist={handleImportPlaylist}
-        songToAddToPlaylist={songToAddToPlaylist}
-        setSongToAddToPlaylist={setSongToAddToPlaylist}
-        setSuccessMessage={setSuccessMessage}
-        globalError={globalError}
-        setGlobalError={setGlobalError}
-        successMessage={successMessage}
-      />
+      <AppModals />
     </div>
-    </>
+    </AppContext.Provider>
   );
 }
 export default App;

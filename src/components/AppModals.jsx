@@ -7,37 +7,39 @@ import LoadPlaylistModal from './modals/LoadPlaylistModal';
 import AddToPlaylistModal from './modals/AddToPlaylistModal';
 import ErrorModal from './modals/ErrorModal';
 import SuccessModal from './modals/SuccessModal';
+import { useAppContext } from '../context/AppContext';
 
-export default function AppModals({
-  showWelcome,
-  setShowWelcome,
-  showClosePrompt,
-  setShowClosePrompt,
-  showClearPrompt,
-  setShowClearPrompt,
-  setPlaylist,
-  setSavedPlaylist,
-  setCurrentIndex,
-  setIsAudioPlaying,
-  showSavePrompt,
-  setShowSavePrompt,
-  playlist,
-  setSavedPlaylists,
-  showLoadPrompt,
-  setShowLoadPrompt,
-  savedPlaylists,
-  importUrl,
-  setImportUrl,
-  isImporting,
-  importProgress,
-  handleImportPlaylist,
-  songToAddToPlaylist,
-  setSongToAddToPlaylist,
-  setSuccessMessage,
-  globalError,
-  setGlobalError,
-  successMessage
-}) {
+export default function AppModals() {
+  const {
+    showWelcome,
+    setShowWelcome,
+    showClosePrompt,
+    setShowClosePrompt,
+    showClearPrompt,
+    setShowClearPrompt,
+    setPlaylist,
+    setSavedPlaylist,
+    setCurrentIndex,
+    setIsAudioPlaying,
+    showSavePrompt,
+    setShowSavePrompt,
+    playlist,
+    setSavedPlaylists,
+    showLoadPrompt,
+    setShowLoadPrompt,
+    savedPlaylists,
+    importUrl,
+    setImportUrl,
+    isImporting,
+    importProgress,
+    handleImportPlaylist,
+    songToAddToPlaylist,
+    setSongToAddToPlaylist,
+    setSuccessMessage,
+    globalError,
+    setGlobalError,
+    successMessage
+  } = useAppContext();
   return (
     <>
       {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
