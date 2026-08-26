@@ -434,7 +434,6 @@ function App() {
           display: 'flex',
           flexDirection: 'column',
           minHeight: 0,
-          padding: isMiniPlayer ? 0 : '16px',
           flex: isMiniPlayer ? 1 : 'unset'
         }}>
             <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={setCurrentTime} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
