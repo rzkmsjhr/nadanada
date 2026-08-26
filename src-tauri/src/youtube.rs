@@ -1,4 +1,5 @@
-use crate::models::{KworbTrack, SpotifyTrack, Video};
+use crate::models::{AlbumInfo, KworbTrack, SpotifyTrack, Video};
+use crate::downloads::get_yt_dlp_path;
 use regex::Regex;
 
 #[tauri::command]
@@ -452,4 +453,70 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
     }
 
     Err("Unknown platform".to_string())
+}
+
+#[tauri::command]
+pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String> {
+    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    let exe_path = get_yt_dlp_path().await?;
+
+    let mut cmd = tokio::process::Command::new(exe_path);
+    cmd.stdin(std::process::Stdio::null())
+        .arg("--print")
+        .arg("%(album)s|||%(artist)s")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(&url);
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let current_path =
+            std::env::var("PATH").unwrap_or_else(|_| String::from("/usr/bin:/bin:/usr/sbin:/sbin"));
+        cmd.env(
+            "PATH",
+            format!(
+                "{}:/opt/homebrew/bin:/usr/local/bin:/opt/homebrew/opt/node/bin",
+                current_path
+            ),
+        );
+    }
+
+    let output_result =
+        tokio::time::timeout(std::time::Duration::from_secs(15), cmd.output()).await;
+
+    let output = match output_result {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(format!("Failed to run yt-dlp: {}", e)),
+        Err(_) => return Err("Album info extraction timed out".to_string()),
+    };
+
+    if output.status.success() {
+        let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let parts: Vec<&str> = raw.splitn(2, "|||").collect();
+        if parts.len() == 2 {
+            let album = parts[0].trim().to_string();
+            let artist = parts[1].trim().to_string();
+
+            // yt-dlp returns "NA" for missing fields
+            let album_clean = if album == "NA" { String::new() } else { album };
+            let artist_clean = if artist == "NA" { String::new() } else { artist };
+
+            return Ok(AlbumInfo {
+                album: album_clean,
+                artist: artist_clean,
+            });
+        }
+    }
+
+    // Fallback: return empty info rather than failing
+    Ok(AlbumInfo {
+        album: String::new(),
+        artist: String::new(),
+    })
 }

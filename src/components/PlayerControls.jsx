@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
 
 export default function PlayerControls({
@@ -26,8 +26,45 @@ export default function PlayerControls({
   onToggleRepeat,
   handleVolumeChange,
   toggleMute,
-  formatTime
+  formatTime,
+  albumInfo,
+  isLoadingAlbum,
+  onAlbumClick
 }) {
+  const [isSubtitleHovered, setIsSubtitleHovered] = useState(false);
+  const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
+  const subtitleTextRef = useRef(null);
+
+  const handleSubtitleMouseEnter = () => {
+    if (subtitleTextRef.current) {
+      setShouldScrollSubtitle(subtitleTextRef.current.scrollWidth > subtitleTextRef.current.clientWidth);
+    }
+    setIsSubtitleHovered(true);
+  };
+
+  const handleSubtitleMouseLeave = () => {
+    setIsSubtitleHovered(false);
+    setShouldScrollSubtitle(false);
+  };
+
+  // Build the subtitle string: "Artist · Album"
+  const getSubtitle = () => {
+    if (!currentSong) return null;
+    
+    // Use albumInfo artist if available, else fall back to channel with Topic cleaned
+    let artist = albumInfo?.artist || (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim();
+    let album = albumInfo?.album || '';
+    
+    if (!artist && !album) return null;
+    
+    const parts = [];
+    if (artist) parts.push(artist);
+    if (album) parts.push(album);
+    return parts;
+  };
+
+  const subtitleParts = getSubtitle();
+
   return (
     <div style={{
       display: 'grid',
@@ -40,6 +77,37 @@ export default function PlayerControls({
             <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {currentSong ? currentSong.title : 'Waiting for music...'}
             </h3>
+            {subtitleParts && (
+              <div 
+                className="song-title-wrapper"
+                style={{ marginTop: '2px' }}
+                onMouseEnter={handleSubtitleMouseEnter}
+                onMouseLeave={handleSubtitleMouseLeave}
+              >
+                <div 
+                  ref={subtitleTextRef}
+                  className={`song-title ${isSubtitleHovered && shouldScrollSubtitle ? 'scrolling' : ''}`}
+                  style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400 }}
+                >
+                  {subtitleParts.map((part, i) => (
+                    <React.Fragment key={i}>
+                      {i > 0 && <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>}
+                      {i === subtitleParts.length - 1 && albumInfo?.album && part === albumInfo.album ? (
+                        <span 
+                          onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
+                          style={{ cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: '3px' }}
+                          title={`Browse "${albumInfo.album}" album`}
+                        >
+                          {part}
+                        </span>
+                      ) : (
+                        <span>{part}</span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="seek-bar-container">

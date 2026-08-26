@@ -57,6 +57,7 @@ pub fn run() {
             app_commands::quit_app,
             server::get_embed_port,
             youtube::get_playlist_title,
+            youtube::get_video_album_info,
             chords::scrape_chords,
             downloads::download_song,
             downloads::get_downloaded_songs,

@@ -18,6 +18,7 @@ import { usePlayback } from "./hooks/usePlayback";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePlaylistManager } from "./hooks/usePlaylistManager";
 import { useSystemIntegration } from "./hooks/useSystemIntegration";
+import { useAlbumInfo } from "./hooks/useAlbumInfo";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -249,6 +250,40 @@ function App() {
       setRestoredSong(null);
     }
   }, [currentIndex, playlist]);
+
+  const { albumInfo, isLoadingAlbum } = useAlbumInfo(currentSong);
+
+  const handleAlbumClick = async (info) => {
+    if (!info?.album) return;
+    try {
+      const searchQuery = `${info.album} ${info.artist}`.trim();
+      const results = await api.searchYouTube(searchQuery, 'album');
+      const albumResult = results?.[0];
+      if (!albumResult || !albumResult.first_video_id) {
+        setGlobalError('Could not find this album on YouTube.');
+        return;
+      }
+      const tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id);
+      if (tracks && tracks.length > 0) {
+        if (!savedPlaylist) {
+          setSavedPlaylist([...playlist]);
+        }
+        const timestamp = Date.now();
+        const albumTracks = tracks.map((t, i) => ({
+          ...t,
+          queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
+        }));
+        setPlaylist(albumTracks);
+        setCurrentIndex(0);
+        setIsAudioPlaying(true);
+      } else {
+        setGlobalError('Album has no playable tracks.');
+      }
+    } catch (e) {
+      console.error('Failed to load album:', e);
+      setGlobalError(`Failed to load album: ${e.message || e}`);
+    }
+  };
   const { 
     showChords, setShowChords, 
     chordsData, setChordsData, 
@@ -387,7 +422,8 @@ function App() {
             const newVal = !isShuffle;
             setIsShuffle(newVal);
             if (newVal) setIsEndlessPlay(false);
-          }} onSongEnded={handleNext} onRestoreHandled={() => setRestoredMainTime(null)} />
+          }} onSongEnded={handleNext} onRestoreHandled={() => setRestoredMainTime(null)}
+            albumInfo={albumInfo} isLoadingAlbum={isLoadingAlbum} onAlbumClick={handleAlbumClick} />
           </div>
         </div>
 

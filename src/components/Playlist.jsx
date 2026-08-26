@@ -51,7 +51,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
         </div>
         {song.channel && (
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-            {song.channel}
+            {song.channel.replace(/\s*-\s*Topic$/i, '')}
           </div>
         )}
       </div>

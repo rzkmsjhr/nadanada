@@ -8,7 +8,8 @@ import { usePlayerCore } from '../hooks/usePlayerCore';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
-  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded
+  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded,
+  albumInfo, isLoadingAlbum, onAlbumClick
 }, ref) {
   
   const core = usePlayerCore({
@@ -271,6 +272,9 @@ const Player = React.forwardRef(function Player({
         handleVolumeChange={core.handleVolumeChange}
         toggleMute={core.toggleMute}
         formatTime={core.formatTime}
+        albumInfo={albumInfo}
+        isLoadingAlbum={isLoadingAlbum}
+        onAlbumClick={onAlbumClick}
       />
     </div>
   );

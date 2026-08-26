@@ -15,6 +15,12 @@ pub struct Video {
     pub first_video_id: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AlbumInfo {
+    pub album: String,
+    pub artist: String,
+}
+
 #[derive(serde::Serialize, Clone)]
 pub struct SpotifyTrack {
     pub query: String,
