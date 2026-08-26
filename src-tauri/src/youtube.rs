@@ -188,7 +188,41 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
                 }
             }
         }
-        return Ok(videos);
+
+        // Space out tracks by the same artist to mimic a real radio
+        let mut spaced_videos = Vec::new();
+        let mut pending = videos;
+        
+        if !pending.is_empty() {
+            spaced_videos.push(pending.remove(0));
+        }
+        
+        while !pending.is_empty() {
+            let mut found_index = 0; // Default to first available if we can't find a non-conflicting track
+            
+            // Try to find a track whose channel hasn't appeared in the last 6 tracks
+            for (i, v) in pending.iter().enumerate() {
+                let clean_channel = v.channel.to_lowercase().replace(" - topic", "");
+                let mut recent_conflict = false;
+                
+                let check_len = std::cmp::min(spaced_videos.len(), 6);
+                for recent_v in spaced_videos.iter().rev().take(check_len) {
+                    if recent_v.channel.to_lowercase().replace(" - topic", "") == clean_channel {
+                        recent_conflict = true;
+                        break;
+                    }
+                }
+                
+                if !recent_conflict {
+                    found_index = i;
+                    break;
+                }
+            }
+            
+            spaced_videos.push(pending.remove(found_index));
+        }
+
+        return Ok(spaced_videos);
     }
 
     Err("ytInitialData not found in mix".to_string())
