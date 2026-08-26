@@ -312,6 +312,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-bottom: 2px;
 }
 
 .song-title.scrolling {
@@ -580,11 +581,11 @@ body {
   color: inherit;
   cursor: pointer;
   text-decoration: none;
-  border-bottom: 1px solid transparent;
-  transition: color 0.2s ease, border-color 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 .album-link:hover {
   color: var(--accent-color);
-  border-bottom: 1px solid var(--accent-color);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
