@@ -1,12 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { LogicalSize } from '@tauri-apps/api/dpi';
 
 export function useSystemIntegration(appWindow, setShowClosePrompt) {
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isMaximized, setIsMaximized] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const isMaximizedRef = useRef(false);
+  const prevSizeRef = useRef(null);
 
   useEffect(() => {
     // Sync initial maximized state (no animation needed on load)
@@ -90,10 +93,34 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     setTheme(themes[nextIndex]);
   };
 
+  const toggleMiniPlayer = async () => {
+    if (isMiniPlayer) {
+      setIsMiniPlayer(false);
+      appWindow.setAlwaysOnTop(false);
+      await appWindow.setMinSize(new LogicalSize(320, 568));
+      if (prevSizeRef.current) {
+        await appWindow.setSize(prevSizeRef.current);
+      }
+    } else {
+      setIsMiniPlayer(true);
+      const currentSize = await appWindow.outerSize();
+      prevSizeRef.current = currentSize;
+      
+      appWindow.setAlwaysOnTop(true);
+      if (await appWindow.isMaximized()) {
+        await appWindow.unmaximize();
+      }
+      await appWindow.setMinSize(new LogicalSize(320, 140));
+      await appWindow.setSize(new LogicalSize(320, 140));
+    }
+  };
+
   return {
     theme, toggleTheme,
     isMaximized,
     isVideoHidden,
-    isReconnecting
+    isReconnecting,
+    isMiniPlayer,
+    toggleMiniPlayer
   };
 }

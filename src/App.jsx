@@ -113,7 +113,9 @@ function App() {
     theme, toggleTheme,
     isMaximized,
     isVideoHidden,
-    isReconnecting
+    isReconnecting,
+    isMiniPlayer,
+    toggleMiniPlayer
   } = useSystemIntegration(appWindow, setShowClosePrompt);
 
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
@@ -356,7 +358,7 @@ function App() {
       <WindowBorders appWindow={appWindow} />
 
       {/* Native/Custom Titlebar */}
-      <Titlebar appWindow={appWindow} />
+      <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />
 
       {/* ── UNIFIED MAIN CONTENT ──
           Single JSX tree — styles switch via isMaximized.
@@ -387,7 +389,7 @@ function App() {
       } : topPanelStyle}>
           <div style={{
           display: 'grid',
-          gridTemplateRows: showSearch && !isMaximized ? '0fr' : '1fr',
+          gridTemplateRows: (showSearch && !isMaximized) || isMiniPlayer ? '0fr' : '1fr',
           transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
             <div style={{
@@ -428,7 +430,8 @@ function App() {
         } : {
           display: 'flex',
           flexDirection: 'column',
-          minHeight: 0
+          minHeight: 0,
+          flex: isMiniPlayer ? 1 : 'unset'
         }}>
             <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={setCurrentTime} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
             const newVal = !isShuffle;
@@ -440,6 +443,7 @@ function App() {
         </div>
 
         {/* ── Playlist Panel ── */}
+        {!isMiniPlayer && (
         <div className="bottom-section glass-panel" style={isMaximized ? {
         flex: '0 0 calc(30% - 12px)',
         display: 'flex',
@@ -519,6 +523,7 @@ function App() {
             />
           </div>
         </div>
+        )}
 
       </div>
 
