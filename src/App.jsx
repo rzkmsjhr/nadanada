@@ -218,7 +218,9 @@ function App() {
     setSavedPlaylist,
     setCurrentIndex,
     setIsAudioPlaying,
-    handleAddMultiple
+    handleAddMultiple,
+    setSavedPlaylists,
+    setSuccessMessage
   });
 
   const [showClearPrompt, setShowClearPrompt] = useState(false);
