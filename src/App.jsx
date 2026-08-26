@@ -16,6 +16,8 @@ import SuccessModal from './components/modals/SuccessModal';
 import Titlebar from './components/Titlebar';
 import ChordDisplay from "./components/ChordDisplay";
 import WindowBorders from "./components/WindowBorders";
+import { useChords } from "./hooks/useChords";
+import { useArtistFact } from "./hooks/useArtistFact";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -395,15 +397,6 @@ function App() {
     }
   };
 
-  // Chords state
-  const [showChords, setShowChords] = useState(false);
-  const [chordsData, setChordsData] = useState(null);
-  const [isFetchingChords, setIsFetchingChords] = useState(false);
-  const isFetchingChordsRef = useRef(false);
-  const [chordsError, setChordsError] = useState(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [syncOffset, setSyncOffset] = useState(0);
-  const [transposeOffset, setTransposeOffset] = useState(0);
   const [showClearPrompt, setShowClearPrompt] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showLoadPrompt, setShowLoadPrompt] = useState(false);
@@ -505,7 +498,6 @@ function App() {
     }
     return playlist[currentIndex] || null;
   }, [previewSong, restoredSong, playlist, currentIndex]);
-  const [artistFact, setArtistFact] = useState('');
 
   // Fix: Clear restored song if user manually changes track via playlist
   useEffect(() => {
@@ -513,207 +505,16 @@ function App() {
       setRestoredSong(null);
     }
   }, [currentIndex, playlist]);
-  useEffect(() => {
-    if (currentSong) {
-      const savedSync = localStorage.getItem(`sync_${currentSong.id}`);
-      setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
-      const savedTranspose = localStorage.getItem(`transpose_${currentSong.id}`);
-      setTransposeOffset(savedTranspose ? parseInt(savedTranspose, 10) : 0);
-      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id) && !isFetchingChordsRef.current) {
-        const fetchChords = async () => {
-          isFetchingChordsRef.current = true;
-          setIsFetchingChords(true);
-          setChordsError(null);
-          try {
-            // Append the channel/artist name to the title so Google finds the exact artist's version
-            let searchTitle = currentSong.title;
-            if (currentSong.channel) {
-              const cleanChannel = currentSong.channel.replace(/ - Topic/i, '').trim();
-              searchTitle = `${searchTitle} ${cleanChannel}`;
-            }
-            const res = await api.scrapeChords(currentSong.id, searchTitle);
-            const parsed = JSON.parse(res);
-            if (parsed.success) {
-              const chordsList = parsed.data.chords;
-              if (chordsList && chordsList.length > 0) {
-                const lastChordTime = chordsList[chordsList.length - 1].time_sec;
-                const videoDuration = parseDuration(currentSong.duration);
-
-                // Mismatch if chords extend past the video (meaning Chordify's version has a longer intro/body)
-                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 15;
-                // Mismatch if chords end suspiciously early (e.g. they only cover less than 60% of the video length)
-                const isTooShort = videoDuration > 0 && lastChordTime < videoDuration * 0.6;
-                if (isTooLong || isTooShort) {
-                  setChordsError(`Mismatched song version. Not found on Chordify.`);
-                  setChordsData({
-                    _songId: currentSong.id
-                  });
-                } else {
-                  setChordsData({
-                    ...parsed.data,
-                    _songId: currentSong.id
-                  });
-                }
-              } else {
-                setChordsData({
-                  ...parsed.data,
-                  _songId: currentSong.id
-                });
-              }
-            } else {
-              setChordsError(parsed.error);
-              setChordsData({
-                _songId: currentSong.id
-              });
-            }
-          } catch (e) {
-            setChordsError(e.toString());
-            setChordsData({
-              _songId: currentSong.id
-            });
-          } finally {
-            isFetchingChordsRef.current = false;
-            setIsFetchingChords(false);
-          }
-        };
-        fetchChords();
-      } else if (!showChords) {
-        setChordsData(null);
-        setChordsError(null);
-      }
-    } else {
-      setSyncOffset(0);
-      setTransposeOffset(0);
-      setChordsData(null);
-      setChordsError(null);
-    }
-  }, [currentSong, showChords, isAudioPlaying]);
-
-  // ── Artist / Song Fun Facts (Wikipedia) ───────────────────────────────────
-  // Extracts genuinely interesting sentences from Wikipedia articles — origin
-  // stories, accidents, early-career moments — NOT genre tags or chart data.
-  useEffect(() => {
-    if (!currentSong) {
-      setArtistFact('');
-      return;
-    }
-    const controller = new AbortController();
-    const signal = controller.signal;
-
-    // Words that hint at a fun, surprising, or story-driven sentence
-    const GOOD = ['before', 'originally', 'accident', 'accidentally', 'inspired', 'inspiration', 'rejected', 'almost', 'discovered', 'signed', 'grew up', 'childhood', 'school', 'young', 'early', 'first', 'debut', 'never', 'actually', 'surprisingly', 'unexpected', 'unknown', 'wrote', 'recorded', 'named after', 'named for', 'dropped out', 'quit', 'left the band', 'met', 'formed', 'started', 'began', 'rumoured', 'rumored', 'reportedly', 'auditioned', 'sampled', 'influenced by', 'influence', 'originally planned', 'nearly', 'almost', 'decided to', 'came up with', 'thought of', 'idea for', 'when they were'];
-
-    // Words that reveal a boring descriptor / chart / sales sentence
-    const BAD = [' is a ', ' are a ', ' is an ', ' are an ', 'born in', 'born on', 'citizenship', 'nationality', 'discography', 'known for', 'best known', 'certified platinum', 'certified gold', 'billboard', 'number one', 'topped the', 'peaked at', 'charted', 'won the', 'grammy', 'brit award', 'mtv award'];
-    const scoreSentence = s => {
-      const l = s.toLowerCase();
-      let score = 0;
-      for (const w of GOOD) if (l.includes(w)) score += 2;
-      for (const w of BAD) if (l.includes(w)) score -= 3;
-      if (s.length < 50 || s.length > 290) score -= 2; // too short or too long
-      return score;
-    };
-    const extractFact = wikiText => {
-      // Split on ". " or "! " or "? " preserving the sentence text
-      const sentences = wikiText.split(/\.\s+|\!\s+|\?\s+/).map(s => s.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()).filter(s => s.length > 50 && s.length < 290);
-
-      // Skip the first sentence (always "X is a <genre> band from <city>")
-      const candidates = sentences.slice(1);
-      const scored = candidates.map(s => ({
-        text: s,
-        score: scoreSentence(s)
-      })).filter(({
-        score
-      }) => score > 0).sort((a, b) => b.score - a.score);
-      if (scored.length === 0) return null;
-      // Pick randomly from the top 3 so each listen to the same song can surface
-      // a different fact, making the header feel alive
-      const pool = scored.slice(0, Math.min(3, scored.length));
-      const {
-        text
-      } = pool[Math.floor(Math.random() * pool.length)];
-      return text.endsWith('.') ? text : text + '.';
-    };
-    const wikiGet = async title => {
-      const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&titles=${encodeURIComponent(title)}&exintro=true&explaintext=true&redirects=1&format=json&origin=*`, {
-        signal
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      const pages = Object.values(data.query?.pages || {});
-      const page = pages[0];
-      if (!page || page.missing !== undefined || !page.extract) return null;
-      return page.extract;
-    };
-    const fetchFunFact = async () => {
-      try {
-        // --- derive clean artist & title ---
-        let artist = currentSong.channel ? currentSong.channel.replace(/ - Topic$/i, '').replace(/vevo/i, '').trim() : '';
-        let title = currentSong.title.replace(/\[.*?\]|\(.*?\)/g, ' ').replace(/official|music|video|audio|hd|hq|lyrics/ig, ' ').replace(/\s+/g, ' ').trim();
-        const dashParts = title.split(' - ');
-        if (dashParts.length > 1) {
-          if (!artist) artist = dashParts[0].trim();
-          title = dashParts.slice(1).join(' - ').trim();
-        }
-        if (!artist) {
-          if (!signal.aborted) setArtistFact('');
-          return;
-        }
-
-        // --- 1. Try the song page first (best chance of "how it was made" facts) ---
-        if (!signal.aborted && title) {
-          const songText = await wikiGet(`${title} (song)`);
-          if (songText && !signal.aborted) {
-            const fact = extractFact(songText);
-            if (fact) {
-              setArtistFact(fact);
-              return;
-            }
-          }
-        }
-        if (signal.aborted) return;
-
-        // --- 2. Try artist page variants ---
-        const artistVariants = [artist, `${artist} (band)`, `${artist} (singer)`, `${artist} (rapper)`, `${artist} (musician)`];
-        for (const variant of artistVariants) {
-          if (signal.aborted) return;
-          const text = await wikiGet(variant);
-          if (!text) continue;
-
-          // Sanity check: Ensure this page is actually about music/artist
-          // If the entire Wikipedia intro doesn't mention any of these, it's likely a generic noun (e.g., 'Chillies' -> 'Chili peppers')
-          const isMusicRelated = /band|singer|album|music|musician|song|rapper|producer|dj|vocalist|guitarist|chart|record/i.test(text);
-          if (!isMusicRelated) continue;
-          const fact = extractFact(text);
-          if (fact) {
-            if (!signal.aborted) setArtistFact(fact);
-            return;
-          }
-        }
-        if (!signal.aborted) setArtistFact('');
-      } catch (e) {
-        if (!signal.aborted) setArtistFact('');
-      }
-    };
-    fetchFunFact();
-    return () => controller.abort();
-  }, [currentSong]);
-
-  // Save sync and transpose offsets when changed
-  useEffect(() => {
-    if (currentSong) {
-      if (syncOffset !== 0) {
-        localStorage.setItem(`sync_${currentSong.id}`, syncOffset.toString());
-      } else {
-        localStorage.removeItem(`sync_${currentSong.id}`);
-      }
-      if (transposeOffset !== 0) {
-        localStorage.setItem(`transpose_${currentSong.id}`, transposeOffset.toString());
-      } else {
-        localStorage.removeItem(`transpose_${currentSong.id}`);
-      }
-    }
-  }, [syncOffset, transposeOffset, currentSong]);
+  const { 
+    showChords, setShowChords, 
+    chordsData, setChordsData, 
+    isFetchingChords, 
+    chordsError, setChordsError, 
+    syncOffset, setSyncOffset, 
+    transposeOffset, setTransposeOffset 
+  } = useChords(currentSong, isAudioPlaying, api);
+  const [currentTime, setCurrentTime] = useState(0);
+  const artistFact = useArtistFact(currentSong);
   // Reset the failed state whenever the user manually plays a different song or adds a song
   useEffect(() => {
     setFailedEndlessFetch(false);
