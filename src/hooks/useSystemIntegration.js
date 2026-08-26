@@ -112,6 +112,7 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       }
       try {
         await appWindow.setMinSize(null);
+        await new Promise(r => setTimeout(r, 50));
         await appWindow.setSize(new LogicalSize(320, 180));
         // Fallback for Windows if LogicalSize fails
         const scale = await appWindow.scaleFactor();
