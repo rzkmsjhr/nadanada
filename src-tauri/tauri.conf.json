@@ -16,7 +16,7 @@
         "width": 400,
         "height": 770,
         "minWidth": 320,
-        "minHeight": 568,
+        "minHeight": 180,
         "decorations": false,
         "transparent": true,
         "dragDropEnabled": false

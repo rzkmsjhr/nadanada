@@ -346,7 +346,7 @@ function App() {
   };
   return (
     <>
-      <div className="app-container" style={{
+      <div className={`app-container ${isMiniPlayer ? 'mini-player-mode' : ''}`} style={{
     position: 'relative',
     width: '100vw',
     background: isMiniPlayer ? 'transparent' : 'var(--bg-color)',
