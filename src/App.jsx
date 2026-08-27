@@ -396,7 +396,8 @@ function App() {
     height: '100vh',
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    borderRadius: isMiniPlayer ? '12px' : '0'
   }}>
 
 
