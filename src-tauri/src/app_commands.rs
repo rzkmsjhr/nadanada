@@ -6,6 +6,7 @@ pub fn quit_app(app: tauri::AppHandle) {
 
 #[tauri::command]
 pub fn force_resize_window(window: tauri::Window, width: f64, height: f64, min_width: f64, min_height: f64, always_on_top: bool) {
+    let _ = window.set_shadow(!always_on_top);
     let _ = window.set_always_on_top(always_on_top);
     let _ = window.set_min_size(Some(tauri::Size::Logical(tauri::LogicalSize { width: 1.0, height: 1.0 })));
     let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }));

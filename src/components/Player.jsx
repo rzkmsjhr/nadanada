@@ -80,37 +80,44 @@ const Player = React.forwardRef(function Player({
           
           <div style={{ position: 'absolute', inset: 0 }}>
             {currentSong && !currentSong.is_local && !core.streamUrl && !core.isExtractingStream && (
-              <ProxyYouTube
-                videoId={currentSong.id}
-                onCaptionsReceived={core.handleCaptionsReceived}
-                opts={opts}
-                onReady={core.onReady}
-                onStateChange={core.onStateChange}
-                onError={async (e) => {
-                  console.error("YouTube Error:", e);
-                  // Error codes 101/150 mean embedding is disabled. Fallback to extracting the raw stream!
-                  if (!core.streamUrl && !core.isExtractingStream) {
-                    core.setIsExtractingStream(true);
-                    try {
-                      const url = await api.getStreamUrl(currentSong.id);
-                      core.setStreamUrl(url);
-                    } catch (err) {
-                      console.error("Stream extraction fallback failed:", err);
-                      if (hasNext) {
-                        onNext();
-                      } else {
-                        core.setIsPlaying(false);
-                        if (onPlayStateChange) onPlayStateChange(false);
-                        if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+              <>
+                <ProxyYouTube
+                  videoId={currentSong.id}
+                  onCaptionsReceived={core.handleCaptionsReceived}
+                  opts={opts}
+                  onReady={core.onReady}
+                  onStateChange={core.onStateChange}
+                  onError={async (e) => {
+                    console.error("YouTube Error:", e);
+                    // Error codes 101/150 mean embedding is disabled. Fallback to extracting the raw stream!
+                    if (!core.streamUrl && !core.isExtractingStream) {
+                      core.setIsExtractingStream(true);
+                      try {
+                        const url = await api.getStreamUrl(currentSong.id);
+                        core.setStreamUrl(url);
+                      } catch (err) {
+                        console.error("Stream extraction fallback failed:", err);
+                        if (hasNext) {
+                          onNext();
+                        } else {
+                          core.setIsPlaying(false);
+                          if (onPlayStateChange) onPlayStateChange(false);
+                          if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                        }
+                      } finally {
+                        core.setIsExtractingStream(false);
                       }
-                    } finally {
-                      core.setIsExtractingStream(false);
                     }
-                  }
-                }}
-                style={{ width: '100%', height: '100%' }}
-                iframeClassName="youtube-iframe"
-              />
+                  }}
+                  style={{ width: '100%', height: '100%' }}
+                  iframeClassName="youtube-iframe"
+                />
+                <div 
+                  style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+                  onClick={() => core.togglePlay()}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                />
+              </>
             )}
             {core.captions.length > 0 && !isMiniPlayer && (
               <div
