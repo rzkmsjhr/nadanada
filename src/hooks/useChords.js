@@ -9,18 +9,16 @@ export function useChords(currentSong, isAudioPlaying, api) {
   const [syncOffset, setSyncOffset] = useState(0);
   const [transposeOffset, setTransposeOffset] = useState(0);
   
-  const isFetchingChordsRef = useRef(false);
-
   useEffect(() => {
+    let isCancelled = false;
     if (currentSong) {
       const savedSync = localStorage.getItem(`sync_${currentSong.id}`);
       setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
       const savedTranspose = localStorage.getItem(`transpose_${currentSong.id}`);
       setTransposeOffset(savedTranspose ? parseInt(savedTranspose, 10) : 0);
       
-      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id) && !isFetchingChordsRef.current) {
+      if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id)) {
         const fetchChords = async () => {
-          isFetchingChordsRef.current = true;
           setIsFetchingChords(true);
           setChordsError(null);
           try {
@@ -31,6 +29,8 @@ export function useChords(currentSong, isAudioPlaying, api) {
               searchTitle = `${searchTitle} ${cleanChannel}`;
             }
             const res = await api.scrapeChords(currentSong.id, searchTitle);
+            if (isCancelled) return;
+            
             const parsed = JSON.parse(res);
             if (parsed.success) {
               const chordsList = parsed.data.chords;
@@ -66,13 +66,13 @@ export function useChords(currentSong, isAudioPlaying, api) {
               });
             }
           } catch (e) {
+            if (isCancelled) return;
             setChordsError(e.toString());
             setChordsData({
               _songId: currentSong.id
             });
           } finally {
-            isFetchingChordsRef.current = false;
-            setIsFetchingChords(false);
+            if (!isCancelled) setIsFetchingChords(false);
           }
         };
         fetchChords();
@@ -86,23 +86,28 @@ export function useChords(currentSong, isAudioPlaying, api) {
       setChordsData(null);
       setChordsError(null);
     }
+    return () => { isCancelled = true; };
   }, [currentSong, showChords, isAudioPlaying, api, chordsData]);
+
+  const songIdForSaveRef = useRef(currentSong?.id);
+  songIdForSaveRef.current = currentSong?.id;
 
   // Save sync and transpose offsets when changed
   useEffect(() => {
-    if (currentSong) {
+    const id = songIdForSaveRef.current;
+    if (id) {
       if (syncOffset !== 0) {
-        localStorage.setItem(`sync_${currentSong.id}`, syncOffset.toString());
+        localStorage.setItem(`sync_${id}`, syncOffset.toString());
       } else {
-        localStorage.removeItem(`sync_${currentSong.id}`);
+        localStorage.removeItem(`sync_${id}`);
       }
       if (transposeOffset !== 0) {
-        localStorage.setItem(`transpose_${currentSong.id}`, transposeOffset.toString());
+        localStorage.setItem(`transpose_${id}`, transposeOffset.toString());
       } else {
-        localStorage.removeItem(`transpose_${currentSong.id}`);
+        localStorage.removeItem(`transpose_${id}`);
       }
     }
-  }, [syncOffset, transposeOffset, currentSong]);
+  }, [syncOffset, transposeOffset]);
 
   return {
     showChords, setShowChords,

@@ -4,6 +4,8 @@ import { CheckCircle } from 'lucide-react';
 const SuccessModal = ({ message, onClose }) => {
   if (!message) return null;
 
+  const displayMessage = typeof message === 'string' ? message : (message?.message || JSON.stringify(message));
+
   return (
     <div className="modal-overlay">
       <div className="modal-content">
@@ -14,7 +16,7 @@ const SuccessModal = ({ message, onClose }) => {
           }} />
         </div>
         <h3 className="modal-title">Success</h3>
-        <p className="modal-desc">{message}</p>
+        <p className="modal-desc">{displayMessage}</p>
         <div className="modal-actions">
           <button 
             onClick={onClose} 

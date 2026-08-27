@@ -115,7 +115,8 @@ export function usePlayerCore({
       }
     }
     return () => clearTimeout(timeout);
-  }, [isBuffering, streamUrl, isExtractingStream, currentSong, currentTime]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBuffering, streamUrl, isExtractingStream, currentSong]);
 
   const songId = currentSong?.id;
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);

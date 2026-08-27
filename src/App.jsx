@@ -321,10 +321,6 @@ function App() {
     transposeOffset, setTransposeOffset 
   } = useChords(currentSong, isAudioPlaying, api);
   const artistFact = useArtistFact(currentSong);
-  // Reset the failed state whenever the user manually plays a different song or adds a song
-  useEffect(() => {
-    setFailedEndlessFetch(false);
-  }, [currentIndex]);
   const {
     repeatMode, setRepeatMode,
     isShuffle, setIsShuffle,

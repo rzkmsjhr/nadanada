@@ -22,7 +22,11 @@ export function usePlayback({
       do {
         nextIdx = Math.floor(Math.random() * playlist.length);
       } while (nextIdx === currentIndex);
-      setShuffleHistory(prev => [...prev, currentIndex]);
+      
+      if (playlist[currentIndex]) {
+        setShuffleHistory(prev => [...prev, playlist[currentIndex].id]);
+      }
+      
       setCurrentIndex(nextIdx);
     } else {
       if (currentIndex < playlist.length - 1) {
@@ -37,9 +41,24 @@ export function usePlayback({
     if (isShuffle) {
       if (shuffleHistory.length > 0) {
         const newHistory = [...shuffleHistory];
-        const prevIdx = newHistory.pop();
+        let prevIdx = -1;
+        
+        while (newHistory.length > 0) {
+          const prevId = newHistory.pop();
+          const foundIdx = playlist.findIndex(s => s.id === prevId);
+          if (foundIdx !== -1) {
+            prevIdx = foundIdx;
+            break;
+          }
+        }
+        
         setShuffleHistory(newHistory);
-        setCurrentIndex(prevIdx);
+        
+        if (prevIdx !== -1) {
+          setCurrentIndex(prevIdx);
+        } else {
+          if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+        }
       } else {
         if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
       }

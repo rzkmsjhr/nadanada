@@ -67,8 +67,8 @@ export function useAlbumInfo(playlist, currentIndex) {
           setAlbumCache(prev => ({ ...prev, [videoId]: result }));
         } catch (err) {
           console.error('Failed to fetch album info for', videoId, err);
-          // On network error or crash, remove from inFlight so it can be retried later
-          inFlightRef.current.delete(videoId);
+          // Keep it in inFlightRef to prevent infinite retries during this session for unfetchable videos.
+          // It will retry on the next app restart in case it was a temporary network issue.
           
           // Pause queue briefly on error to prevent rapid-fire failures if offline
           await new Promise(r => setTimeout(r, 5000));

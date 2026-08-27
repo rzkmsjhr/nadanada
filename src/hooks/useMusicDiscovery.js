@@ -246,7 +246,9 @@ export function useMusicDiscovery({
   }, [currentIndex, playlist.length, isEndlessPlay, isFetchingEndless, failedEndlessFetch]);
 
   // Reset the failed state whenever the user manually plays a different song or adds a song
-
+  useEffect(() => {
+    setFailedEndlessFetch(false);
+  }, [currentIndex, playlist.length, isEndlessPlay]);
 
   const handleLoadTrending = async (region) => {
     if (!navigator.onLine) {

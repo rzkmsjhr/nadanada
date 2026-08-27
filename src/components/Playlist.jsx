@@ -219,7 +219,10 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
   const handleDrop = (e, index) => {
     e.preventDefault();
     setDragOverIndex(null);
-    const sourceIndex = Number(e.dataTransfer.getData('text/plain'));
+    const data = e.dataTransfer.getData('text/plain');
+    if (!data) return;
+    const sourceIndex = Number(data);
+    if (Number.isNaN(sourceIndex) || sourceIndex < 0 || sourceIndex >= playlist.length) return;
     if (sourceIndex === index) return;
     onReorder(sourceIndex, index);
   };

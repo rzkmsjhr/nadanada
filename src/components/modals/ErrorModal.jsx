@@ -4,6 +4,8 @@ import { AlertTriangle } from 'lucide-react';
 const ErrorModal = ({ error, onClose }) => {
   if (!error) return null;
   
+  const errorMessage = typeof error === 'string' ? error : (error?.message || JSON.stringify(error));
+  
   return (
     <div className="modal-overlay">
       <div className="modal-content">
@@ -14,7 +16,7 @@ const ErrorModal = ({ error, onClose }) => {
           }} />
         </div>
         <h3 className="modal-title">Error</h3>
-        <p className="modal-desc">{error}</p>
+        <p className="modal-desc">{errorMessage}</p>
         <div className="modal-actions">
           <button 
             onClick={onClose} 
