@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 
 export function useSearchPreview({
-  currentTime,
   playerRef,
   playlist,
   currentIndex,
@@ -14,7 +13,7 @@ export function useSearchPreview({
 
   const handlePlayPreview = async video => {
     if (!previewSavedStateRef.current) {
-      let currentTimeSeconds = currentTime;
+      let currentTimeSeconds = 0;
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
         try {
           const t = await playerRef.current.getCurrentTime();

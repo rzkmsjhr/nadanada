@@ -116,7 +116,6 @@ const EMBED_HTML = `<!DOCTYPE html>
         case 'mute': player.mute(); break;
         case 'unmute': player.unMute(); break;
         case 'loadVideoById': window.captionsEmitted = false; player.loadVideoById({videoId: msg.videoId, startSeconds: msg.startSeconds || 0, suggestedQuality: 'hd1080'}); break;
-          case 'setCaption': player.setOption('captions', 'track', msg.value ? {languageCode: msg.value} : {}); break;
         case 'setCaption': player.setOption('captions', 'track', msg.value ? {languageCode: msg.value} : {}); break;
       }
     } catch(err) {}

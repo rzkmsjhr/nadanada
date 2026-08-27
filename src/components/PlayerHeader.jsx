@@ -12,7 +12,6 @@ export default function PlayerHeader({
   chordsError,
   setChordsData,
   setChordsError,
-  currentTime,
   syncOffset,
   setSyncOffset,
   transposeOffset,
@@ -51,7 +50,7 @@ export default function PlayerHeader({
         {showChords ? (
           <ChordDisplay 
             data={chordsData} 
-            time={currentTime + syncOffset} 
+            syncOffset={syncOffset} 
             transpose={transposeOffset} 
             isLoading={isFetchingChords} 
             error={chordsError} 

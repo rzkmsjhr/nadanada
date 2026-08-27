@@ -36,7 +36,15 @@ function transposeChord(chord, semitones) {
   return chord.split('/').map(transposeSingle).join('/');
 }
 
-const ChordDisplay = ({ data, time, transpose, isLoading, error, onRetry }) => {
+const ChordDisplay = ({ data, syncOffset, transpose, isLoading, error, onRetry }) => {
+  const [time, setTime] = React.useState(0);
+
+  React.useEffect(() => {
+    const handleTime = (e) => setTime(e.detail + (syncOffset || 0));
+    window.addEventListener('timeupdate', handleTime);
+    return () => window.removeEventListener('timeupdate', handleTime);
+  }, [syncOffset]);
+
   if (isLoading) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>Scraping chords from Chordify...</div>;
   if (error) {
     const isNotFound = error.toLowerCase().includes("not found");

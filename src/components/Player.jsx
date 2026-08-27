@@ -29,7 +29,8 @@ const Player = React.forwardRef(function Player({
     togglePlay: core.togglePlay,
     toggleMute: core.toggleMute,
     fadeOut: core.fadeOut,
-    fadeIn: core.fadeIn
+    fadeIn: core.fadeIn,
+    getCurrentTime: () => core.currentTime
   }), [core]);
 
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);

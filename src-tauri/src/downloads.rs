@@ -28,14 +28,30 @@ pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
 
     if !exe_path.exists() {
         println!("{} not found, downloading now...", exe_name);
-        let download_url = format!(
-            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}",
-            exe_name
-        );
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
             .map_err(|e| e.to_string())?;
+
+        let sums_url = "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/SHA2-256SUMS";
+        let sums_text = client.get(sums_url).send().await.map_err(|e| e.to_string())?.text().await.map_err(|e| e.to_string())?;
+        
+        let mut expected_hash = String::new();
+        for line in sums_text.lines() {
+            if line.ends_with(exe_name) {
+                expected_hash = line.split_whitespace().next().unwrap_or("").to_string();
+                break;
+            }
+        }
+        
+        if expected_hash.is_empty() {
+            return Err(format!("Could not find checksum for {} in SHA2-256SUMS", exe_name));
+        }
+
+        let download_url = format!(
+            "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/{}",
+            exe_name
+        );
 
         let bytes = client
             .get(&download_url)
@@ -45,6 +61,16 @@ pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
             .bytes()
             .await
             .map_err(|e| e.to_string())?;
+            
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(&bytes);
+        let actual_hash = format!("{:x}", hasher.finalize());
+        
+        if actual_hash != expected_hash {
+            return Err(format!("Checksum mismatch for {}. Expected: {}, Actual: {}", exe_name, expected_hash, actual_hash));
+        }
+
         std::fs::write(&exe_path, bytes).map_err(|e| e.to_string())?;
 
         #[cfg(not(target_os = "windows"))]
@@ -238,22 +264,26 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
         return Err("yt-dlp succeeded but did not output a filepath".to_string());
     }
 
-    let _lock = IO_LOCK.lock().unwrap();
-    let registry_path = data_dir.join("youtube_downloads.json");
-    let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
-        if let Ok(content) = fs::read_to_string(&registry_path) {
-            serde_json::from_str(&content).unwrap_or_default()
+    let final_path_clone = final_path.clone();
+    let id_clone = id.clone();
+    tokio::task::spawn_blocking(move || {
+        let _lock = IO_LOCK.lock().unwrap();
+        let registry_path = data_dir.join("youtube_downloads.json");
+        let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
+            if let Ok(content) = fs::read_to_string(&registry_path) {
+                serde_json::from_str(&content).unwrap_or_default()
+            } else {
+                std::collections::HashMap::new()
+            }
         } else {
             std::collections::HashMap::new()
-        }
-    } else {
-        std::collections::HashMap::new()
-    };
-    registry.insert(final_path, id);
-    let _ = fs::write(
-        &registry_path,
-        serde_json::to_string(&registry).unwrap_or_default(),
-    );
+        };
+        registry.insert(final_path_clone, id_clone);
+        let _ = fs::write(
+            &registry_path,
+            serde_json::to_string(&registry).unwrap_or_default(),
+        );
+    }).await.map_err(|e| e.to_string())?;
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
 }

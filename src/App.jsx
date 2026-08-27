@@ -123,9 +123,14 @@ function App() {
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
   const playerRef = useRef(null);
-  const [currentTime, setCurrentTime] = useState(0);
+  const currentTimeRef = useRef(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
+
+  const handleTimeUpdate = (time) => {
+    currentTimeRef.current = time;
+    window.dispatchEvent(new CustomEvent('timeupdate', { detail: time }));
+  };
 
   const [showSearch, setShowSearch] = useState(false);
   const {
@@ -148,7 +153,6 @@ function App() {
     handlePlayPreview,
     handleStopPreview
   } = useSearchPreview({
-    currentTime,
     playerRef,
     playlist,
     currentIndex,
@@ -452,7 +456,6 @@ function App() {
                 chordsError={chordsError}
                 setChordsData={setChordsData}
                 setChordsError={setChordsError}
-                currentTime={currentTime}
                 syncOffset={syncOffset}
                 setSyncOffset={setSyncOffset}
                 transposeOffset={transposeOffset}
@@ -480,7 +483,7 @@ function App() {
           minHeight: 0,
           flex: isMiniPlayer ? 1 : 'unset'
         }}>
-            <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={setCurrentTime} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
+            <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={handleTimeUpdate} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
             const newVal = !isShuffle;
             setIsShuffle(newVal);
             if (newVal) setIsEndlessPlay(false);
