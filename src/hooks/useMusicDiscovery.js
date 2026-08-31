@@ -64,7 +64,7 @@ export function useMusicDiscovery({
   const [trendingType, setTrendingType] = useState(null);
 
   useEffect(() => {
-    if (isEndlessPlay && playlist.length > 0 && currentIndex === playlist.length - 1 && !isFetchingEndless && !failedEndlessFetch) {
+    if (isEndlessPlay && playlist.length > 0 && currentIndex >= playlist.length - 2 && !isFetchingEndless && !failedEndlessFetch) {
       const fetchNext = async () => {
         if (!navigator.onLine) {
           setFailedEndlessFetch(true);

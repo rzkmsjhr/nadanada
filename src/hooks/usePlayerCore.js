@@ -188,6 +188,7 @@ export function usePlayerCore({
       crossfadeIntervalRef.current = null;
     }
     isCrossfadeRampingRef.current = false;
+    hasTriggeredEndCrossfadeRef.current = false;
     const incomingSong = crossfadeSongRef.current;
     const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
