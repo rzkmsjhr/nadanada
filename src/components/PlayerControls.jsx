@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1 } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Maximize2, Minimize2 } from 'lucide-react';
 
 export default function PlayerControls({
   currentSong,
@@ -29,7 +29,10 @@ export default function PlayerControls({
   formatTime,
   albumInfo,
   isLoadingAlbum,
-  onAlbumClick
+  onAlbumClick,
+  isMaximized,
+  isFullscreen,
+  onToggleFullscreen
 }) {
   const [isSubtitleHovered, setIsSubtitleHovered] = useState(false);
   const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
@@ -171,6 +174,17 @@ export default function PlayerControls({
               onMouseEnter={() => setIsVolumeHovered(true)}
               onMouseLeave={() => setIsVolumeHovered(false)}
             >
+              {(isMaximized || isFullscreen) && (
+                <button 
+                  className="btn btn-icon" 
+                  style={{ border: 'none', background: 'transparent' }} 
+                  onClick={onToggleFullscreen}
+                  title={isFullscreen ? "Exit Fullscreen (Esc)" : "Fullscreen Video"}
+                >
+                  {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                </button>
+              )}
+
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                 {/* Floating % tooltip — appears above speaker on hover */}
                 <div style={{

@@ -1,13 +1,13 @@
-import React, { useImperativeHandle } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
 import PlayerControls from './PlayerControls';
-import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X } from 'lucide-react';
+import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Maximize2, Minimize2 } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
 
 const Player = React.forwardRef(function Player({ 
-  currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isVideoHidden,
+  currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded,
   albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer
 }, ref) {
@@ -24,6 +24,33 @@ const Player = React.forwardRef(function Player({
     repeatMode,
     onSongEnded
   });
+
+  const [showFullscreenControls, setShowFullscreenControls] = useState(true);
+  const fullscreenTimerRef = useRef(null);
+
+  const resetFullscreenTimer = useCallback(() => {
+    setShowFullscreenControls(true);
+    if (fullscreenTimerRef.current) {
+      clearTimeout(fullscreenTimerRef.current);
+    }
+    fullscreenTimerRef.current = setTimeout(() => {
+      if (!core.isDragging && !core.isCaptionMenuOpen) {
+        setShowFullscreenControls(false);
+      }
+    }, 2500);
+  }, [core.isDragging, core.isCaptionMenuOpen]);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      resetFullscreenTimer();
+    } else {
+      setShowFullscreenControls(true);
+      if (fullscreenTimerRef.current) clearTimeout(fullscreenTimerRef.current);
+    }
+    return () => {
+      if (fullscreenTimerRef.current) clearTimeout(fullscreenTimerRef.current);
+    };
+  }, [isFullscreen, resetFullscreenTimer]);
 
   useImperativeHandle(ref, () => ({
     togglePlay: core.togglePlay,
@@ -49,35 +76,70 @@ const Player = React.forwardRef(function Player({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: isMaximized ? 1 : 'none', overflow: 'hidden', minHeight: 0 }}>
+    <div 
+      onMouseMove={isFullscreen ? resetFullscreenTimer : undefined}
+      onMouseEnter={isFullscreen ? resetFullscreenTimer : undefined}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flex: (isMaximized || isFullscreen) ? 1 : 'none',
+        overflow: 'hidden',
+        minHeight: 0,
+        width: '100%',
+        height: isFullscreen ? '100%' : 'auto',
+        position: isFullscreen ? 'relative' : 'static',
+        cursor: isFullscreen ? (showFullscreenControls || core.isDragging ? 'default' : 'none') : 'default'
+      }}
+    >
       {/* Video area wrapper — must be a sized flex container so height:100% resolves on child */}
-      <div style={{ flex: isMaximized ? 1 : 'none', height: isMaximized ? 0 : 'auto', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0, overflow: 'hidden', containerType: isMaximized ? 'size' : 'normal' }}>
+      <div style={{
+        flex: (isMaximized || isFullscreen) ? 1 : 'none',
+        height: (isMaximized || isFullscreen) ? 0 : 'auto',
+        width: '100%',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        minHeight: 0,
+        overflow: 'hidden',
+        containerType: (isMaximized || isFullscreen) ? 'size' : 'normal',
+        background: isFullscreen ? '#000' : 'transparent'
+      }}>
         <div 
           onMouseEnter={() => core.setIsVideoHovered(true)}
           onMouseLeave={() => { core.setIsVideoHovered(false); core.setIsCaptionMenuOpen(false); }}
-          style={isMaximized ? {
-          /* Maximized: Use container queries to guarantee exact 16:9 fit within the parent without black bars */
-          width: '100cqw',
-          maxWidth: 'calc(100cqh * (16 / 9))',
-          aspectRatio: '16 / 9',
-          position: 'relative',
-          background: '#000',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          opacity: isVideoHidden ? 0 : 1,
-          transition: 'opacity 0.15s ease',
-        } : {
-          /* Default (normal window): stretch to 100% width and maintain exactly 16:9 height natively */
-          width: '100%',
-          height: 'auto',
-          aspectRatio: '16 / 9',
-          position: 'relative',
-          background: '#000',
-          borderRadius: '12px',
-          overflow: 'hidden',
-          opacity: isVideoHidden ? 0 : 1,
-          transition: 'opacity 0.15s ease',
-        }}>
+          style={isFullscreen ? {
+            width: '100cqw',
+            maxWidth: 'calc(100cqh * (16 / 9))',
+            aspectRatio: '16 / 9',
+            position: 'relative',
+            background: '#000',
+            borderRadius: 0,
+            overflow: 'hidden',
+            opacity: isVideoHidden ? 0 : 1,
+            transition: 'opacity 0.15s ease'
+          } : isMaximized ? {
+            /* Maximized: Use container queries to guarantee exact 16:9 fit within the parent without black bars */
+            width: '100cqw',
+            maxWidth: 'calc(100cqh * (16 / 9))',
+            aspectRatio: '16 / 9',
+            position: 'relative',
+            background: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            opacity: isVideoHidden ? 0 : 1,
+            transition: 'opacity 0.15s ease',
+          } : {
+            /* Default (normal window): stretch to 100% width and maintain exactly 16:9 height natively */
+            width: '100%',
+            height: 'auto',
+            aspectRatio: '16 / 9',
+            position: 'relative',
+            background: '#000',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            opacity: isVideoHidden ? 0 : 1,
+            transition: 'opacity 0.15s ease',
+          }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
             {currentSong && !currentSong.is_local && !core.streamUrl && !core.isExtractingStream && (
@@ -120,7 +182,7 @@ const Player = React.forwardRef(function Player({
                 />
               </>
             )}
-            {core.captions.length > 0 && !isMiniPlayer && (
+            {core.captions.length > 0 && !isMiniPlayer && !isFullscreen && (
               <div
                 style={{
                   position: 'absolute',
@@ -307,11 +369,272 @@ const Player = React.forwardRef(function Player({
           )}
 
           {/* Invisible overlay */}
-          {!isMiniPlayer && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+          {!isMiniPlayer && !isFullscreen && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
         </div>
       </div>
 
-      {!isMiniPlayer && (
+      {/* Fullscreen Overlay HUD */}
+      {isFullscreen && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 50,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            pointerEvents: (showFullscreenControls || core.isDragging || core.isCaptionMenuOpen) ? 'auto' : 'none',
+            opacity: (showFullscreenControls || core.isDragging || core.isCaptionMenuOpen) ? 1 : 0,
+            transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }}
+        >
+          {/* Top Bar */}
+          <div style={{
+            padding: '24px 32px',
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0) 100%)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '80%' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 600, color: '#fff', textShadow: '0 2px 8px rgba(0,0,0,0.8)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {currentSong ? currentSong.title : ''}
+              </h2>
+              <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.75)', textShadow: '0 1px 4px rgba(0,0,0,0.8)' }}>
+                {albumInfo?.artist || (currentSong?.channel || '').replace(/\s*-\s*Topic$/i, '').trim()}
+                {albumInfo?.album ? ` · ${albumInfo.album}` : ''}
+              </div>
+            </div>
+            <button
+              className="btn btn-icon"
+              onClick={onToggleFullscreen}
+              title="Exit Fullscreen (Esc)"
+              style={{
+                background: 'rgba(0, 0, 0, 0.6)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.2)',
+                backdropFilter: 'blur(8px)',
+                borderRadius: '50%',
+                padding: '10px'
+              }}
+            >
+              <Minimize2 size={20} />
+            </button>
+          </div>
+
+          {/* Center clickable zone */}
+          <div 
+            style={{ flex: 1, cursor: (showFullscreenControls || core.isDragging) ? 'pointer' : 'none' }}
+            onClick={() => core.togglePlay()}
+          />
+
+          {/* Bottom Bar HUD */}
+          <div style={{
+            padding: '20px 32px 32px 32px',
+            background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 60%, rgba(0,0,0,0) 100%)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px'
+          }}>
+            {/* Seekbar */}
+            <div className="seek-bar-container" style={{ color: '#fff', fontSize: '0.85rem' }}>
+              <span>{core.formatTime(core.currentTime)}</span>
+              <input 
+                type="range" 
+                className="seek-bar"
+                min={0} 
+                max={core.duration || 100} 
+                value={core.currentTime}
+                onChange={core.handleSeekChange}
+                onMouseDown={core.handleSeekMouseDown}
+                onMouseUp={core.handleSeekMouseUp}
+                onTouchStart={core.handleSeekMouseDown}
+                onTouchEnd={core.handleSeekMouseUp}
+                disabled={!currentSong}
+                style={{
+                  background: `linear-gradient(to right, var(--accent-color) ${(core.currentTime / (core.duration || 1)) * 100}%, rgba(255,255,255,0.2) ${(core.currentTime / (core.duration || 1)) * 100}%)`
+                }}
+              />
+              <span>{core.formatTime(core.duration)}</span>
+            </div>
+
+            {/* Controls Row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button 
+                  className="btn btn-icon" 
+                  onClick={onToggleShuffle} 
+                  style={{ 
+                    color: isShuffle ? 'var(--bg-color)' : '#fff',
+                    background: isShuffle ? 'var(--text-main)' : 'rgba(255,255,255,0.1)',
+                    padding: '8px'
+                  }}
+                  title="Shuffle"
+                >
+                  <Shuffle size={20} />
+                </button>
+                <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Previous">
+                  <SkipBack size={22} />
+                </button>
+                <button 
+                  className="btn btn-icon btn-primary" 
+                  onClick={core.togglePlay} 
+                  disabled={!currentSong || core.isBuffering} 
+                  style={{ padding: '12px', background: 'var(--accent-color)', color: '#fff', borderRadius: '50%' }}
+                  title={core.isPlaying ? "Pause" : "Play"}
+                >
+                  {core.isBuffering ? <Loader2 size={24} className="animate-spin" /> : (core.isPlaying ? <Pause size={24} /> : <Play size={24} />)}
+                </button>
+                <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Next">
+                  <SkipForward size={22} />
+                </button>
+                <button 
+                  className="btn btn-icon" 
+                  onClick={onToggleRepeat} 
+                  style={{ 
+                    color: repeatMode > 0 ? 'var(--bg-color)' : '#fff',
+                    background: repeatMode > 0 ? 'var(--text-main)' : 'rgba(255,255,255,0.1)',
+                    padding: '8px'
+                  }}
+                  title="Repeat"
+                >
+                  {repeatMode === 2 ? <Repeat1 size={20} /> : <Repeat size={20} />}
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                {/* Subtitles / Captions toggle in Fullscreen */}
+                {core.captions.length > 0 && (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      className="btn btn-icon"
+                      onClick={() => core.setIsCaptionMenuOpen(!core.isCaptionMenuOpen)}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        color: core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
+                        padding: '8px'
+                      }}
+                      title="Subtitles"
+                    >
+                      <Subtitles size={20} />
+                    </button>
+                    {core.isCaptionMenuOpen && (
+                      <div style={{
+                        position: 'absolute',
+                        bottom: '100%',
+                        right: 0,
+                        marginBottom: '8px',
+                        background: 'rgba(20, 20, 20, 0.95)',
+                        backdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(255,255,255,0.15)',
+                        borderRadius: '8px',
+                        padding: '4px',
+                        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+                        minWidth: '130px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        zIndex: 100
+                      }}>
+                        <button 
+                          onClick={() => core.selectCaption(null)}
+                          style={{
+                            background: !core.activeCaptionCode ? 'var(--accent-color)' : 'transparent',
+                            color: '#fff',
+                            padding: '6px 12px',
+                            border: 'none',
+                            borderRadius: '4px',
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem'
+                          }}
+                        >Off</button>
+                        {core.captions.map(c => (
+                          <button
+                            key={c.languageCode}
+                            onClick={() => core.selectCaption(c.languageCode)}
+                            style={{
+                              background: core.activeCaptionCode === c.languageCode ? 'var(--accent-color)' : 'transparent',
+                              color: '#fff',
+                              padding: '6px 12px',
+                              border: 'none',
+                              borderRadius: '4px',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              fontSize: '0.85rem',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {c.languageName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Exit Fullscreen button */}
+                <button
+                  className="btn btn-icon"
+                  onClick={onToggleFullscreen}
+                  title="Exit Fullscreen (Esc)"
+                  style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }}
+                >
+                  <Minimize2 size={20} />
+                </button>
+
+                {/* Volume */}
+                <div
+                  style={{ display: 'flex', gap: '6px', alignItems: 'center' }}
+                  onMouseEnter={() => core.setIsVolumeHovered(true)}
+                  onMouseLeave={() => core.setIsVolumeHovered(false)}
+                >
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <div style={{
+                      position: 'absolute',
+                      top: '-28px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      fontSize: '0.75rem',
+                      color: '#fff',
+                      background: 'rgba(0,0,0,0.8)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: '4px',
+                      padding: '2px 6px',
+                      pointerEvents: 'none',
+                      whiteSpace: 'nowrap',
+                      opacity: core.isVolumeHovered ? 1 : 0,
+                      transition: 'opacity 0.15s ease',
+                      zIndex: 10,
+                    }}>
+                      {core.isMuted ? 0 : core.masterVolume}%
+                    </div>
+                    <button className="btn btn-icon" style={{ border: 'none', background: 'transparent', color: '#fff', padding: '6px' }} onClick={core.toggleMute} title="Mute/Unmute">
+                      {core.isMuted || core.masterVolume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
+                    </button>
+                  </div>
+                  <input
+                    type="range"
+                    className="seek-bar"
+                    min="0"
+                    max="100"
+                    value={core.isMuted ? 0 : core.masterVolume}
+                    onChange={core.handleVolumeChange}
+                    style={{
+                      width: '90px',
+                      background: `linear-gradient(to right, var(--accent-color) ${core.isMuted ? 0 : core.masterVolume}%, rgba(255,255,255,0.2) ${core.isMuted ? 0 : core.masterVolume}%)`
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isMiniPlayer && !isFullscreen && (
         <PlayerControls
           currentSong={currentSong}
           isPlaying={core.isPlaying}
@@ -341,6 +664,9 @@ const Player = React.forwardRef(function Player({
           albumInfo={albumInfo}
           isLoadingAlbum={isLoadingAlbum}
           onAlbumClick={onAlbumClick}
+          isMaximized={isMaximized}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={onToggleFullscreen}
         />
       )}
     </div>

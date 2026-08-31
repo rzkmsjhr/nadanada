@@ -4,17 +4,23 @@ export function useKeyboardShortcuts({
   playerRef,
   handleNext,
   handlePrevious,
-  handleToggleSearch
+  handleToggleSearch,
+  isFullscreen,
+  toggleFullscreen
 }) {
   // Stable refs for next/prev/toggle so the keyboard handler never becomes stale
   const handleNextRef = useRef(handleNext);
   const handlePreviousRef = useRef(handlePrevious);
   const handleToggleSearchRef = useRef(handleToggleSearch);
+  const isFullscreenRef = useRef(isFullscreen);
+  const toggleFullscreenRef = useRef(toggleFullscreen);
 
   // Keep refs current
   handleNextRef.current = handleNext;
   handlePreviousRef.current = handlePrevious;
   handleToggleSearchRef.current = handleToggleSearch;
+  isFullscreenRef.current = isFullscreen;
+  toggleFullscreenRef.current = toggleFullscreen;
 
   useEffect(() => {
     const handleKeyDown = e => {
@@ -23,6 +29,12 @@ export function useKeyboardShortcuts({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
       
       switch (e.key) {
+        case 'Escape':
+          if (isFullscreenRef.current) {
+            e.preventDefault();
+            toggleFullscreenRef.current?.(false);
+          }
+          break;
         case ' ':
           e.preventDefault();
           playerRef.current?.togglePlay();
@@ -39,11 +51,15 @@ export function useKeyboardShortcuts({
         case 'M':
           playerRef.current?.toggleMute();
           break;
+        case 's':
+        case 'S':
+          e.preventDefault();
+          handleToggleSearchRef.current?.();
+          break;
         case 'f':
         case 'F':
           e.preventDefault();
-          // Toggle search view
-          handleToggleSearchRef.current?.();
+          toggleFullscreenRef.current?.();
           break;
         default:
           break;

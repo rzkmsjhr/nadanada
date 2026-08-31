@@ -116,7 +116,9 @@ function App() {
     isVideoHidden,
     isReconnecting,
     isMiniPlayer,
-    toggleMiniPlayer
+    toggleMiniPlayer,
+    isFullscreen,
+    toggleFullscreen
   } = useSystemIntegration(appWindow, setShowClosePrompt);
 
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
@@ -342,7 +344,9 @@ function App() {
     playerRef,
     handleNext,
     handlePrevious,
-    handleToggleSearch
+    handleToggleSearch,
+    isFullscreen,
+    toggleFullscreen
   });
 
   const SHARPS_MAP = {
@@ -389,10 +393,10 @@ function App() {
 
   return (
     <AppContext.Provider value={contextValue}>
-      <div className={`app-container ${isMiniPlayer ? 'mini-player-mode' : ''}`} style={{
+      <div className={`app-container ${isMiniPlayer ? 'mini-player-mode' : ''} ${isFullscreen ? 'fullscreen-mode' : ''}`} style={{
     position: 'relative',
     width: '100vw',
-    background: isMiniPlayer ? 'transparent' : 'var(--bg-color)',
+    background: isMiniPlayer ? 'transparent' : isFullscreen ? '#000' : 'var(--bg-color)',
     height: '100vh',
     display: 'flex',
     flexDirection: 'column',
@@ -402,16 +406,26 @@ function App() {
 
 
       {/* Invisible Resize Borders */}
-      {!isMaximized && !isMiniPlayer && <WindowBorders appWindow={appWindow} />}
+      {!isMaximized && !isMiniPlayer && !isFullscreen && <WindowBorders appWindow={appWindow} />}
 
       {/* Native/Custom Titlebar */}
-      {!isMiniPlayer && <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />}
+      {!isMiniPlayer && !isFullscreen && <Titlebar appWindow={appWindow} onToggleMiniPlayer={toggleMiniPlayer} isMiniPlayer={isMiniPlayer} />}
 
       {/* ── UNIFIED MAIN CONTENT ──
-          Single JSX tree — styles switch via isMaximized.
-          Player is rendered ONCE and stays mounted across maximize/restore
+          Single JSX tree — styles switch via isMaximized and isFullscreen.
+          Player is rendered ONCE and stays mounted across maximize/restore/fullscreen
           so the song never restarts. ── */}
-      <div style={isMaximized ? {
+      <div style={isFullscreen ? {
+      display: 'flex',
+      flex: 1,
+      width: '100vw',
+      height: '100vh',
+      position: 'absolute',
+      inset: 0,
+      minHeight: 0,
+      overflow: 'hidden',
+      background: '#000'
+    } : isMaximized ? {
       display: 'flex',
       flex: 1,
       gap: '12px',
@@ -426,7 +440,16 @@ function App() {
     }}>
 
         {/* ── Player Panel ── */}
-        <div className={isMaximized ? 'glass-panel' : isMiniPlayer ? '' : 'top-section glass-panel'} style={isMaximized ? {
+        <div className={isFullscreen ? '' : isMaximized ? 'glass-panel' : isMiniPlayer ? '' : 'top-section glass-panel'} style={isFullscreen ? {
+        flex: 1,
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: 0,
+        overflow: 'hidden',
+        minHeight: 0
+      } : isMaximized ? {
         flex: '0 0 70%',
         display: 'flex',
         flexDirection: 'column',
@@ -436,7 +459,7 @@ function App() {
       } : isMiniPlayer ? { flex: 1, display: 'flex', flexDirection: 'column' } : topPanelStyle}>
           <div style={{
           display: 'grid',
-          gridTemplateRows: (showSearch && !isMaximized) || isMiniPlayer ? '0fr' : '1fr',
+          gridTemplateRows: (showSearch && !isMaximized) || isMiniPlayer || isFullscreen ? '0fr' : '1fr',
           transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
             <div style={{
@@ -466,7 +489,16 @@ function App() {
           </div>
 
           {/* Player — ONE instance, never remounts */}
-          <div style={isMaximized ? {
+          <div style={isFullscreen ? {
+          flex: 1,
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          overflow: 'hidden',
+          padding: 0
+        } : isMaximized ? {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
@@ -479,7 +511,7 @@ function App() {
           minHeight: 0,
           flex: isMiniPlayer ? 1 : 'unset'
         }}>
-            <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={handleTimeUpdate} onError={setGlobalError} isMaximized={isMaximized} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
+            <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={handleTimeUpdate} onError={setGlobalError} isMaximized={isMaximized} isFullscreen={isFullscreen} onToggleFullscreen={toggleFullscreen} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
             const newVal = !isShuffle;
             setIsShuffle(newVal);
             if (newVal) setIsEndlessPlay(false);
@@ -489,7 +521,7 @@ function App() {
         </div>
 
         {/* ── Playlist Panel ── */}
-        {!isMiniPlayer && (
+        {!isMiniPlayer && !isFullscreen && (
         <div className="bottom-section glass-panel" style={isMaximized ? {
         flex: '0 0 calc(30% - 12px)',
         display: 'flex',

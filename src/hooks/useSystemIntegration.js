@@ -9,14 +9,20 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const isMiniPlayerRef = useRef(false);
+  const isFullscreenRef = useRef(false);
   const isMaximizedRef = useRef(false);
   const prevSizeRef = useRef(null);
 
-  // Sync ref with state
+  // Sync refs with state
   useEffect(() => {
     isMiniPlayerRef.current = isMiniPlayer;
   }, [isMiniPlayer]);
+
+  useEffect(() => {
+    isFullscreenRef.current = isFullscreen;
+  }, [isFullscreen]);
 
   useEffect(() => {
     // Sync initial maximized state (no animation needed on load)
@@ -119,7 +125,20 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     setTheme(themes[nextIndex]);
   };
 
+  const toggleFullscreen = async (forceValue) => {
+    const nextVal = typeof forceValue === 'boolean' ? forceValue : !isFullscreen;
+    setIsFullscreen(nextVal);
+    try {
+      await appWindow.setFullscreen(nextVal);
+    } catch (err) {
+      console.warn("Native fullscreen toggle failed, using in-app fullscreen layout:", err);
+    }
+  };
+
   const toggleMiniPlayer = async () => {
+    if (isFullscreen) {
+      await toggleFullscreen(false);
+    }
     if (isMiniPlayer) {
       setIsMiniPlayer(false);
       try {
@@ -169,6 +188,9 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     isVideoHidden,
     isReconnecting,
     isMiniPlayer,
-    toggleMiniPlayer
+    toggleMiniPlayer,
+    isFullscreen,
+    setIsFullscreen,
+    toggleFullscreen
   };
 }

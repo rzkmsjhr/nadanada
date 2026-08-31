@@ -591,7 +591,17 @@ body {
 }
 
 
-.app-container:not(.mini-player-mode) { min-height: 580px; }
+.app-container:not(.mini-player-mode):not(.fullscreen-mode) { min-height: 580px; }
+
+.fullscreen-mode {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  background: #000 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
 
 .mini-player-mode { opacity: 0.25; transition: opacity 0.2s ease; }
 
