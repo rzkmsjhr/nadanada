@@ -51,7 +51,9 @@ export function usePlayerCore({
   const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
     const saved = localStorage.getItem('nadanada-crossfade-duration');
     const parsed = saved !== null ? parseInt(saved, 10) : 3;
-    return isNaN(parsed) ? 3 : Math.max(0, Math.min(5, parsed));
+    let val = isNaN(parsed) ? 3 : Math.max(0, Math.min(6, parsed));
+    if (val === 1) val = 2; // Auto-migrate 1s to 2s
+    return val;
   });
 
   const crossfadeDuration = externalCrossfadeDuration !== undefined ? externalCrossfadeDuration : internalCrossfadeDuration;
@@ -67,7 +69,7 @@ export function usePlayerCore({
   }, [crossfadeDuration]);
 
   const toggleCrossfade = () => {
-    const options = [0, 1, 2, 3, 4, 5];
+    const options = [0, 2, 3, 4, 5, 6];
     const currentIndex = options.indexOf(crossfadeDuration);
     const nextVal = currentIndex === -1 ? 3 : options[(currentIndex + 1) % options.length];
     setCrossfadeDuration(nextVal);

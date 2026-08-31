@@ -151,15 +151,21 @@ export default function SettingsModal({
           <input
             type="range"
             min="0"
-            max="5"
+            max="6"
             step="1"
             value={crossfadeDuration || 0}
-            onChange={(e) => setCrossfadeDuration && setCrossfadeDuration(Number(e.target.value))}
+            onChange={(e) => {
+              let val = Number(e.target.value);
+              if (val === 1) {
+                val = (crossfadeDuration === 0) ? 2 : 0;
+              }
+              if (setCrossfadeDuration) setCrossfadeDuration(val);
+            }}
             className="seek-bar"
             style={{
               width: '100%',
               accentColor: 'var(--accent-color)',
-              background: `linear-gradient(to right, var(--accent-color) ${((crossfadeDuration || 0) / 5) * 100}%, var(--panel-border) ${((crossfadeDuration || 0) / 5) * 100}%)`,
+              background: `linear-gradient(to right, var(--accent-color) ${((crossfadeDuration || 0) / 6) * 100}%, var(--panel-border) ${((crossfadeDuration || 0) / 6) * 100}%)`,
               cursor: 'pointer'
             }}
           />
