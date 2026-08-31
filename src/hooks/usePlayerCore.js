@@ -170,14 +170,26 @@ export function usePlayerCore({
     applyDeckVolume(outgoingDeck, startVol);
     applyDeckVolume(incomingDeck, 0);
 
-    // If we preloaded the deck, it's currently paused at 0:00. Start playing!
+    const startSecs = Math.floor(crossfadeSongRef.current?.startSeconds || crossfadeSongRef.current?.initialTime || 0);
+
+    // If we preloaded the deck, it's currently paused. Seek to correct start time and start playing!
     const audioEl = document.getElementById(`deck-${incomingDeck}-audio`);
-    if (audioEl) { try { audioEl.play(); } catch(e) {} }
-    
+    if (audioEl) { 
+      try { 
+        audioEl.currentTime = startSecs;
+        audioEl.play(); 
+      } catch(e) {} 
+    }
     if (incomingDeck === 0 && deck0PlayerRef.current) {
-      try { deck0PlayerRef.current.playVideo(); } catch(e) {}
+      try { 
+        deck0PlayerRef.current.seekTo(startSecs, true);
+        deck0PlayerRef.current.playVideo(); 
+      } catch(e) {}
     } else if (incomingDeck === 1 && deck1PlayerRef.current) {
-      try { deck1PlayerRef.current.playVideo(); } catch(e) {}
+      try { 
+        deck1PlayerRef.current.seekTo(startSecs, true);
+        deck1PlayerRef.current.playVideo(); 
+      } catch(e) {}
     }
 
     crossfadeIntervalRef.current = setInterval(() => {
@@ -758,7 +770,6 @@ export function usePlayerCore({
         console.log(`[CROSSFADE-DEBUG] ✅ Preload finished on deck ${deckIndex}, pausing until ramp`);
         try { 
           event.target.pauseVideo();
-          event.target.seekTo(0, true);
         } catch (e) {}
         isPreloadingNextRef.current = false;
         hasPreloadedNextRef.current = true;
@@ -789,40 +800,40 @@ export function usePlayerCore({
 
   const handleTrackEnd = () => {
     if (repeatMode === 1) {
-      setCurrentTime(0);
+      setCurrentTime(startSecs);
       hasTriggeredEndCrossfadeRef.current = false;
-      if (onTimeUpdate) onTimeUpdate(0);
+      if (onTimeUpdate) onTimeUpdate(startSecs);
       
       const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
       if (streamUrl || (currentSong && currentSong.is_local)) {
         const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
         if (audioEl) { 
-          audioEl.currentTime = 0; 
+          audioEl.currentTime = startSecs; 
           audioEl.play(); 
           if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
         }
       } else if (activePlayer) {
-        activePlayer.seekTo(0, true);
+        activePlayer.seekTo(startSecs, true);
         activePlayer.playVideo();
         if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
       }
     } else if (repeatMode === 2) {
       if (playCount < 1) {
         setPlayCount(1);
-        setCurrentTime(0);
+        setCurrentTime(startSecs);
         hasTriggeredEndCrossfadeRef.current = false;
-        if (onTimeUpdate) onTimeUpdate(0);
+        if (onTimeUpdate) onTimeUpdate(startSecs);
         
         const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
         if (streamUrl || (currentSong && currentSong.is_local)) {
           const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
           if (audioEl) { 
-            audioEl.currentTime = 0; 
+            audioEl.currentTime = startSecs; 
             audioEl.play(); 
             if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
           }
         } else if (activePlayer) {
-          activePlayer.seekTo(0, true);
+          activePlayer.seekTo(startSecs, true);
           activePlayer.playVideo();
           if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
         }
