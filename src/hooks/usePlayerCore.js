@@ -260,6 +260,7 @@ export function usePlayerCore({
     setIsCrossfading(false);
     isCrossfadingRef.current = false;
     crossfadeSongRef.current = null;
+    setPlayCount(0);
 
     if (incomingSong) {
       justCrossfadedSongIdRef.current = incomingSong.id;
@@ -317,12 +318,15 @@ export function usePlayerCore({
   };
 
   const checkAutoCrossfade = (time, dur) => {
+    const isLoopingCurrentTrack = repeatMode === 1 || (repeatMode === 2 && playCount < 1);
+
     if (
       crossfadeDuration > 0 &&
       dur > 10 &&
       time > 0 &&
       nextSong &&
-      (hasNext || repeatMode > 0)
+      !isLoopingCurrentTrack &&
+      hasNext
     ) {
       const remaining = dur - time;
       

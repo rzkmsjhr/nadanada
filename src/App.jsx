@@ -338,6 +338,7 @@ function App() {
     repeatMode, setRepeatMode,
     isShuffle, setIsShuffle,
     shuffleHistory, setShuffleHistory,
+    upcomingShuffleIndex,
     handleNext, handlePrevious
   } = usePlayback({
     playlist,
@@ -349,6 +350,9 @@ function App() {
     setRestoredSong,
     playerRef
   });
+
+  const trueNextSongIndex = isShuffle ? upcomingShuffleIndex : currentIndex + 1;
+  const trueNextSong = trueNextSongIndex !== null && trueNextSongIndex < playlist.length ? playlist[trueNextSongIndex] : null;
 
 
 
@@ -530,7 +534,7 @@ function App() {
               ref={playerRef} 
               currentSong={currentSong} 
               isSearchExpanded={showSearch && !isMaximized} 
-              nextSong={playlist[currentIndex + 1]} 
+              nextSong={trueNextSong} 
               onNext={handleNext} 
               onPrevious={handlePrevious} 
               hasNext={isShuffle || currentIndex < playlist.length - 1} 

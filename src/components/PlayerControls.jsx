@@ -159,7 +159,7 @@ export default function PlayerControls({
               <button 
                 className="btn btn-icon" 
                 onClick={onToggleRepeat} 
-                title={repeatMode === 2 ? "Repeat Track Once" : repeatMode === 1 ? "Repeat Playlist Infinitely" : "Repeat: Off"}
+                title={repeatMode === 2 ? "Repeat Track Once" : repeatMode === 1 ? "Repeat Track Infinitely" : "Repeat: Off"}
                 style={{ 
                   color: repeatMode > 0 ? 'var(--bg-color)' : 'var(--text-muted)',
                   background: repeatMode > 0 ? 'var(--text-main)' : 'transparent',

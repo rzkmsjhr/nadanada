@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export function usePlayback({
   playlist,
@@ -13,6 +13,19 @@ export function usePlayback({
   const [repeatMode, setRepeatMode] = useState(0); // 0=off, 1=repeat, 2=repeat once
   const [isShuffle, setIsShuffle] = useState(false);
   const [shuffleHistory, setShuffleHistory] = useState([]);
+  const [upcomingShuffleIndex, setUpcomingShuffleIndex] = useState(null);
+
+  useEffect(() => {
+    if (isShuffle && playlist.length > 1) {
+      let nextIdx;
+      do {
+        nextIdx = Math.floor(Math.random() * playlist.length);
+      } while (nextIdx === currentIndex);
+      setUpcomingShuffleIndex(nextIdx);
+    } else {
+      setUpcomingShuffleIndex(null);
+    }
+  }, [isShuffle, currentIndex, playlist.length]);
 
   const safeFadeOut = async (durationMs = 180) => {
     if (playerRef?.current && typeof playerRef.current.fadeOut === 'function') {
@@ -30,15 +43,20 @@ export function usePlayback({
     }
     if (isShuffle) {
       if (playlist.length <= 1) return;
-      let nextIdx;
-      do {
-        nextIdx = Math.floor(Math.random() * playlist.length);
-      } while (nextIdx === currentIndex);
       
       if (playlist[currentIndex]) {
         setShuffleHistory(prev => [...prev, playlist[currentIndex].id]);
       }
-      setCurrentIndex(nextIdx);
+      
+      if (upcomingShuffleIndex !== null) {
+        setCurrentIndex(upcomingShuffleIndex);
+      } else {
+        let nextIdx;
+        do {
+          nextIdx = Math.floor(Math.random() * playlist.length);
+        } while (nextIdx === currentIndex);
+        setCurrentIndex(nextIdx);
+      }
     } else {
       if (currentIndex < playlist.length - 1) {
         setCurrentIndex(currentIndex + 1);
@@ -91,6 +109,7 @@ export function usePlayback({
     repeatMode, setRepeatMode,
     isShuffle, setIsShuffle,
     shuffleHistory, setShuffleHistory,
+    upcomingShuffleIndex,
     handleNext, handlePrevious
   };
 }
