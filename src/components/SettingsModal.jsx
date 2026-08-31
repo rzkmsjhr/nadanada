@@ -151,21 +151,19 @@ export default function SettingsModal({
           <input
             type="range"
             min="0"
-            max="6"
+            max="5"
             step="1"
-            value={crossfadeDuration || 0}
+            value={crossfadeDuration === 0 ? 0 : crossfadeDuration - 1}
             onChange={(e) => {
-              let val = Number(e.target.value);
-              if (val === 1) {
-                val = (crossfadeDuration === 0) ? 2 : 0;
-              }
+              const idx = Number(e.target.value);
+              const val = idx === 0 ? 0 : idx + 1;
               if (setCrossfadeDuration) setCrossfadeDuration(val);
             }}
             className="seek-bar"
             style={{
               width: '100%',
               accentColor: 'var(--accent-color)',
-              background: `linear-gradient(to right, var(--accent-color) ${((crossfadeDuration || 0) / 6) * 100}%, var(--panel-border) ${((crossfadeDuration || 0) / 6) * 100}%)`,
+              background: `linear-gradient(to right, var(--accent-color) ${((crossfadeDuration === 0 ? 0 : crossfadeDuration - 1) / 5) * 100}%, var(--panel-border) ${((crossfadeDuration === 0 ? 0 : crossfadeDuration - 1) / 5) * 100}%)`,
               cursor: 'pointer'
             }}
           />
@@ -179,11 +177,11 @@ export default function SettingsModal({
             userSelect: 'none'
           }}>
             <span>Off</span>
-            <span>1s</span>
             <span>2s</span>
             <span>3s</span>
             <span>4s</span>
             <span>5s</span>
+            <span>6s</span>
           </div>
         </div>
       </div>
