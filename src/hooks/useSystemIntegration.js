@@ -183,7 +183,7 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
   };
 
   return {
-    theme, toggleTheme,
+    theme, setTheme, toggleTheme,
     isMaximized,
     isVideoHidden,
     isReconnecting,

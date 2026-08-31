@@ -1,5 +1,5 @@
 import React from 'react';
-import { ListMusic, Palette } from 'lucide-react';
+import { ListMusic, Settings } from 'lucide-react';
 import ChordDisplay from './ChordDisplay';
 
 export default function PlayerHeader({
@@ -20,7 +20,7 @@ export default function PlayerHeader({
   playlist,
   currentIndex,
   isFetchingEndless,
-  toggleTheme
+  onOpenSettings
 }) {
   return (
     <header className="header" style={isMaximized ? {
@@ -208,11 +208,17 @@ export default function PlayerHeader({
         }}>
           <ListMusic size={20} />
         </button>
-        <button className="btn btn-icon" onClick={toggleTheme} title="Switch Theme" style={{
-          background: 'transparent',
-          boxShadow: 'none'
-        }}>
-          <Palette size={20} />
+
+        <button 
+          className="btn btn-icon" 
+          onClick={onOpenSettings} 
+          title="Settings (Theme & Crossfade)" 
+          style={{
+            background: 'transparent',
+            boxShadow: 'none'
+          }}
+        >
+          <Settings size={20} />
         </button>
       </div>
     </header>

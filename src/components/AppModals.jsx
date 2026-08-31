@@ -7,6 +7,7 @@ import LoadPlaylistModal from './modals/LoadPlaylistModal';
 import AddToPlaylistModal from './modals/AddToPlaylistModal';
 import ErrorModal from './modals/ErrorModal';
 import SuccessModal from './modals/SuccessModal';
+import SettingsModal from './SettingsModal';
 import { useAppContext } from '../context/AppContext';
 
 export default function AppModals() {
@@ -38,11 +39,25 @@ export default function AppModals() {
     setSuccessMessage,
     globalError,
     setGlobalError,
-    successMessage
+    successMessage,
+    showSettings,
+    setShowSettings,
+    theme,
+    setTheme,
+    crossfadeDuration,
+    setCrossfadeDuration
   } = useAppContext();
   return (
     <>
-      {showWelcome && <WelcomeModal onClose={() => setShowWelcome(false)} />}
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          theme={theme}
+          setTheme={setTheme}
+          crossfadeDuration={crossfadeDuration}
+          setCrossfadeDuration={setCrossfadeDuration}
+        />
+      )}
 
       {showClosePrompt && <ClosePromptModal onClose={() => setShowClosePrompt(false)} />}
 

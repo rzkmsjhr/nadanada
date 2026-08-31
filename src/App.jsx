@@ -111,7 +111,7 @@ function App() {
 
   const [showClosePrompt, setShowClosePrompt] = useState(false);
   const {
-    theme, toggleTheme,
+    theme, setTheme, toggleTheme,
     isMaximized,
     isVideoHidden,
     isReconnecting,
@@ -121,6 +121,17 @@ function App() {
     toggleFullscreen
   } = useSystemIntegration(appWindow, setShowClosePrompt);
 
+  const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
+    const saved = localStorage.getItem('nadanada-crossfade-duration');
+    const parsed = saved !== null ? parseInt(saved, 10) : 3;
+    return isNaN(parsed) ? 3 : Math.max(0, Math.min(5, parsed));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-crossfade-duration', crossfadeDuration.toString());
+  }, [crossfadeDuration]);
+
+  const [showSettings, setShowSettings] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
 
   // Ref to Player's imperative handle — used by keyboard shortcuts
@@ -335,7 +346,8 @@ function App() {
     previewSong,
     setPreviewSong,
     restoredSong,
-    setRestoredSong
+    setRestoredSong,
+    playerRef
   });
 
 
@@ -388,7 +400,10 @@ function App() {
     showLoadPrompt, setShowLoadPrompt,
     importUrl, setImportUrl,
     isImporting, importProgress, handleImportPlaylist,
-    successMessage, setSuccessMessage
+    successMessage, setSuccessMessage,
+    showSettings, setShowSettings,
+    theme, setTheme,
+    crossfadeDuration, setCrossfadeDuration
   };
 
   return (
@@ -483,7 +498,7 @@ function App() {
                 playlist={playlist}
                 currentIndex={currentIndex}
                 isFetchingEndless={isFetchingEndless}
-                toggleTheme={toggleTheme}
+                onOpenSettings={() => setShowSettings(true)}
               />
             </div>
           </div>
@@ -511,12 +526,40 @@ function App() {
           minHeight: 0,
           flex: isMiniPlayer ? 1 : 'unset'
         }}>
-            <Player ref={playerRef} currentSong={currentSong} isSearchExpanded={showSearch && !isMaximized} nextSong={playlist[currentIndex + 1]} onNext={handleNext} onPrevious={handlePrevious} hasNext={isShuffle || currentIndex < playlist.length - 1} hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} onPlayStateChange={setIsAudioPlaying} onTimeUpdate={handleTimeUpdate} onError={setGlobalError} isMaximized={isMaximized} isFullscreen={isFullscreen} onToggleFullscreen={toggleFullscreen} isVideoHidden={isVideoHidden} repeatMode={repeatMode} onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} isShuffle={isShuffle} onToggleShuffle={() => {
-            const newVal = !isShuffle;
-            setIsShuffle(newVal);
-            if (newVal) setIsEndlessPlay(false);
-          }} onSongEnded={handleNext} onRestoreHandled={() => setRestoredMainTime(null)}
-            albumInfo={albumInfo} isLoadingAlbum={isLoadingAlbum} onAlbumClick={handleAlbumClick} isMiniPlayer={isMiniPlayer} onToggleMiniPlayer={toggleMiniPlayer} />
+            <Player 
+              ref={playerRef} 
+              currentSong={currentSong} 
+              isSearchExpanded={showSearch && !isMaximized} 
+              nextSong={playlist[currentIndex + 1]} 
+              onNext={handleNext} 
+              onPrevious={handlePrevious} 
+              hasNext={isShuffle || currentIndex < playlist.length - 1} 
+              hasPrevious={isShuffle ? shuffleHistory.length > 0 : currentIndex > 0} 
+              onPlayStateChange={setIsAudioPlaying} 
+              onTimeUpdate={handleTimeUpdate} 
+              onError={setGlobalError} 
+              isMaximized={isMaximized} 
+              isFullscreen={isFullscreen} 
+              onToggleFullscreen={toggleFullscreen} 
+              isVideoHidden={isVideoHidden} 
+              repeatMode={repeatMode} 
+              onToggleRepeat={() => setRepeatMode(m => (m + 1) % 3)} 
+              isShuffle={isShuffle} 
+              onToggleShuffle={() => {
+                const newVal = !isShuffle;
+                setIsShuffle(newVal);
+                if (newVal) setIsEndlessPlay(false);
+              }} 
+              onSongEnded={handleNext} 
+              onRestoreHandled={() => setRestoredMainTime(null)}
+              albumInfo={albumInfo} 
+              isLoadingAlbum={isLoadingAlbum} 
+              onAlbumClick={handleAlbumClick} 
+              isMiniPlayer={isMiniPlayer} 
+              onToggleMiniPlayer={toggleMiniPlayer} 
+              crossfadeDuration={crossfadeDuration}
+              setCrossfadeDuration={setCrossfadeDuration}
+            />
           </div>
         </div>
 

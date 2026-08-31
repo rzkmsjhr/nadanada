@@ -1,20 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { api } from '../services/api';
 
-/**
- * ProxyYouTube — drop-in replacement for react-youtube that routes the YouTube
- * iframe through a Cloudflare Worker (HTTPS) to satisfy both:
- *   1. YouTube's embed origin validation (needs a real public FQDN, rejects localhost)
- *   2. macOS WebKit mixed-content rules (blocks http:// iframes inside tauri://)
- *
- * Falls back to the local embed server (http://127.0.0.1.nip.io) if the Worker
- * is unreachable (e.g. no internet during initial load — though YouTube itself
- * also needs internet, so this is mainly a development convenience).
- *
- * The component mirrors the react-youtube API surface so Player.jsx needs minimal changes:
- *   <ProxyYouTube videoId={id} opts={opts} onReady={fn} onStateChange={fn} onError={fn} />
- */
-
 const WORKER_EMBED_URL = 'https://nadanada-yt.kdmp.workers.dev';
 
 const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptionsReceived, style, iframeClassName }) => {
@@ -22,16 +8,23 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
   const latestTime = useRef(0);
   const latestDuration = useRef(0);
 
+  const playerVars = opts?.playerVars || {};
+  const startSecs = playerVars.start || 0;
+
   const [initialVideoId] = useState(videoId);
+  const [initialStartSecs] = useState(startSecs);
 
-  // Local embed server port — kept as fallback
-  const [localPort, setLocalPort] = useState(null);
+  // Local embed server port — cached in memory for instantaneous 0ms startup
+  const [localPort, setLocalPort] = useState(() => (api.getCachedEmbedPort ? api.getCachedEmbedPort() : null));
   useEffect(() => {
-    api.getEmbedPort().then(p => setLocalPort(p)).catch(() => {});
-  }, []);
+    if (!localPort) {
+      api.getEmbedPort().then(p => {
+        if (p) setLocalPort(p);
+      }).catch(() => {});
+    }
+  }, [localPort]);
 
-  // Build a fake "player" object that mirrors the YT.Player API surface
-  // by sending postMessage commands to the iframe and returning cached values.
+  // Build fake "player" object that mirrors the YT.Player API surface
   const sendCommand = useCallback((command, extra) => {
     if (iframeRef.current && iframeRef.current.contentWindow) {
       iframeRef.current.contentWindow.postMessage({ command, ...extra }, '*');
@@ -42,18 +35,16 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     playVideo: () => sendCommand('play'),
     pauseVideo: () => sendCommand('pause'),
     stopVideo: () => sendCommand('stop'),
-    seekTo: (seconds, allowSeekAhead) => sendCommand('seekTo', { value: seconds }),
+    seekTo: (seconds) => sendCommand('seekTo', { value: seconds }),
     setVolume: (vol) => sendCommand('setVolume', { value: vol }),
     mute: () => sendCommand('mute'),
     unMute: () => sendCommand('unmute'),
-    loadVideoById: (id, startSecs) => sendCommand('loadVideoById', { videoId: id, startSeconds: startSecs }),
+    loadVideoById: (id, start) => sendCommand('loadVideoById', { videoId: id, startSeconds: start }),
     setCaption: (lang) => sendCommand('setCaption', { value: lang }),
-    // Synchronous getters return cached values updated via postMessage
     getCurrentTime: () => latestTime.current,
     getDuration: () => latestDuration.current,
   });
 
-  // Keep the sendCommand reference current
   useEffect(() => {
     playerProxy.current.playVideo = () => sendCommand('play');
     playerProxy.current.pauseVideo = () => sendCommand('pause');
@@ -62,13 +53,16 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     playerProxy.current.setVolume = (vol) => sendCommand('setVolume', { value: vol });
     playerProxy.current.mute = () => sendCommand('mute');
     playerProxy.current.unMute = () => sendCommand('unmute');
-    playerProxy.current.loadVideoById = (id, startSecs) => sendCommand('loadVideoById', { videoId: id, startSeconds: startSecs });
+    playerProxy.current.loadVideoById = (id, start) => sendCommand('loadVideoById', { videoId: id, startSeconds: start });
     playerProxy.current.setCaption = (lang) => sendCommand('setCaption', { value: lang });
   }, [sendCommand]);
 
   // Listen for postMessage events from the iframe
   useEffect(() => {
     const handler = (event) => {
+      if (iframeRef.current && iframeRef.current.contentWindow && event.source !== iframeRef.current.contentWindow) {
+        return;
+      }
       const msg = event.data;
       if (!msg || !msg.type || !msg.type.startsWith('yt-proxy-')) return;
 
@@ -94,15 +88,11 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
 
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [onReady, onStateChange, onError]);
-
-  const playerVars = opts?.playerVars || {};
-  const startSecs = playerVars.start || 0;
+  }, [onReady, onStateChange, onError, onCaptionsReceived]);
 
   const currentLoadedVideoId = useRef(initialVideoId);
   const currentLoadedStart = useRef(startSecs);
 
-  // When videoId or startSecs changes, call loadVideoById
   useEffect(() => {
     if (videoId && (videoId !== currentLoadedVideoId.current || startSecs !== currentLoadedStart.current)) {
       playerProxy.current.loadVideoById(videoId, startSecs);
@@ -111,33 +101,28 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     }
   }, [videoId, startSecs]);
 
-  const [initialStartSecs] = useState(startSecs);
-
-  // Primary: Cloudflare Worker (HTTPS, works on all platforms including macOS)
-  // Fallback: Local embed server via nip.io (works on Windows, blocked on macOS)
-  const initialSrc = useMemo(() => {
-    if (!initialVideoId) return null;
-    return `${WORKER_EMBED_URL}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
-  }, [initialVideoId, initialStartSecs]);
-
-  // Fallback URL using local embed server (kept for resilience)
-  const fallbackSrc = useMemo(() => {
-    if (!localPort || !initialVideoId) return null;
-    return `http://127.0.0.1.nip.io:${localPort}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
-  }, [localPort, initialVideoId, initialStartSecs]);
-
-  // If the Worker iframe fails to load (e.g. network error on the iframe itself),
-  // swap to the local fallback. This handles the case where the Worker is down
-  // but the user still has general internet (so YouTube itself would work via nip.io).
   const [useFallback, setUseFallback] = useState(false);
+  const isMacOS = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent || navigator.platform);
+
+  const activeSrc = useMemo(() => {
+    if (!initialVideoId) return null;
+    // On macOS / WebKit: ALWAYS use Cloudflare Worker HTTPS to prevent ATS / mixed-content blocks
+    if (isMacOS) {
+      return `${WORKER_EMBED_URL}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+    }
+    const port = localPort || (api.getCachedEmbedPort ? api.getCachedEmbedPort() : null);
+    if (port && !useFallback) {
+      return `http://127.0.0.1.nip.io:${port}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+    }
+    return `${WORKER_EMBED_URL}/embed?v=${initialVideoId}&start=${initialStartSecs}&volume=100`;
+  }, [localPort, initialVideoId, initialStartSecs, useFallback, isMacOS]);
+
   const handleIframeError = useCallback(() => {
-    if (!useFallback && fallbackSrc) {
-      console.warn('Worker embed failed to load, falling back to local server');
+    if (!useFallback) {
+      console.warn('Local embed failed to load, falling back to Cloudflare Worker');
       setUseFallback(true);
     }
-  }, [useFallback, fallbackSrc]);
-
-  const activeSrc = useFallback ? fallbackSrc : initialSrc;
+  }, [useFallback]);
 
   if (!videoId || !activeSrc) return null;
 

@@ -7,15 +7,27 @@ export function usePlayback({
   previewSong,
   setPreviewSong,
   restoredSong,
-  setRestoredSong
+  setRestoredSong,
+  playerRef
 }) {
   const [repeatMode, setRepeatMode] = useState(0); // 0=off, 1=repeat, 2=repeat once
   const [isShuffle, setIsShuffle] = useState(false);
   const [shuffleHistory, setShuffleHistory] = useState([]);
 
-  const handleNext = () => {
+  const safeFadeOut = async (durationMs = 180) => {
+    if (playerRef?.current && typeof playerRef.current.fadeOut === 'function') {
+      try {
+        await playerRef.current.fadeOut(durationMs);
+      } catch (e) {}
+    }
+  };
+
+  const handleNext = async (isManual = false) => {
     if (previewSong) setPreviewSong(null);
     if (restoredSong) setRestoredSong(null);
+    if (isManual === true) {
+      await safeFadeOut(180);
+    }
     if (isShuffle) {
       if (playlist.length <= 1) return;
       let nextIdx;
@@ -26,7 +38,6 @@ export function usePlayback({
       if (playlist[currentIndex]) {
         setShuffleHistory(prev => [...prev, playlist[currentIndex].id]);
       }
-      
       setCurrentIndex(nextIdx);
     } else {
       if (currentIndex < playlist.length - 1) {
@@ -35,7 +46,10 @@ export function usePlayback({
     }
   };
 
-  const handlePrevious = () => {
+  const handleManualNext = () => handleNext(true);
+  const handleAutoNext = () => handleNext(false);
+
+  const handlePrevious = async () => {
     if (previewSong) setPreviewSong(null);
     if (restoredSong) setRestoredSong(null);
     if (isShuffle) {
@@ -53,17 +67,21 @@ export function usePlayback({
         }
         
         setShuffleHistory(newHistory);
-        
+        await safeFadeOut(180);
         if (prevIdx !== -1) {
           setCurrentIndex(prevIdx);
         } else {
           if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
         }
       } else {
-        if (currentIndex > 0) setCurrentIndex(currentIndex - 1);
+        if (currentIndex > 0) {
+          await safeFadeOut(180);
+          setCurrentIndex(currentIndex - 1);
+        }
       }
     } else {
       if (currentIndex > 0) {
+        await safeFadeOut(180);
         setCurrentIndex(currentIndex - 1);
       }
     }

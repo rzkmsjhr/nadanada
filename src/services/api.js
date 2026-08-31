@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
+let cachedEmbedPort = null;
+
 export const api = {
   // Playlists
   loadPlaylists: () => invoke('load_playlists'),
@@ -25,6 +27,19 @@ export const api = {
   scrapeChords: (id, title) => invoke('scrape_chords', { id, title }),
   getStreamUrl: (videoId) => invoke('get_stream_url', { videoId }),
   getVideoAlbumInfo: (videoId) => invoke('get_video_album_info', { videoId }),
-  getEmbedPort: () => invoke('get_embed_port'),
+  getEmbedPort: async () => {
+    if (cachedEmbedPort) return cachedEmbedPort;
+    try {
+      const port = await invoke('get_embed_port');
+      if (port) cachedEmbedPort = port;
+      return port;
+    } catch (e) {
+      return null;
+    }
+  },
+  getCachedEmbedPort: () => cachedEmbedPort,
   quitApp: () => invoke('quit_app')
 };
+
+// Eagerly fetch port at startup
+api.getEmbedPort().catch(() => {});

@@ -7,13 +7,15 @@ import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
 
 const Player = React.forwardRef(function Player({ 
-  currentSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
+  currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded,
-  albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer
+  albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer,
+  crossfadeDuration, setCrossfadeDuration
 }, ref) {
   
   const core = usePlayerCore({
     currentSong,
+    nextSong,
     onNext,
     onPrevious,
     hasNext,
@@ -22,7 +24,9 @@ const Player = React.forwardRef(function Player({
     onTimeUpdate,
     onError,
     repeatMode,
-    onSongEnded
+    onSongEnded,
+    crossfadeDuration,
+    setCrossfadeDuration
   });
 
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
@@ -57,7 +61,9 @@ const Player = React.forwardRef(function Player({
     toggleMute: core.toggleMute,
     fadeOut: core.fadeOut,
     fadeIn: core.fadeIn,
-    getCurrentTime: () => core.currentTime
+    getCurrentTime: () => core.currentTime,
+    crossfadeDuration: core.crossfadeDuration,
+    toggleCrossfade: core.toggleCrossfade
   }), [core]);
 
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
@@ -142,27 +148,40 @@ const Player = React.forwardRef(function Player({
           }}>
           
           <div style={{ position: 'absolute', inset: 0 }}>
-            {currentSong && !currentSong.is_local && !core.streamUrl && !core.isExtractingStream && (
-              <>
+            {/* Deck 0 (YouTube) */}
+            {core.deck0Song && !core.deck0Song.is_local && !core.streamUrl && !core.isExtractingStream && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: core.deck0Opacity,
+                zIndex: core.activeDeck === 0 ? 2 : 1,
+                pointerEvents: core.activeDeck === 0 ? 'auto' : 'none',
+                transition: 'opacity 0.1s linear'
+              }}>
                 <ProxyYouTube
-                  videoId={currentSong.id}
+                  key={`deck-0-${core.deck0Song.id}`}
+                  videoId={core.deck0Song.id}
                   onCaptionsReceived={core.handleCaptionsReceived}
-                  opts={opts}
-                  onReady={core.onReady}
-                  onStateChange={core.onStateChange}
+                  opts={{
+                    ...opts,
+                    playerVars: {
+                      ...opts.playerVars,
+                      start: Math.floor(core.deck0Song.startSeconds || core.deck0Song.initialTime || 0)
+                    }
+                  }}
+                  onReady={(e) => core.onDeckReady(0, e)}
+                  onStateChange={(e) => core.onDeckStateChange(0, e)}
                   onError={async (e) => {
-                    console.error("YouTube Error:", e);
-                    // Error codes 101/150 mean embedding is disabled. Fallback to extracting the raw stream!
+                    console.error("Deck 0 YouTube Error:", e);
                     if (!core.streamUrl && !core.isExtractingStream) {
                       core.setIsExtractingStream(true);
                       try {
-                        const url = await api.getStreamUrl(currentSong.id);
+                        const url = await api.getStreamUrl(core.deck0Song.id);
                         core.setStreamUrl(url);
                       } catch (err) {
                         console.error("Stream extraction fallback failed:", err);
-                        if (hasNext) {
-                          onNext();
-                        } else {
+                        if (hasNext) onNext();
+                        else {
                           core.setIsPlaying(false);
                           if (onPlayStateChange) onPlayStateChange(false);
                           if (onError) onError(`Failed to stream track from YouTube: ${err}`);
@@ -180,8 +199,63 @@ const Player = React.forwardRef(function Player({
                   onClick={() => core.togglePlay()}
                   onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 />
-              </>
+              </div>
             )}
+
+            {/* Deck 1 (YouTube) */}
+            {core.deck1Song && !core.deck1Song.is_local && !core.streamUrl && !core.isExtractingStream && (
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: core.deck1Opacity,
+                zIndex: core.activeDeck === 1 ? 2 : 1,
+                pointerEvents: core.activeDeck === 1 ? 'auto' : 'none',
+                transition: 'opacity 0.1s linear'
+              }}>
+                <ProxyYouTube
+                  key={`deck-1-${core.deck1Song.id}`}
+                  videoId={core.deck1Song.id}
+                  onCaptionsReceived={core.handleCaptionsReceived}
+                  opts={{
+                    ...opts,
+                    playerVars: {
+                      ...opts.playerVars,
+                      start: Math.floor(core.deck1Song.startSeconds || core.deck1Song.initialTime || 0)
+                    }
+                  }}
+                  onReady={(e) => core.onDeckReady(1, e)}
+                  onStateChange={(e) => core.onDeckStateChange(1, e)}
+                  onError={async (e) => {
+                    console.error("Deck 1 YouTube Error:", e);
+                    if (!core.streamUrl && !core.isExtractingStream) {
+                      core.setIsExtractingStream(true);
+                      try {
+                        const url = await api.getStreamUrl(core.deck1Song.id);
+                        core.setStreamUrl(url);
+                      } catch (err) {
+                        console.error("Stream extraction fallback failed:", err);
+                        if (hasNext) onNext();
+                        else {
+                          core.setIsPlaying(false);
+                          if (onPlayStateChange) onPlayStateChange(false);
+                          if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                        }
+                      } finally {
+                        core.setIsExtractingStream(false);
+                      }
+                    }
+                  }}
+                  style={{ width: '100%', height: '100%' }}
+                  iframeClassName="youtube-iframe"
+                />
+                <div 
+                  style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+                  onClick={() => core.togglePlay()}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                />
+              </div>
+            )}
+
             {core.captions.length > 0 && !isMiniPlayer && !isFullscreen && (
               <div
                 style={{
@@ -268,31 +342,106 @@ const Player = React.forwardRef(function Player({
                 <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>Bypassing embed block...</div>
               </div>
             )}
-            {currentSong && (currentSong.is_local || core.streamUrl) && (
+
+            {/* Deck 0 (Local / Stream Audio) */}
+            {core.deck0Song && (core.deck0Song.is_local || core.streamUrl) && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
                 </div>
-                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{currentSong.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
-                  id="local-audio-player"
-                  src={currentSong.is_local ? convertFileSrc(currentSong.file_path) : core.streamUrl}
+                  id="deck-0-audio"
+                  src={core.deck0Song.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl}
                   autoPlay
-                  onPlay={() => { core.setIsPlaying(true); core.handleStallClear(); if (onPlayStateChange) onPlayStateChange(true); }}
-                  onPause={() => { core.setIsPlaying(false); if (onPlayStateChange) onPlayStateChange(false); }}
-                  onEnded={core.handleTrackEnd}
+                  onPlay={() => {
+                    if (core.activeDeck === 0) {
+                      core.setIsPlaying(true);
+                      core.handleStallClear();
+                      if (onPlayStateChange) onPlayStateChange(true);
+                    }
+                  }}
+                  onPause={() => {
+                    if (core.activeDeck === 0) {
+                      core.setIsPlaying(false);
+                      if (onPlayStateChange) onPlayStateChange(false);
+                    }
+                  }}
+                  onEnded={() => {
+                    if (core.activeDeck === 0) core.handleTrackEnd();
+                  }}
                   onTimeUpdate={(e) => {
-                    if (!core.isDragging) {
+                    if (core.activeDeck === 0 && !core.isDragging) {
                       core.setCurrentTime(e.target.currentTime);
                       if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
+                      core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
                     }
                   }}
                   onLoadedMetadata={(e) => {
-                    core.setDuration(e.target.duration);
-                    e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
+                    if (core.activeDeck === 0) {
+                      core.setDuration(e.target.duration);
+                      e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
+                    } else {
+                      e.target.volume = 0;
+                    }
                   }}
                   onError={(e) => {
-                    console.error("Local audio error", e);
+                    console.error("Deck 0 audio error", e);
+                    if (onError) onError("Failed to play local audio file.");
+                    core.handleStallClear();
+                  }}
+                  onWaiting={core.handleStallStart}
+                  onStalled={core.handleStallStart}
+                  onCanPlay={core.handleStallClear}
+                  onPlaying={core.handleStallClear}
+                />
+              </div>
+            )}
+
+            {/* Deck 1 (Local / Stream Audio) */}
+            {core.deck1Song && (core.deck1Song.is_local || core.streamUrl) && (
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
+                   ♪
+                </div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                <audio
+                  id="deck-1-audio"
+                  src={core.deck1Song.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl}
+                  autoPlay
+                  onPlay={() => {
+                    if (core.activeDeck === 1) {
+                      core.setIsPlaying(true);
+                      core.handleStallClear();
+                      if (onPlayStateChange) onPlayStateChange(true);
+                    }
+                  }}
+                  onPause={() => {
+                    if (core.activeDeck === 1) {
+                      core.setIsPlaying(false);
+                      if (onPlayStateChange) onPlayStateChange(false);
+                    }
+                  }}
+                  onEnded={() => {
+                    if (core.activeDeck === 1) core.handleTrackEnd();
+                  }}
+                  onTimeUpdate={(e) => {
+                    if (core.activeDeck === 1 && !core.isDragging) {
+                      core.setCurrentTime(e.target.currentTime);
+                      if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
+                      core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                    }
+                  }}
+                  onLoadedMetadata={(e) => {
+                    if (core.activeDeck === 1) {
+                      core.setDuration(e.target.duration);
+                      e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
+                    } else {
+                      e.target.volume = 0;
+                    }
+                  }}
+                  onError={(e) => {
+                    console.error("Deck 1 audio error", e);
                     if (onError) onError("Failed to play local audio file.");
                     core.handleStallClear();
                   }}

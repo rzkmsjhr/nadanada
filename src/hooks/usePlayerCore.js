@@ -3,6 +3,7 @@ import { api } from '../services/api';
 
 export function usePlayerCore({
   currentSong,
+  nextSong,
   onNext,
   onPrevious,
   hasNext,
@@ -12,9 +13,20 @@ export function usePlayerCore({
   onError,
   repeatMode,
   onSongEnded,
+  crossfadeDuration: externalCrossfadeDuration,
+  setCrossfadeDuration: externalSetCrossfadeDuration
 }) {
-  const playerRef = useRef(null);
-  
+  const [activeDeck, setActiveDeck] = useState(0); // 0 or 1
+  const activeDeckRef = useRef(0);
+  const crossfadeSongRef = useRef(null);
+  const deck0PlayerRef = useRef(null);
+  const deck1PlayerRef = useRef(null);
+
+  const [deck0Song, setDeck0Song] = useState(null);
+  const [deck1Song, setDeck1Song] = useState(null);
+  const [deck0Opacity, setDeck0Opacity] = useState(1);
+  const [deck1Opacity, setDeck1Opacity] = useState(0);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [masterVolume, setMasterVolume] = useState(() => {
@@ -23,11 +35,38 @@ export function usePlayerCore({
     return isNaN(parsed) ? 100 : Math.max(0, Math.min(100, parsed));
   });
   const [isMuted, setIsMuted] = useState(false);
+
+  // Dual-deck simultaneous crossfading state
+  const [isCrossfading, setIsCrossfading] = useState(false);
+  const crossfadeIntervalRef = useRef(null);
+  const justCrossfadedSongIdRef = useRef(null);
+  const hasTriggeredEndCrossfadeRef = useRef(false);
+  const isTransitioningSongRef = useRef(true);
   
-  // Persist volume preference across sessions
+  const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
+    const saved = localStorage.getItem('nadanada-crossfade-duration');
+    const parsed = saved !== null ? parseInt(saved, 10) : 3;
+    return isNaN(parsed) ? 3 : Math.max(0, Math.min(5, parsed));
+  });
+
+  const crossfadeDuration = externalCrossfadeDuration !== undefined ? externalCrossfadeDuration : internalCrossfadeDuration;
+  const setCrossfadeDuration = externalSetCrossfadeDuration || setInternalCrossfadeDuration;
+
+  // Persist volume and crossfade preferences across sessions
   useEffect(() => {
     localStorage.setItem('nadanada-volume', masterVolume.toString());
   }, [masterVolume]);
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-crossfade-duration', crossfadeDuration.toString());
+  }, [crossfadeDuration]);
+
+  const toggleCrossfade = () => {
+    const options = [0, 1, 2, 3, 4, 5];
+    const currentIndex = options.indexOf(crossfadeDuration);
+    const nextVal = currentIndex === -1 ? 3 : options[(currentIndex + 1) % options.length];
+    setCrossfadeDuration(nextVal);
+  };
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -41,30 +80,213 @@ export function usePlayerCore({
   const [isVideoHovered, setIsVideoHovered] = useState(false);
   const [isCaptionMenuOpen, setIsCaptionMenuOpen] = useState(false);
   const hasAutoSelectedCaptionRef = useRef(false);
-  
-  // Track how many times this specific song has repeated for 'repeat once' mode
   const [playCount, setPlayCount] = useState(0);
-
   const stallTimeoutRef = useRef(null);
+  const activeFadeIntervalRef = useRef(null);
+
+  // Deck Volume Control
+  const applyDeckVolume = (deckIndex, vol) => {
+    const player = deckIndex === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+    if (player && typeof player.setVolume === 'function') {
+      try { player.setVolume(vol); } catch (e) {}
+    }
+    const audioEl = document.getElementById(deckIndex === 0 ? 'deck-0-audio' : 'deck-1-audio');
+    if (audioEl) {
+      try { audioEl.volume = Math.max(0, Math.min(1, vol / 100)); } catch (e) {}
+    }
+  };
+
+  const applyActiveVolume = (vol) => {
+    applyDeckVolume(activeDeckRef.current, vol);
+  };
+
+  const cancelCrossfade = () => {
+    if (crossfadeIntervalRef.current) {
+      clearInterval(crossfadeIntervalRef.current);
+      crossfadeIntervalRef.current = null;
+    }
+    crossfadeSongRef.current = null;
+    isCrossfadeRampingRef.current = false;
+    const inactiveDeck = 1 - activeDeckRef.current;
+    if (inactiveDeck === 0) {
+      setDeck0Song(null);
+      setDeck0Opacity(0);
+      const audioEl = document.getElementById('deck-0-audio');
+      if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    } else {
+      setDeck1Song(null);
+      setDeck1Opacity(0);
+      const audioEl = document.getElementById('deck-1-audio');
+      if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    }
+    setIsCrossfading(false);
+    if (activeDeckRef.current === 0) {
+      setDeck0Opacity(1);
+      setDeck1Opacity(0);
+    } else {
+      setDeck1Opacity(1);
+      setDeck0Opacity(0);
+    }
+    applyDeckVolume(activeDeckRef.current, isMuted ? 0 : masterVolume);
+  };
+
+  const isCrossfadeRampingRef = useRef(false);
+  const bufferingTimeoutRef = useRef(null);
+
+  const startCrossfadeVolumeRamp = () => {
+    if (isCrossfadeRampingRef.current) return;
+    isCrossfadeRampingRef.current = true;
+
+    const outgoingDeck = activeDeckRef.current;
+    const incomingDeck = 1 - activeDeckRef.current;
+
+    const durationMs = crossfadeDuration * 1000;
+    const startVol = isMuted ? 0 : masterVolume;
+    const steps = Math.max(25, Math.floor(durationMs / 30));
+    const stepTime = durationMs / steps;
+    let step = 0;
+
+    if (crossfadeIntervalRef.current) {
+      clearInterval(crossfadeIntervalRef.current);
+      crossfadeIntervalRef.current = null;
+    }
+
+    applyDeckVolume(outgoingDeck, startVol);
+    applyDeckVolume(incomingDeck, 0);
+
+    crossfadeIntervalRef.current = setInterval(() => {
+      step++;
+      const progress = Math.min(1, step / steps);
+
+      // Equal-power fade curves
+      const factorOut = Math.cos(progress * (Math.PI / 2));
+      const factorIn = Math.sin(progress * (Math.PI / 2));
+
+      const volOut = Math.max(0, Math.round(startVol * factorOut));
+      const volIn = Math.min(startVol, Math.round(startVol * factorIn));
+
+      applyDeckVolume(outgoingDeck, volOut);
+      applyDeckVolume(incomingDeck, volIn);
+
+      if (outgoingDeck === 0) {
+        setDeck0Opacity(factorOut);
+        setDeck1Opacity(factorIn);
+      } else {
+        setDeck1Opacity(factorOut);
+        setDeck0Opacity(factorIn);
+      }
+
+      if (step >= steps) {
+        finishCrossfade();
+      }
+    }, stepTime);
+  };
+
+  const finishCrossfade = () => {
+    if (crossfadeIntervalRef.current) {
+      clearInterval(crossfadeIntervalRef.current);
+      crossfadeIntervalRef.current = null;
+    }
+    isCrossfadeRampingRef.current = false;
+    const incomingSong = crossfadeSongRef.current;
+    const outgoingDeck = activeDeckRef.current;
+    const incomingDeck = 1 - activeDeckRef.current;
+
+    applyDeckVolume(outgoingDeck, 0);
+    applyDeckVolume(incomingDeck, isMuted ? 0 : masterVolume);
+
+    if (incomingDeck === 0) {
+      setDeck0Opacity(1);
+      setDeck1Opacity(0);
+      const audioEl = document.getElementById('deck-1-audio');
+      if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    } else {
+      setDeck1Opacity(1);
+      setDeck0Opacity(0);
+      const audioEl = document.getElementById('deck-0-audio');
+      if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+    }
+
+    activeDeckRef.current = incomingDeck;
+    setActiveDeck(incomingDeck);
+    setIsCrossfading(false);
+    crossfadeSongRef.current = null;
+
+    if (incomingSong) {
+      justCrossfadedSongIdRef.current = incomingSong.id;
+    }
+
+    if (bufferingTimeoutRef.current) {
+      clearTimeout(bufferingTimeoutRef.current);
+      bufferingTimeoutRef.current = null;
+    }
+    setIsPlaying(true);
+    setIsBuffering(false);
+    if (onPlayStateChange) onPlayStateChange(true);
+
+    if (onSongEnded) onSongEnded();
+    else if (hasNext) onNext();
+  };
+
+  const startCrossfade = (incomingSong) => {
+    if (!incomingSong || isCrossfading) return;
+    setIsCrossfading(true);
+    crossfadeSongRef.current = incomingSong;
+
+    const outgoingDeck = activeDeckRef.current;
+    const incomingDeck = 1 - activeDeckRef.current;
+
+    // Set initial volume & opacity
+    applyDeckVolume(incomingDeck, 0);
+    applyDeckVolume(outgoingDeck, isMuted ? 0 : masterVolume);
+
+    if (incomingDeck === 0) {
+      setDeck0Song(incomingSong);
+      setDeck0Opacity(0);
+    } else {
+      setDeck1Song(incomingSong);
+      setDeck1Opacity(0);
+    }
+
+    startCrossfadeVolumeRamp();
+  };
+
+  const checkAutoCrossfade = (time, dur) => {
+    if (
+      crossfadeDuration > 0 &&
+      dur > 10 &&
+      time > 0 &&
+      nextSong &&
+      (hasNext || repeatMode > 0)
+    ) {
+      const remaining = dur - time;
+      if (remaining <= crossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfading) {
+        console.log(`[CROSSFADE-DEBUG] 🔔 checkAutoCrossfade triggered: time=${time.toFixed(1)}, dur=${dur.toFixed(1)}, remaining=${remaining.toFixed(1)}s <= crossfadeDuration=${crossfadeDuration}s`);
+        hasTriggeredEndCrossfadeRef.current = true;
+        startCrossfade(nextSong);
+      }
+    }
+  };
 
   const handleCaptionsReceived = (tracks) => {
     setCaptions(tracks || []);
     if (tracks && tracks.length > 0 && !hasAutoSelectedCaptionRef.current) {
       hasAutoSelectedCaptionRef.current = true;
-      // Prefer Indonesian or non-English/non-auto translated tracks first, fallback to first track
       const preferred = tracks.find(t => t.languageCode === 'id') || 
                         tracks.find(t => t.languageCode !== 'en' && t.languageCode !== 'en-US' && t.languageCode !== 'a.en') || 
                         tracks[0];
-      if (preferred && playerRef.current && playerRef.current.setCaption) {
-        playerRef.current.setCaption(preferred.languageCode);
+      const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+      if (preferred && activePlayer && activePlayer.setCaption) {
+        activePlayer.setCaption(preferred.languageCode);
         setActiveCaptionCode(preferred.languageCode);
       }
     }
   };
   
   const selectCaption = (code) => {
-    if (playerRef.current && playerRef.current.setCaption) {
-      playerRef.current.setCaption(code || false);
+    const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+    if (activePlayer && activePlayer.setCaption) {
+      activePlayer.setCaption(code || false);
     }
     setActiveCaptionCode(code);
     setIsCaptionMenuOpen(false);
@@ -94,7 +316,6 @@ export function usePlayerCore({
     if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
       if (currentTime < 1) {
         timeout = setTimeout(() => {
-          console.warn("YouTube iframe stuck buffering for 15s at start. Triggering fallback.");
           setIsExtractingStream(true);
           api.getStreamUrl(currentSong.id)
             .then(url => {
@@ -102,36 +323,44 @@ export function usePlayerCore({
               setIsExtractingStream(false);
             })
             .catch(err => {
-              console.error("Stream extraction fallback failed:", err);
               setIsExtractingStream(false);
-              if (hasNext) onNext();
-              else {
+              if (hasNext) {
+                onNext();
+              } else {
                 setIsPlaying(false);
                 if (onPlayStateChange) onPlayStateChange(false);
                 if (onError) onError(`Failed to stream track from YouTube: ${err.message || err}`);
               }
             });
-        }, 15000); // 15 seconds to be safe for slow connections
+        }, 15000);
       }
     }
     return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isBuffering, streamUrl, isExtractingStream, currentSong]);
 
   const songId = currentSong?.id;
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
   const prevSongIdRef = useRef(null);
-  const hasSeekedInitialRef = useRef(false);
 
-  useEffect(() => {
-    hasSeekedInitialRef.current = false;
-  }, [songId, startSecs]);
-
+  // Handle currentSong changes
   useEffect(() => {
     if (stallTimeoutRef.current) {
       clearTimeout(stallTimeoutRef.current);
       stallTimeoutRef.current = null;
     }
+
+    // If this song change is the result of a crossfade transition completion,
+    // the song is ALREADY PLAYING uninterrupted on activeDeck! DO NOT reload or restart it!
+    if (songId && justCrossfadedSongIdRef.current === songId) {
+      justCrossfadedSongIdRef.current = null;
+      prevSongIdRef.current = songId;
+      hasTriggeredEndCrossfadeRef.current = false;
+      return;
+    }
+
+    // Otherwise, this is a genuine new song selection or manual skip
+    cancelCrossfade();
+
     if (songId) {
       setStreamUrl(null);
       hasAutoSelectedCaptionRef.current = false;
@@ -142,21 +371,40 @@ export function usePlayerCore({
       setIsPlaying(false);
       setCurrentTime(startSecs);
       setDuration(0);
-      setPlayCount(0); // Reset repeat counter for new song
+      setPlayCount(0);
 
-      if (prevSongIdRef.current === songId && playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
-        try {
-          playerRef.current.loadVideoById(songId, startSecs);
-        } catch (e) {
-          console.error("Failed to loadVideoById:", e);
+      // Load into activeDeck and reset other deck
+      if (activeDeckRef.current === 0) {
+        setDeck0Song(currentSong);
+        setDeck0Opacity(1);
+        setDeck1Song(null);
+        setDeck1Opacity(0);
+        if (prevSongIdRef.current === songId && deck0PlayerRef.current?.loadVideoById) {
+          try { deck0PlayerRef.current.loadVideoById(songId, startSecs); } catch (e) {}
+        }
+      } else {
+        setDeck1Song(currentSong);
+        setDeck1Opacity(1);
+        setDeck0Song(null);
+        setDeck0Opacity(0);
+        if (prevSongIdRef.current === songId && deck1PlayerRef.current?.loadVideoById) {
+          try { deck1PlayerRef.current.loadVideoById(songId, startSecs); } catch (e) {}
         }
       }
+
       prevSongIdRef.current = songId;
+      hasTriggeredEndCrossfadeRef.current = false;
+      isTransitioningSongRef.current = true;
     } else {
       prevSongIdRef.current = null;
-      if (playerRef.current && typeof playerRef.current.stopVideo === 'function') {
-        try { playerRef.current.stopVideo(); } catch (e) {}
-      }
+      hasTriggeredEndCrossfadeRef.current = false;
+      isTransitioningSongRef.current = false;
+      setDeck0Song(null);
+      setDeck1Song(null);
+      setDeck0Opacity(0);
+      setDeck1Opacity(0);
+      try { deck0PlayerRef.current?.stopVideo?.(); } catch (e) {}
+      try { deck1PlayerRef.current?.stopVideo?.(); } catch (e) {}
       setIsBuffering(false);
       setIsPlaying(false);
       setCurrentTime(0);
@@ -165,27 +413,30 @@ export function usePlayerCore({
     }
   }, [songId, startSecs]);
 
-  // Time tracking
+  // Time tracking on activeDeck
   useEffect(() => {
     let interval;
-    // Do not poll the YouTube player if we are using the local audio fallback (streamUrl is set)
     if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local) && !streamUrl) {
       interval = setInterval(async () => {
-        if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+        const player = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+        if (player && typeof player.getCurrentTime === 'function') {
           try {
-            const time = await playerRef.current.getCurrentTime();
-            const dur = await playerRef.current.getDuration();
+            const time = await player.getCurrentTime();
+            const dur = await player.getDuration();
             setCurrentTime(time || 0);
             if (onTimeUpdate) onTimeUpdate(time || 0);
             setDuration(dur || 0);
+
+            // Check auto-crossfade trigger
+            checkAutoCrossfade(time || 0, dur || 0);
           } catch (e) {}
         }
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isDragging, currentSong, streamUrl]);
+  }, [isPlaying, isDragging, currentSong, streamUrl, crossfadeDuration, onTimeUpdate, nextSong, hasNext, repeatMode, activeDeck]);
 
-  // --- Media Session API Integration for SMTC ---
+  // Media Session API Integration for SMTC
   useEffect(() => {
     if ('mediaSession' in navigator) {
       if (currentSong) {
@@ -233,7 +484,7 @@ export function usePlayerCore({
 
   const togglePlay = () => {
     if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
+      const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) {
         if (isPlaying) audioEl.pause();
         else audioEl.play();
@@ -241,27 +492,29 @@ export function usePlayerCore({
       return;
     }
     
-    if (!playerRef.current) return;
+    const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+    if (!activePlayer) return;
     if (isPlaying) {
-      playerRef.current.pauseVideo();
+      activePlayer.pauseVideo();
     } else {
-      playerRef.current.playVideo();
+      activePlayer.playVideo();
     }
   };
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
     if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
+      const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) audioEl.muted = !isMuted;
       return;
     }
     
-    if (playerRef.current) {
-      if (!isMuted) playerRef.current.mute();
+    const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+    if (activePlayer) {
+      if (!isMuted) activePlayer.mute();
       else {
-        playerRef.current.unMute();
-        playerRef.current.setVolume(masterVolume);
+        activePlayer.unMute();
+        activePlayer.setVolume(masterVolume);
       }
     }
   };
@@ -280,218 +533,269 @@ export function usePlayerCore({
     }
   }, [isPlaying, hasPrevious, hasNext, onPrevious, onNext]);
 
-  const activeFadeIntervalRef = useRef(null);
-
-  const applyVolume = (vol) => {
-    if (playerRef.current && typeof playerRef.current.setVolume === 'function') {
-      try { playerRef.current.setVolume(vol); } catch (e) {}
-    }
-    const audioEl = document.getElementById('local-audio-player');
-    if (audioEl) {
-      try { audioEl.volume = Math.max(0, Math.min(1, vol / 100)); } catch (e) {}
-    }
-  };
-
-  const fadeOut = (durationMs = 250) => {
+  // Fade in / out helpers for manual transitions
+  const fadeOut = (durationMs = 200) => {
     return new Promise((resolve) => {
       if (activeFadeIntervalRef.current) {
         clearInterval(activeFadeIntervalRef.current);
         activeFadeIntervalRef.current = null;
       }
       const startVol = isMuted ? 0 : masterVolume;
-      if (startVol <= 0) {
-        applyVolume(0);
+      if (startVol <= 0 || durationMs <= 0) {
+        applyActiveVolume(0);
         resolve();
         return;
       }
-      const steps = 10;
+      const steps = Math.max(8, Math.floor(durationMs / 25));
       const stepTime = durationMs / steps;
       let step = 0;
 
       activeFadeIntervalRef.current = setInterval(() => {
         step++;
-        const curVol = Math.max(0, Math.round(startVol * (1 - step / steps)));
-        applyVolume(curVol);
+        const progress = Math.min(1, step / steps);
+        const factor = Math.cos(progress * (Math.PI / 2));
+        const curVol = Math.max(0, Math.round(startVol * factor));
+        applyActiveVolume(curVol);
         if (step >= steps || curVol <= 0) {
           clearInterval(activeFadeIntervalRef.current);
           activeFadeIntervalRef.current = null;
+          applyActiveVolume(0);
           resolve();
         }
       }, stepTime);
     });
   };
 
-  const fadeIn = (durationMs = 350) => {
+  const fadeIn = (durationMs = 250) => {
     return new Promise((resolve) => {
       if (activeFadeIntervalRef.current) {
         clearInterval(activeFadeIntervalRef.current);
         activeFadeIntervalRef.current = null;
       }
       const targetVol = isMuted ? 0 : masterVolume;
-      if (targetVol <= 0) {
-        applyVolume(0);
+      if (targetVol <= 0 || durationMs <= 0) {
+        applyActiveVolume(targetVol);
         resolve();
         return;
       }
-      applyVolume(0);
-      const steps = 12;
+      applyActiveVolume(0);
+      const steps = Math.max(8, Math.floor(durationMs / 25));
       const stepTime = durationMs / steps;
       let step = 0;
 
       activeFadeIntervalRef.current = setInterval(() => {
         step++;
-        const curVol = Math.min(targetVol, Math.round(targetVol * (step / steps)));
-        applyVolume(curVol);
+        const progress = Math.min(1, step / steps);
+        const factor = Math.sin(progress * (Math.PI / 2));
+        const curVol = Math.min(targetVol, Math.round(targetVol * factor));
+        applyActiveVolume(curVol);
         if (step >= steps || curVol >= targetVol) {
           clearInterval(activeFadeIntervalRef.current);
           activeFadeIntervalRef.current = null;
-          applyVolume(targetVol);
+          applyActiveVolume(targetVol);
           resolve();
         }
       }, stepTime);
     });
   };
 
-  const onReady = (event) => {
-    playerRef.current = event.target;
-    if (!activeFadeIntervalRef.current) {
-      event.target.setVolume(isMuted ? 0 : masterVolume);
+  // Deck Ready Handlers
+  const onDeckReady = (deckIndex, event) => {
+    if (deckIndex === 0) deck0PlayerRef.current = event.target;
+    else deck1PlayerRef.current = event.target;
+
+    if (deckIndex === activeDeckRef.current) {
+      if (crossfadeDuration > 0 && isTransitioningSongRef.current) {
+        applyDeckVolume(deckIndex, 0);
+        fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+      } else if (!activeFadeIntervalRef.current) {
+        event.target.setVolume(isMuted ? 0 : masterVolume);
+      }
+      isTransitioningSongRef.current = false;
+      if (startSecs > 0) {
+        try { event.target.seekTo(startSecs, true); } catch (e) {}
+      }
+      try { event.target.playVideo(); } catch (e) {}
+    } else {
+      // Inactive deck starting up during crossfade: start at volume 0
+      event.target.setVolume(0);
+      try { event.target.playVideo(); } catch (e) {}
     }
-    if (startSecs > 0) {
-      try {
-        event.target.seekTo(startSecs, true);
-      } catch (e) {}
+  };
+
+  // Deck State Change Handlers
+  const onDeckStateChange = (deckIndex, event) => {
+    if (deckIndex === activeDeckRef.current) {
+      if (event.data === 1) { // PLAYING
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+        setIsPlaying(true);
+        setIsBuffering(false);
+        if (onPlayStateChange) onPlayStateChange(true);
+        if (crossfadeDuration > 0 && isTransitioningSongRef.current) {
+          isTransitioningSongRef.current = false;
+          fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+        } else if (!activeFadeIntervalRef.current && !isCrossfading) {
+          try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
+        }
+      } else if (event.data === 2) { // PAUSED
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+        setIsPlaying(false);
+        setIsBuffering(false);
+        if (onPlayStateChange) onPlayStateChange(false);
+      } else if (event.data === 0) { // ENDED
+        if (bufferingTimeoutRef.current) {
+          clearTimeout(bufferingTimeoutRef.current);
+          bufferingTimeoutRef.current = null;
+        }
+        if (isCrossfading) {
+          applyDeckVolume(deckIndex, 0);
+        } else {
+          handleTrackEnd();
+        }
+      } else if (event.data === 3) { // BUFFERING
+        if (!isCrossfading) {
+          if (!bufferingTimeoutRef.current) {
+            bufferingTimeoutRef.current = setTimeout(() => {
+              setIsBuffering(true);
+            }, 600);
+          }
+        }
+      } else if (event.data === 5 || event.data === -1) {
+        if (!isCrossfading) {
+          setIsBuffering(true);
+        }
+        try { event.target.playVideo(); } catch (e) {}
+      }
+    } else {
+      // Inactive deck playing during crossfade
+      if (event.data === 5 || event.data === -1) {
+        try { event.target.playVideo(); } catch (e) {}
+      }
     }
-    try {
-      event.target.playVideo();
-    } catch (e) {}
   };
 
   const handleTrackEnd = () => {
     if (repeatMode === 1) {
-      // Repeat infinitely: just seek to 0 and play again
       setCurrentTime(0);
+      hasTriggeredEndCrossfadeRef.current = false;
       if (onTimeUpdate) onTimeUpdate(0);
       
+      const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
       if (streamUrl || (currentSong && currentSong.is_local)) {
-        const audioEl = document.getElementById('local-audio-player');
-        if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
-      } else if (playerRef.current) {
-        playerRef.current.seekTo(0, true);
-        playerRef.current.playVideo();
+        const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
+        if (audioEl) { 
+          audioEl.currentTime = 0; 
+          audioEl.play(); 
+          if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+        }
+      } else if (activePlayer) {
+        activePlayer.seekTo(0, true);
+        activePlayer.playVideo();
+        if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
       }
     } else if (repeatMode === 2) {
-      // Repeat once: play twice in total
       if (playCount < 1) {
         setPlayCount(1);
         setCurrentTime(0);
+        hasTriggeredEndCrossfadeRef.current = false;
         if (onTimeUpdate) onTimeUpdate(0);
         
+        const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
         if (streamUrl || (currentSong && currentSong.is_local)) {
-          const audioEl = document.getElementById('local-audio-player');
-          if (audioEl) { audioEl.currentTime = 0; audioEl.play(); }
-        } else if (playerRef.current) {
-          playerRef.current.seekTo(0, true);
-          playerRef.current.playVideo();
+          const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
+          if (audioEl) { 
+            audioEl.currentTime = 0; 
+            audioEl.play(); 
+            if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+          }
+        } else if (activePlayer) {
+          activePlayer.seekTo(0, true);
+          activePlayer.playVideo();
+          if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
         }
       } else {
-        // Already played twice, move to next
         setIsPlaying(false);
         setIsBuffering(false);
         if (onPlayStateChange) onPlayStateChange(false);
         setCurrentTime(0);
         if (onTimeUpdate) onTimeUpdate(0);
-        
         if (onSongEnded) onSongEnded();
         else if (hasNext) onNext();
       }
     } else {
-      // Normal playback: move to next
       setIsPlaying(false);
       setIsBuffering(false);
       if (onPlayStateChange) onPlayStateChange(false);
       setCurrentTime(0);
       if (onTimeUpdate) onTimeUpdate(0);
-      
       if (onSongEnded) onSongEnded();
       else if (hasNext) onNext();
     }
   };
 
-  const onStateChange = (event) => {
-    if (event.data === 1) { // PLAYING
-      setIsPlaying(true);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(true);
-      
-      // Force volume application on every track change, as YouTube sometimes resets it
-      if (!activeFadeIntervalRef.current) {
-        try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
-      }
-
-      if (startSecs > 0 && !hasSeekedInitialRef.current) {
-        hasSeekedInitialRef.current = true;
-        try {
-          event.target.seekTo(startSecs, true);
-        } catch (e) {}
-      }
-    } else if (event.data === 2) { // PAUSED
-      setIsPlaying(false);
-      setIsBuffering(false);
-      if (onPlayStateChange) onPlayStateChange(false);
-    } else if (event.data === 0) { // ENDED
-      handleTrackEnd();
-    } else if (event.data === 3) { // BUFFERING
-      setIsBuffering(true);
-    } else if (event.data === 5 || event.data === -1) {
-      // CUED (5) or UNSTARTED (-1)
-      setIsBuffering(true);
-      try {
-        event.target.playVideo();
-      } catch (e) {}
-    }
-  };
-
   const handleVolumeChange = (e) => {
     const val = parseInt(e.target.value);
+    if (activeFadeIntervalRef.current) {
+      clearInterval(activeFadeIntervalRef.current);
+      activeFadeIntervalRef.current = null;
+    }
     setMasterVolume(val);
     if (isMuted) {
       setIsMuted(false);
-      if (playerRef.current) playerRef.current.unMute();
+      const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+      if (activePlayer) activePlayer.unMute();
     }
-    
-    if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
-      if (audioEl) {
-        audioEl.muted = false;
-        audioEl.volume = val / 100;
-      }
-      return;
-    }
-    
-    if (playerRef.current) playerRef.current.setVolume(val);
+    applyActiveVolume(val);
   };
 
   const handleSeekChange = (e) => {
     setCurrentTime(Number(e.target.value));
   };
 
+  const handleSeekMouseDown = () => {
+    setIsDragging(true);
+    isTransitioningSongRef.current = false;
+    cancelCrossfade();
+    if (activeFadeIntervalRef.current) {
+      clearInterval(activeFadeIntervalRef.current);
+      activeFadeIntervalRef.current = null;
+    }
+    applyActiveVolume(isMuted ? 0 : masterVolume);
+  };
+
   const handleSeekMouseUp = (e) => {
     setIsDragging(false);
+    isTransitioningSongRef.current = false;
+    cancelCrossfade();
+    if (activeFadeIntervalRef.current) {
+      clearInterval(activeFadeIntervalRef.current);
+      activeFadeIntervalRef.current = null;
+    }
+    applyActiveVolume(isMuted ? 0 : masterVolume);
+
+    const targetTime = Number(e.target.value);
+    if (targetTime < duration - crossfadeDuration) {
+      hasTriggeredEndCrossfadeRef.current = false;
+    }
     if (currentSong && (currentSong.is_local || streamUrl)) {
-      const audioEl = document.getElementById('local-audio-player');
+      const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) {
-        audioEl.currentTime = Number(e.target.value);
+        audioEl.currentTime = targetTime;
       }
       return;
     }
     
-    if (playerRef.current) {
-      playerRef.current.seekTo(Number(e.target.value), true);
+    const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+    if (activePlayer) {
+      activePlayer.seekTo(targetTime, true);
     }
   };
-
-  const handleSeekMouseDown = () => setIsDragging(true);
 
   const formatTime = (seconds) => {
     if (!seconds) return '0:00';
@@ -501,11 +805,28 @@ export function usePlayerCore({
   };
 
   return {
-    playerRef,
+    activeDeck,
+    deck0Song,
+    deck1Song,
+    deck0Opacity,
+    deck1Opacity,
+    deck0PlayerRef,
+    deck1PlayerRef,
+    onDeckReady,
+    onDeckStateChange,
+    
     isPlaying, setIsPlaying,
     isBuffering, setIsBuffering,
     masterVolume,
     isMuted,
+    crossfadeDuration, setCrossfadeDuration,
+    toggleCrossfade,
+    hasTriggeredEndCrossfadeRef,
+    isTransitioningSongRef,
+    activeFadeIntervalRef,
+    isCrossfading,
+    cancelCrossfade,
+    checkAutoCrossfade,
     currentTime, setCurrentTime,
     duration, setDuration,
     isDragging,
@@ -522,8 +843,6 @@ export function usePlayerCore({
     handleStallClear,
     handleStallStart,
     handleTrackEnd,
-    onStateChange,
-    onReady,
     
     togglePlay,
     toggleMute,
