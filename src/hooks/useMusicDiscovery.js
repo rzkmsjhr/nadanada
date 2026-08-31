@@ -114,6 +114,62 @@ export function useMusicDiscovery({
             return intersection / union;
           };
 
+          const extractArtistFingerprint = (song) => {
+            if (!song) return { clean: '', channelClean: '' };
+            const title = (song.title || '').toLowerCase();
+            const channel = (song.channel || '').toLowerCase()
+              .replace(/\s*-\s*topic$/i, '')
+              .replace(/vevo$/i, '')
+              .replace(/official(\s+channel|\s+music)?$/i, '')
+              .trim();
+
+            let artistCandidate = '';
+            if (title.includes(' - ')) {
+              artistCandidate = title.split(' - ')[0].trim();
+            } else if (title.includes(' ~ ')) {
+              artistCandidate = title.split(' ~ ')[0].trim();
+            } else {
+              artistCandidate = channel;
+            }
+
+            const clean = str => str
+              .replace(/\(.*?\)|\[.*?\]/g, ' ')
+              .replace(/\b(feat|ft|featuring|with|prod|x)\b.*$/i, ' ')
+              .replace(/[^a-z0-9]/gi, '')
+              .toLowerCase();
+
+            return {
+              clean: clean(artistCandidate),
+              channelClean: clean(channel)
+            };
+          };
+
+          const isSameArtist = (songA, songB) => {
+            if (!songA || !songB) return false;
+            const a = extractArtistFingerprint(songA);
+            const b = extractArtistFingerprint(songB);
+
+            if (a.clean && b.clean && a.clean === b.clean) return true;
+            if (a.channelClean && b.channelClean && a.channelClean === b.channelClean) return true;
+            if (a.clean && b.channelClean && a.clean === b.channelClean) return true;
+            if (a.channelClean && b.clean && a.channelClean === b.clean) return true;
+
+            if (a.clean.length > 3 && b.clean.length > 3) {
+              if (a.clean.includes(b.clean) || b.clean.includes(a.clean)) return true;
+            }
+            if (a.channelClean.length > 3 && b.channelClean.length > 3) {
+              if (a.channelClean.includes(b.channelClean) || b.channelClean.includes(a.channelClean)) return true;
+            }
+            if (a.clean.length > 3 && b.channelClean.length > 3) {
+              if (a.clean.includes(b.channelClean) || b.channelClean.includes(a.clean)) return true;
+            }
+            if (a.channelClean.length > 3 && b.clean.length > 3) {
+              if (a.channelClean.includes(b.clean) || b.clean.includes(a.channelClean)) return true;
+            }
+
+            return false;
+          };
+
           const existingIds = new Set(playlist.map(s => s.id));
           const existingWordSets = playlist.map(s => getWords(s));
           
@@ -158,16 +214,11 @@ export function useMusicDiscovery({
           
           if (available.length > 0) {
             let finalPicked = null;
+            let fallbackCandidate = null;
 
-            // Prioritize official Topic or Vevo channels to avoid lyric videos / unofficial covers
-            available.sort((a, b) => {
-              const aOfficial = (a.channel || '').toLowerCase().includes('- topic') || (a.channel || '').toLowerCase().includes('vevo');
-              const bOfficial = (b.channel || '').toLowerCase().includes('- topic') || (b.channel || '').toLowerCase().includes('vevo');
-              if (aOfficial && !bOfficial) return -1;
-              if (!aOfficial && bOfficial) return 1;
-              return 0;
-            });
-            
+            // Look at the last 7 tracks to prevent same artist repeats within 6-7 tracks
+            const recentHistory = playlist.slice(Math.max(0, currentIndex - 6), currentIndex + 1);
+
             for (let item of available) {
               let picked = item;
               
@@ -176,7 +227,6 @@ export function useMusicDiscovery({
               const isTopic = (picked.channel || '').toLowerCase().includes('- topic');
               
               if (!isTopic && unofficialRegex.test(picked.title)) {
-                // Clean the title by removing bracketed stuff and the unofficial keywords
                 const cleanTitle = picked.title
                   .replace(/\[.*?\]|\(.*?\)/g, ' ')
                   .replace(unofficialRegex, ' ')
@@ -185,7 +235,6 @@ export function useMusicDiscovery({
                   
                 if (cleanTitle.length > 0) {
                   try {
-                    // Search for the clean title + artist + 'topic' to find the official audio
                     let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
                     const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist} topic`);
                     if (searchResults && searchResults.length > 0) {
@@ -212,16 +261,23 @@ export function useMusicDiscovery({
               }
               
               if (!isDuplicate) {
-                finalPicked = picked;
-                break;
+                // Check if artist appeared in the last 7 tracks
+                const hasRecentConflict = recentHistory.some(historyTrack => isSameArtist(picked, historyTrack));
+                
+                if (!hasRecentConflict) {
+                  finalPicked = picked;
+                  break;
+                } else if (!fallbackCandidate && !isSameArtist(picked, current)) {
+                  // Keep as fallback only if it's not the immediately preceding song
+                  fallbackCandidate = picked;
+                }
               }
             }
             
-            // If somehow all mapped to existing songs, fallback to the original first suggestion
+            // If every available song had an artist conflict, use fallback candidate or first available
             if (!finalPicked) {
-              finalPicked = available[0];
+              finalPicked = fallbackCandidate || available[0];
             }
-            
             
             if (finalPicked) {
               const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);

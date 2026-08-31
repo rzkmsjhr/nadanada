@@ -189,7 +189,7 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
             }
         }
 
-        // Space out tracks by the same artist to mimic a real radio
+        // Space out tracks by the same artist to mimic a real radio (at least 7 tracks apart)
         let mut spaced_videos = Vec::new();
         let mut pending = videos;
         
@@ -197,41 +197,60 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
             spaced_videos.push(pending.remove(0));
         }
         
-        let get_artist = |v: &Video| -> String {
+        let get_artist = |v: &Video| -> (String, String) {
             let title = v.title.to_lowercase();
-            if let Some(parts) = title.split_once(" - ") {
+            let channel = v.channel.to_lowercase()
+                .replace(" - topic", "")
+                .replace("vevo", "")
+                .replace("official", "")
+                .trim()
+                .to_string();
+            let title_artist = if let Some(parts) = title.split_once(" - ") {
                 parts.0.trim().to_string()
             } else if let Some(parts) = title.split_once(" ~ ") {
                 parts.0.trim().to_string()
             } else {
-                v.channel.to_lowercase().replace(" - topic", "").replace("vevo", "").trim().to_string()
-            }
+                String::new()
+            };
+            (title_artist, channel)
+        };
+
+        let is_same_artist = |(ta1, ch1): &(String, String), (ta2, ch2): &(String, String)| -> bool {
+            let clean = |s: &str| -> String {
+                s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase()
+            };
+            let ta1_c = clean(ta1);
+            let ch1_c = clean(ch1);
+            let ta2_c = clean(ta2);
+            let ch2_c = clean(ch2);
+
+            let check_pair = |a: &str, b: &str| -> bool {
+                if a.is_empty() || b.is_empty() { return false; }
+                if a == b { return true; }
+                if a.len() > 3 && b.len() > 3 && (a.contains(b) || b.contains(a)) { return true; }
+                false
+            };
+
+            check_pair(&ta1_c, &ta2_c)
+                || check_pair(&ch1_c, &ch2_c)
+                || check_pair(&ta1_c, &ch2_c)
+                || check_pair(&ch1_c, &ta2_c)
         };
         
         while !pending.is_empty() {
             let mut found_index = 0; // Default to first available if we can't find a non-conflicting track
             
-            // Try to find a track whose artist hasn't appeared in the last 6 tracks
+            // Try to find a track whose artist hasn't appeared in the last 7 tracks
             for (i, v) in pending.iter().enumerate() {
                 let current_artist = get_artist(v);
                 let mut recent_conflict = false;
                 
-                let check_len = std::cmp::min(spaced_videos.len(), 6);
+                let check_len = std::cmp::min(spaced_videos.len(), 7);
                 for recent_v in spaced_videos.iter().rev().take(check_len) {
                     let recent_artist = get_artist(recent_v);
-                    
-                    // Direct match
-                    if current_artist == recent_artist {
+                    if is_same_artist(&current_artist, &recent_artist) {
                         recent_conflict = true;
                         break;
-                    }
-                    
-                    // Substring match (e.g. if one is "Avenged Sevenfold" and the other channel is "AvengedSevenfoldVEVO")
-                    if current_artist.len() > 4 && recent_artist.len() > 4 {
-                        if current_artist.contains(&recent_artist) || recent_artist.contains(&current_artist) {
-                            recent_conflict = true;
-                            break;
-                        }
                     }
                 }
                 
