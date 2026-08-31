@@ -125,11 +125,25 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     setTheme(themes[nextIndex]);
   };
 
+  const wasMaximizedBeforeFullscreenRef = useRef(false);
+
   const toggleFullscreen = async (forceValue) => {
     const nextVal = typeof forceValue === 'boolean' ? forceValue : !isFullscreen;
     setIsFullscreen(nextVal);
     try {
-      await appWindow.setFullscreen(nextVal);
+      if (nextVal) {
+        const max = await appWindow.isMaximized();
+        wasMaximizedBeforeFullscreenRef.current = max;
+        if (max) {
+          await appWindow.unmaximize();
+        }
+        await appWindow.setFullscreen(true);
+      } else {
+        await appWindow.setFullscreen(false);
+        if (wasMaximizedBeforeFullscreenRef.current) {
+          await appWindow.maximize();
+        }
+      }
     } catch (err) {
       console.warn("Native fullscreen toggle failed, using in-app fullscreen layout:", err);
     }
