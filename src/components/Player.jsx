@@ -173,6 +173,9 @@ const Player = React.forwardRef(function Player({
                   onStateChange={(e) => core.onDeckStateChange(0, e)}
                   onError={async (e) => {
                     console.error("Deck 0 YouTube Error:", e);
+                    if (core.isCrossfading) {
+                      core.cancelCrossfade();
+                    }
                     if (!core.streamUrl && !core.isExtractingStream) {
                       core.setIsExtractingStream(true);
                       try {
@@ -227,6 +230,9 @@ const Player = React.forwardRef(function Player({
                   onStateChange={(e) => core.onDeckStateChange(1, e)}
                   onError={async (e) => {
                     console.error("Deck 1 YouTube Error:", e);
+                    if (core.isCrossfading) {
+                      core.cancelCrossfade();
+                    }
                     if (!core.streamUrl && !core.isExtractingStream) {
                       core.setIsExtractingStream(true);
                       try {
