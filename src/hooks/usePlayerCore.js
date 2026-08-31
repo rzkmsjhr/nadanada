@@ -47,6 +47,7 @@ export function usePlayerCore({
   const isPreloadingNextRef = useRef(false);
   const hasPreloadedNextRef = useRef(false);
   const isTransitioningSongRef = useRef(true);
+  const needsSeekFixRef = useRef(false);
   
   const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
     const saved = localStorage.getItem('nadanada-crossfade-duration');
@@ -248,6 +249,7 @@ export function usePlayerCore({
 
     if (incomingSong) {
       justCrossfadedSongIdRef.current = incomingSong.id;
+      needsSeekFixRef.current = true;
     }
 
     if (bufferingTimeoutRef.current) {
@@ -461,6 +463,7 @@ export function usePlayerCore({
       prevSongIdRef.current = songId;
       hasTriggeredEndCrossfadeRef.current = false;
       isTransitioningSongRef.current = true;
+      needsSeekFixRef.current = false;
     } else {
       prevSongIdRef.current = null;
       hasTriggeredEndCrossfadeRef.current = false;
@@ -895,7 +898,12 @@ export function usePlayerCore({
     
     const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
     if (activePlayer) {
-      activePlayer.seekTo(targetTime, true);
+      if (needsSeekFixRef.current) {
+        activePlayer.loadVideoById(currentSong.id, targetTime);
+        needsSeekFixRef.current = false;
+      } else {
+        activePlayer.seekTo(targetTime, true);
+      }
     }
   };
 
