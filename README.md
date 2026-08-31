@@ -1,59 +1,78 @@
 # NadaNada 🎵
 
-A beautiful, distraction-free YouTube music player built natively for your desktop using Tauri v2 and React. 
+A beautiful, distraction-free native YouTube music player built for desktop using **Tauri v2** and **React**.
 
 ![NadaNada Logo](nadanada-logo.png)
 
+---
+
 ## ✨ Features
 
-- **Endless Play (Radio Mode):** Hit the infinity icon and NadaNada will automatically queue up the perfect songs that match the vibe of your current track, directly utilizing native YouTube Mix algorithms.
-- **Premium Glassmorphism UI:** A sleek, semi-transparent design with dynamic blurred background album art that adapts to whatever you're listening to.
-- **Offline Downloads:** Download your favorite tracks directly to your local machine for offline listening with a single click.
-- **Guitar Chords Sync:** Automatically scrapes and displays synchronized guitar chords that follow along with the currently playing song in real-time.
-- **Library Management:** Easily create, name, and save your custom queues directly to your local library. Everything is saved instantly to local storage.
-- **System Tray Docking:** Minimize the app straight to your system tray to keep the music playing invisibly in the background without cluttering your taskbar.
-- **Cross-Platform:** Available for Windows, macOS, and Linux.
+- **🎚️ Seamless Dual-Deck Crossfading:** Studio-grade DJ crossfade transitions between songs with customizable duration (1–5s) using equal-power volume curves for continuous, gapless music.
+- **✨ Endless Play (Radio Mode):** Automatically queues up matching tracks based on the vibe of your current song using native YouTube Mix algorithms.
+- **📊 Trending Charts & Spotify Playlist Import:** Explore global and regional Kworb top charts or import entire Spotify playlists with a single click.
+- **🎨 Dynamic Glassmorphism & Theme Studio:** Adaptive blurred album art backdrops with customizable themes (Default Glass, Deep Dark, Cyberpunk, Sunset, Forest, and more).
+- **🎸 Real-Time Guitar Chords & Lyrics:** Automatically fetches and syncs live guitar chords and multi-language captions/subtitles that follow along with the track.
+- **💾 Offline Library & Downloads:** Download high-quality audio directly to your local library for instant offline listening via integrated `yt-dlp`.
+- **🎧 System Media Integration (SMTC):** Native desktop media controls, lock screen metadata, and keyboard media keys support across Windows, macOS, and Linux.
+- **🪟 Mini Player & System Tray Docking:** Unobtrusive compact floating player mode and tray minimization to keep music playing in the background without taskbar clutter.
+
+---
 
 ## 📥 Download
 
-Head over to the [Releases](../../releases) page to download the latest native installer for your operating system (Windows `.exe`/`.msi`, macOS `.dmg`, or Linux `.deb`/`.AppImage`).
+Head over to the [Releases](https://github.com/rzkmsjhr/nadanada/releases) page to download the latest native installer for your platform:
+- **Windows:** `.exe` / `.msi`
+- **macOS:** `.dmg` (Universal / Apple Silicon & Intel)
+- **Linux:** `.deb` / `.AppImage`
+
+---
 
 ## 🛠️ Tech Stack
 
-- **Frontend:** React + Vite
-- **Styling:** Vanilla CSS (Custom Glassmorphism Design System)
+- **Frontend:** React 19 + Vite
+- **Styling:** Vanilla CSS (Glassmorphism Design System)
 - **Icons:** Lucide React
 - **Backend:** Rust + Tauri v2
-- **Downloads:** `yt-dlp` integration
-- **Scraping:** `reqwest` & `regex` (Native Rust YouTube scraping)
+- **Audio & Video Engine:** Dual-Deck IFrame Bridge & Cloudflare Worker HTTPS Proxy
+- **Scraping & Charts:** Native Rust `reqwest` & `regex` (Kworb Charts, YouTube Mix)
+- **Downloads:** Integrated `yt-dlp`
+
+---
 
 ## 🚀 Running Locally
 
-If you'd like to build the project from source or run it in development mode:
-
 ### Prerequisites
-- Node.js (v20+)
-- Rust (Stable)
-- Tauri v2 prerequisites installed for your OS.
+- [Node.js](https://nodejs.org/) (v20+)
+- [Rust](https://rustup.rs/) (Stable)
+- [Tauri v2 Prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
 
 ### Getting Started
-1. Clone the repository:
+
+1. **Clone the repository:**
    ```bash
    git clone https://github.com/rzkmsjhr/nadanada.git
    cd nadanada
    ```
-2. Install frontend dependencies:
+
+2. **Install dependencies:**
    ```bash
    npm install
    ```
-3. Run the development server (this will automatically compile the Rust backend):
+
+3. **Run in development mode:**
    ```bash
    npm run tauri dev
    ```
-4. Build the production application:
+
+4. **Build production binaries:**
    ```bash
    npm run tauri build
    ```
 
+---
+
 ## 📄 License
-MIT
+
+Distributed under the MIT License. See `LICENSE` for more information.
+
