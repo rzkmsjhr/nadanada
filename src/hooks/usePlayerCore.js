@@ -42,6 +42,7 @@ export function usePlayerCore({
   const crossfadeReadyTimeoutRef = useRef(null);
   const justCrossfadedSongIdRef = useRef(null);
   const hasTriggeredEndCrossfadeRef = useRef(false);
+  const outgoingEndedDuringCrossfadeRef = useRef(false);
   const isTransitioningSongRef = useRef(true);
   
   const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
@@ -112,6 +113,7 @@ export function usePlayerCore({
     }
     crossfadeSongRef.current = null;
     isCrossfadeRampingRef.current = false;
+    outgoingEndedDuringCrossfadeRef.current = false;
     const inactiveDeck = 1 - activeDeckRef.current;
     if (inactiveDeck === 0) {
       setDeck0Song(null);
@@ -198,6 +200,7 @@ export function usePlayerCore({
     }
     isCrossfadeRampingRef.current = false;
     hasTriggeredEndCrossfadeRef.current = false;
+    outgoingEndedDuringCrossfadeRef.current = false;
     const incomingSong = crossfadeSongRef.current;
     const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
@@ -244,6 +247,7 @@ export function usePlayerCore({
     if (!incomingSong || isCrossfading) return;
     setIsCrossfading(true);
     crossfadeSongRef.current = incomingSong;
+    outgoingEndedDuringCrossfadeRef.current = false;
 
     const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
@@ -679,6 +683,14 @@ export function usePlayerCore({
         }
         if (isCrossfading) {
           applyDeckVolume(deckIndex, 0);
+          outgoingEndedDuringCrossfadeRef.current = true;
+          if (isCrossfadeRampingRef.current) {
+            // Ramp is running but outgoing just ended — skip remaining ramp, finish now
+            console.log('[CROSSFADE] Outgoing deck ENDED while ramp is running — finishing immediately');
+            finishCrossfade();
+          }
+          // else: ramp hasn't started yet (waiting for incoming deck to load)
+          // When incoming deck reports PLAYING, we'll skip the ramp and go straight to finishCrossfade
         } else {
           handleTrackEnd();
         }
@@ -699,13 +711,20 @@ export function usePlayerCore({
     } else {
       // Inactive deck events during crossfade
       if (event.data === 1 && isCrossfading && !isCrossfadeRampingRef.current) {
-        // Incoming deck has started playing! NOW start the volume ramp.
-        console.log(`[CROSSFADE] Incoming deck ${deckIndex} is PLAYING — starting volume ramp`);
+        // Incoming deck has started playing!
         if (crossfadeReadyTimeoutRef.current) {
           clearTimeout(crossfadeReadyTimeoutRef.current);
           crossfadeReadyTimeoutRef.current = null;
         }
-        startCrossfadeVolumeRamp();
+        if (outgoingEndedDuringCrossfadeRef.current) {
+          // Outgoing song already ended — no point in gradual ramp, just finish immediately
+          console.log(`[CROSSFADE] Incoming deck ${deckIndex} PLAYING, outgoing already ended — finishing immediately`);
+          finishCrossfade();
+        } else {
+          // Outgoing still playing — do the smooth volume ramp
+          console.log(`[CROSSFADE] Incoming deck ${deckIndex} PLAYING — starting volume ramp`);
+          startCrossfadeVolumeRamp();
+        }
       } else if (event.data === 5 || event.data === -1) {
         try { event.target.playVideo(); } catch (e) {}
       }
