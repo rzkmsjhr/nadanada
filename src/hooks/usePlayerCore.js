@@ -38,6 +38,7 @@ export function usePlayerCore({
 
   // Dual-deck simultaneous crossfading state
   const [isCrossfading, setIsCrossfading] = useState(false);
+  const isCrossfadingRef = useRef(false); // Synchronous mirror — React state is async
   const crossfadeIntervalRef = useRef(null);
   const crossfadeReadyTimeoutRef = useRef(null);
   const justCrossfadedSongIdRef = useRef(null);
@@ -127,6 +128,7 @@ export function usePlayerCore({
       if (audioEl) { try { audioEl.pause(); } catch (e) {} }
     }
     setIsCrossfading(false);
+    isCrossfadingRef.current = false;
     if (activeDeckRef.current === 0) {
       setDeck0Opacity(1);
       setDeck1Opacity(0);
@@ -223,6 +225,7 @@ export function usePlayerCore({
     activeDeckRef.current = incomingDeck;
     setActiveDeck(incomingDeck);
     setIsCrossfading(false);
+    isCrossfadingRef.current = false;
     crossfadeSongRef.current = null;
 
     if (incomingSong) {
@@ -244,8 +247,9 @@ export function usePlayerCore({
 
 
   const startCrossfade = (incomingSong) => {
-    if (!incomingSong || isCrossfading) return;
+    if (!incomingSong || isCrossfadingRef.current) return;
     setIsCrossfading(true);
+    isCrossfadingRef.current = true;
     crossfadeSongRef.current = incomingSong;
     outgoingEndedDuringCrossfadeRef.current = false;
 
@@ -288,7 +292,7 @@ export function usePlayerCore({
       (hasNext || repeatMode > 0)
     ) {
       const remaining = dur - time;
-      if (remaining <= crossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfading) {
+      if (remaining <= crossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfadingRef.current) {
         console.log(`[CROSSFADE-DEBUG] 🔔 checkAutoCrossfade triggered: time=${time.toFixed(1)}, dur=${dur.toFixed(1)}, remaining=${remaining.toFixed(1)}s <= crossfadeDuration=${crossfadeDuration}s`);
         hasTriggeredEndCrossfadeRef.current = true;
         startCrossfade(nextSong);
@@ -665,7 +669,7 @@ export function usePlayerCore({
         if (crossfadeDuration > 0 && isTransitioningSongRef.current) {
           isTransitioningSongRef.current = false;
           fadeIn(Math.min(crossfadeDuration * 1000, 1500));
-        } else if (!activeFadeIntervalRef.current && !isCrossfading) {
+        } else if (!activeFadeIntervalRef.current && !isCrossfadingRef.current) {
           try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
         }
       } else if (event.data === 2) { // PAUSED
@@ -681,7 +685,7 @@ export function usePlayerCore({
           clearTimeout(bufferingTimeoutRef.current);
           bufferingTimeoutRef.current = null;
         }
-        if (isCrossfading) {
+        if (isCrossfadingRef.current) {
           applyDeckVolume(deckIndex, 0);
           outgoingEndedDuringCrossfadeRef.current = true;
           if (isCrossfadeRampingRef.current) {
@@ -695,7 +699,7 @@ export function usePlayerCore({
           handleTrackEnd();
         }
       } else if (event.data === 3) { // BUFFERING
-        if (!isCrossfading) {
+        if (!isCrossfadingRef.current) {
           if (!bufferingTimeoutRef.current) {
             bufferingTimeoutRef.current = setTimeout(() => {
               setIsBuffering(true);
@@ -703,14 +707,14 @@ export function usePlayerCore({
           }
         }
       } else if (event.data === 5 || event.data === -1) {
-        if (!isCrossfading) {
+        if (!isCrossfadingRef.current) {
           setIsBuffering(true);
         }
         try { event.target.playVideo(); } catch (e) {}
       }
     } else {
       // Inactive deck events during crossfade
-      if (event.data === 1 && isCrossfading && !isCrossfadeRampingRef.current) {
+      if (event.data === 1 && isCrossfadingRef.current && !isCrossfadeRampingRef.current) {
         // Incoming deck has started playing!
         if (crossfadeReadyTimeoutRef.current) {
           clearTimeout(crossfadeReadyTimeoutRef.current);
