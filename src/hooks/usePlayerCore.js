@@ -44,6 +44,8 @@ export function usePlayerCore({
   const justCrossfadedSongIdRef = useRef(null);
   const hasTriggeredEndCrossfadeRef = useRef(false);
   const outgoingEndedDuringCrossfadeRef = useRef(false);
+  const isPreloadingNextRef = useRef(false);
+  const hasPreloadedNextRef = useRef(false);
   const isTransitioningSongRef = useRef(true);
   
   const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
@@ -115,6 +117,8 @@ export function usePlayerCore({
     crossfadeSongRef.current = null;
     isCrossfadeRampingRef.current = false;
     outgoingEndedDuringCrossfadeRef.current = false;
+    isPreloadingNextRef.current = false;
+    hasPreloadedNextRef.current = false;
     const inactiveDeck = 1 - activeDeckRef.current;
     if (inactiveDeck === 0) {
       setDeck0Song(null);
@@ -163,6 +167,16 @@ export function usePlayerCore({
     applyDeckVolume(outgoingDeck, startVol);
     applyDeckVolume(incomingDeck, 0);
 
+    // If we preloaded the deck, it's currently paused at 0:00. Start playing!
+    const audioEl = document.getElementById(`deck-${incomingDeck}-audio`);
+    if (audioEl) { try { audioEl.play(); } catch(e) {} }
+    
+    if (incomingDeck === 0 && deck0PlayerRef.current) {
+      try { deck0PlayerRef.current.playVideo(); } catch(e) {}
+    } else if (incomingDeck === 1 && deck1PlayerRef.current) {
+      try { deck1PlayerRef.current.playVideo(); } catch(e) {}
+    }
+
     crossfadeIntervalRef.current = setInterval(() => {
       step++;
       const progress = Math.min(1, step / steps);
@@ -203,6 +217,8 @@ export function usePlayerCore({
     isCrossfadeRampingRef.current = false;
     hasTriggeredEndCrossfadeRef.current = false;
     outgoingEndedDuringCrossfadeRef.current = false;
+    isPreloadingNextRef.current = false;
+    hasPreloadedNextRef.current = false;
     const incomingSong = crossfadeSongRef.current;
     const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
@@ -246,19 +262,18 @@ export function usePlayerCore({
 
 
 
-  const startCrossfade = (incomingSong) => {
-    if (!incomingSong || isCrossfadingRef.current) return;
-    setIsCrossfading(true);
-    isCrossfadingRef.current = true;
+  const preloadNextSong = (incomingSong) => {
+    if (!incomingSong || isPreloadingNextRef.current || hasPreloadedNextRef.current) return;
+    
+    isPreloadingNextRef.current = true;
     crossfadeSongRef.current = incomingSong;
     outgoingEndedDuringCrossfadeRef.current = false;
 
-    const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
 
     // Set initial volume & opacity
+
     applyDeckVolume(incomingDeck, 0);
-    applyDeckVolume(outgoingDeck, isMuted ? 0 : masterVolume);
 
     if (incomingDeck === 0) {
       setDeck0Song(incomingSong);
@@ -268,18 +283,18 @@ export function usePlayerCore({
       setDeck1Opacity(0);
     }
 
-    // DON'T start ramp yet — wait for the incoming deck to report PLAYING (state=1)
-    // via onDeckStateChange. Set a safety timeout in case the incoming deck never loads.
+    // Wait for incoming deck to report PLAYING (state=1) in onDeckStateChange.
+    // Set a safety timeout in case it never loads (so we don't get stuck)
     if (crossfadeReadyTimeoutRef.current) {
       clearTimeout(crossfadeReadyTimeoutRef.current);
     }
     crossfadeReadyTimeoutRef.current = setTimeout(() => {
-      // Safety: if incoming deck hasn't started playing within crossfadeDuration+5s,
-      // just finish the crossfade anyway to avoid dead air
-      if (isCrossfadeRampingRef.current === false && crossfadeSongRef.current) {
-        console.log('[CROSSFADE] Safety timeout: incoming deck did not start in time, finishing crossfade');
-        finishCrossfade();
+      if (isPreloadingNextRef.current) {
+        console.log('[CROSSFADE] Safety timeout: preload did not finish in time, aborting preload');
+        cancelCrossfade();
       }
+
+
     }, (crossfadeDuration + 5) * 1000);
   };
 
@@ -292,10 +307,27 @@ export function usePlayerCore({
       (hasNext || repeatMode > 0)
     ) {
       const remaining = dur - time;
+      
+      // Phase 1: Preload the next song exactly crossfadeDuration + 5 seconds before end
+      const preloadTime = crossfadeDuration + 5;
+      if (remaining <= preloadTime && remaining > crossfadeDuration && !isPreloadingNextRef.current && !hasPreloadedNextRef.current) {
+        console.log(`[CROSSFADE-DEBUG] 🔄 Preloading next song at time=${time.toFixed(1)}, remaining=${remaining.toFixed(1)}s (preload window)`);
+        preloadNextSong(nextSong);
+      }
+
+      // Phase 2: Start the crossfade ramp at exactly crossfadeDuration seconds before end
       if (remaining <= crossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfadingRef.current) {
-        console.log(`[CROSSFADE-DEBUG] 🔔 checkAutoCrossfade triggered: time=${time.toFixed(1)}, dur=${dur.toFixed(1)}, remaining=${remaining.toFixed(1)}s <= crossfadeDuration=${crossfadeDuration}s`);
+        console.log(`[CROSSFADE-DEBUG] 🔔 crossfade ramp triggered: remaining=${remaining.toFixed(1)}s <= ${crossfadeDuration}s`);
         hasTriggeredEndCrossfadeRef.current = true;
-        startCrossfade(nextSong);
+        setIsCrossfading(true);
+        isCrossfadingRef.current = true;
+
+        if (!hasPreloadedNextRef.current && !isPreloadingNextRef.current) {
+          console.log(`[CROSSFADE-DEBUG] ⚠️ Scrubbed past preload window, loading song now!`);
+          preloadNextSong(nextSong);
+        }
+
+        startCrossfadeVolumeRamp();
       }
     }
   };
@@ -714,18 +746,31 @@ export function usePlayerCore({
       }
     } else {
       // Inactive deck events during crossfade
-      if (event.data === 1 && isCrossfadingRef.current && !isCrossfadeRampingRef.current) {
-        // Incoming deck has started playing!
+      if (event.data === 1 && isPreloadingNextRef.current && !isCrossfadeRampingRef.current) {
+        // Preload finished! Pause it and wait for Phase 2.
+        console.log(`[CROSSFADE-DEBUG] ✅ Preload finished on deck ${deckIndex}, pausing until ramp`);
+        try { 
+          event.target.pauseVideo();
+          event.target.seekTo(0, true);
+        } catch (e) {}
+        isPreloadingNextRef.current = false;
+        hasPreloadedNextRef.current = true;
+        
+        if (crossfadeReadyTimeoutRef.current) {
+          clearTimeout(crossfadeReadyTimeoutRef.current);
+          crossfadeReadyTimeoutRef.current = null;
+        }
+      } else if (event.data === 1 && (isCrossfadingRef.current || isPreloadingNextRef.current) && !isCrossfadeRampingRef.current) {
+
+        // Incoming deck started playing DURING crossfade (either preload finished late or we skipped preload)
         if (crossfadeReadyTimeoutRef.current) {
           clearTimeout(crossfadeReadyTimeoutRef.current);
           crossfadeReadyTimeoutRef.current = null;
         }
         if (outgoingEndedDuringCrossfadeRef.current) {
-          // Outgoing song already ended — no point in gradual ramp, just finish immediately
           console.log(`[CROSSFADE] Incoming deck ${deckIndex} PLAYING, outgoing already ended — finishing immediately`);
           finishCrossfade();
         } else {
-          // Outgoing still playing — do the smooth volume ramp
           console.log(`[CROSSFADE] Incoming deck ${deckIndex} PLAYING — starting volume ramp`);
           startCrossfadeVolumeRamp();
         }
