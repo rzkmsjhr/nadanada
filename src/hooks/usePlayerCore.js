@@ -358,6 +358,12 @@ export function usePlayerCore({
       return;
     }
 
+    // If the song ID is unchanged, it is the SAME track already loaded and playing!
+    // Do NOT reload or restart it when playlist items are reordered!
+    if (songId && prevSongIdRef.current === songId) {
+      return;
+    }
+
     // Otherwise, this is a genuine new song selection or manual skip
     cancelCrossfade();
 
@@ -379,17 +385,11 @@ export function usePlayerCore({
         setDeck0Opacity(1);
         setDeck1Song(null);
         setDeck1Opacity(0);
-        if (prevSongIdRef.current === songId && deck0PlayerRef.current?.loadVideoById) {
-          try { deck0PlayerRef.current.loadVideoById(songId, startSecs); } catch (e) {}
-        }
       } else {
         setDeck1Song(currentSong);
         setDeck1Opacity(1);
         setDeck0Song(null);
         setDeck0Opacity(0);
-        if (prevSongIdRef.current === songId && deck1PlayerRef.current?.loadVideoById) {
-          try { deck1PlayerRef.current.loadVideoById(songId, startSecs); } catch (e) {}
-        }
       }
 
       prevSongIdRef.current = songId;

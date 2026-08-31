@@ -77,15 +77,18 @@ export default function PlaylistViews() {
           }
         }} 
         onReorder={(dragIndex, dropIndex) => {
+          if (dragIndex === dropIndex) return;
+          const currentTrack = playlist[currentIndex];
           const newPlaylist = [...downloadedSongs];
           const [draggedItem] = newPlaylist.splice(dragIndex, 1);
           newPlaylist.splice(dropIndex, 0, draggedItem);
           setDownloadedSongs(newPlaylist);
           if (playlist === downloadedSongs) {
             setPlaylist(newPlaylist);
-            if (currentIndex === dragIndex) setCurrentIndex(dropIndex);
-            else if (currentIndex > dragIndex && currentIndex <= dropIndex) setCurrentIndex(currentIndex - 1);
-            else if (currentIndex < dragIndex && currentIndex >= dropIndex) setCurrentIndex(currentIndex + 1);
+            if (currentTrack) {
+              const newIdx = newPlaylist.findIndex(s => s.id === currentTrack.id);
+              if (newIdx !== -1) setCurrentIndex(newIdx);
+            }
           }
         }} 
         isTrendingMode={true} 

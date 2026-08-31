@@ -128,20 +128,18 @@ export function usePlaylistManager({
   const handleReorder = (fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
     setPlaylist(prev => {
+      const currentTrack = prev[currentIndex];
       const newPlaylist = [...prev];
       const [movedItem] = newPlaylist.splice(fromIndex, 1);
       newPlaylist.splice(toIndex, 0, movedItem);
-      return newPlaylist;
-    });
-    setCurrentIndex(prev => {
-      if (prev === fromIndex) {
-        return toIndex;
-      } else if (fromIndex < prev && toIndex >= prev) {
-        return prev - 1;
-      } else if (fromIndex > prev && toIndex <= prev) {
-        return prev + 1;
+
+      if (currentTrack) {
+        const newIdx = newPlaylist.findIndex(s => s.id === currentTrack.id);
+        if (newIdx !== -1) {
+          setCurrentIndex(newIdx);
+        }
       }
-      return prev;
+      return newPlaylist;
     });
   };
 
