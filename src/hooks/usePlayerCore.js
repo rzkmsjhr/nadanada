@@ -39,6 +39,7 @@ export function usePlayerCore({
   // Dual-deck simultaneous crossfading state
   const [isCrossfading, setIsCrossfading] = useState(false);
   const crossfadeIntervalRef = useRef(null);
+  const crossfadeReadyTimeoutRef = useRef(null);
   const justCrossfadedSongIdRef = useRef(null);
   const hasTriggeredEndCrossfadeRef = useRef(false);
   const isTransitioningSongRef = useRef(true);
@@ -104,6 +105,10 @@ export function usePlayerCore({
     if (crossfadeIntervalRef.current) {
       clearInterval(crossfadeIntervalRef.current);
       crossfadeIntervalRef.current = null;
+    }
+    if (crossfadeReadyTimeoutRef.current) {
+      clearTimeout(crossfadeReadyTimeoutRef.current);
+      crossfadeReadyTimeoutRef.current = null;
     }
     crossfadeSongRef.current = null;
     isCrossfadeRampingRef.current = false;
@@ -187,6 +192,10 @@ export function usePlayerCore({
       clearInterval(crossfadeIntervalRef.current);
       crossfadeIntervalRef.current = null;
     }
+    if (crossfadeReadyTimeoutRef.current) {
+      clearTimeout(crossfadeReadyTimeoutRef.current);
+      crossfadeReadyTimeoutRef.current = null;
+    }
     isCrossfadeRampingRef.current = false;
     hasTriggeredEndCrossfadeRef.current = false;
     const incomingSong = crossfadeSongRef.current;
@@ -229,6 +238,8 @@ export function usePlayerCore({
     else if (hasNext) onNext();
   };
 
+
+
   const startCrossfade = (incomingSong) => {
     if (!incomingSong || isCrossfading) return;
     setIsCrossfading(true);
@@ -249,7 +260,19 @@ export function usePlayerCore({
       setDeck1Opacity(0);
     }
 
-    startCrossfadeVolumeRamp();
+    // DON'T start ramp yet — wait for the incoming deck to report PLAYING (state=1)
+    // via onDeckStateChange. Set a safety timeout in case the incoming deck never loads.
+    if (crossfadeReadyTimeoutRef.current) {
+      clearTimeout(crossfadeReadyTimeoutRef.current);
+    }
+    crossfadeReadyTimeoutRef.current = setTimeout(() => {
+      // Safety: if incoming deck hasn't started playing within crossfadeDuration+5s,
+      // just finish the crossfade anyway to avoid dead air
+      if (isCrossfadeRampingRef.current === false && crossfadeSongRef.current) {
+        console.log('[CROSSFADE] Safety timeout: incoming deck did not start in time, finishing crossfade');
+        finishCrossfade();
+      }
+    }, (crossfadeDuration + 5) * 1000);
   };
 
   const checkAutoCrossfade = (time, dur) => {
@@ -674,8 +697,16 @@ export function usePlayerCore({
         try { event.target.playVideo(); } catch (e) {}
       }
     } else {
-      // Inactive deck playing during crossfade
-      if (event.data === 5 || event.data === -1) {
+      // Inactive deck events during crossfade
+      if (event.data === 1 && isCrossfading && !isCrossfadeRampingRef.current) {
+        // Incoming deck has started playing! NOW start the volume ramp.
+        console.log(`[CROSSFADE] Incoming deck ${deckIndex} is PLAYING — starting volume ramp`);
+        if (crossfadeReadyTimeoutRef.current) {
+          clearTimeout(crossfadeReadyTimeoutRef.current);
+          crossfadeReadyTimeoutRef.current = null;
+        }
+        startCrossfadeVolumeRamp();
+      } else if (event.data === 5 || event.data === -1) {
         try { event.target.playVideo(); } catch (e) {}
       }
     }
