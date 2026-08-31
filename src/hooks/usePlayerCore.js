@@ -234,11 +234,13 @@ export function usePlayerCore({
       setDeck1Opacity(0);
       const audioEl = document.getElementById('deck-1-audio');
       if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+      if (deck1PlayerRef.current) { try { deck1PlayerRef.current.pauseVideo(); } catch (e) {} }
     } else {
       setDeck1Opacity(1);
       setDeck0Opacity(0);
       const audioEl = document.getElementById('deck-0-audio');
       if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+      if (deck0PlayerRef.current) { try { deck0PlayerRef.current.pauseVideo(); } catch (e) {} }
     }
 
     activeDeckRef.current = incomingDeck;
