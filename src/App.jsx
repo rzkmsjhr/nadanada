@@ -192,7 +192,13 @@ function App() {
       setShowSearch(true);
     }
   };
-  const [isEndlessPlay, setIsEndlessPlay] = useState(false);
+  const [isEndlessPlay, setIsEndlessPlay] = useState(() => {
+    return localStorage.getItem('nadanada-is-endless') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-is-endless', isEndlessPlay.toString());
+  }, [isEndlessPlay]);
   const [showTrendingDropdown, setShowTrendingDropdown] = useState(false);
   const [globalError, setGlobalError] = useState(null);
 

@@ -49,6 +49,10 @@ export default function AppModals() {
   } = useAppContext();
   return (
     <>
+      {showWelcome && (
+        <WelcomeModal onClose={() => setShowWelcome(false)} />
+      )}
+
       {showSettings && (
         <SettingsModal
           onClose={() => setShowSettings(false)}

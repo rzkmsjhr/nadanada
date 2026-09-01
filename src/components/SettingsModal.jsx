@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Check, Palette, Sliders } from 'lucide-react';
+import { X, Check, Palette, Sliders, Database, AlertTriangle } from 'lucide-react';
 
 const THEMES = [
   { id: 'lavender-steel', name: 'Lavender Steel', bg: '#FFDBED', accent: '#E34877' },
@@ -31,6 +31,7 @@ export default function SettingsModal({
           borderRadius: '16px',
           display: 'flex',
           flexDirection: 'column',
+          alignItems: 'stretch',
           gap: '20px',
           boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
           position: 'relative',
@@ -183,6 +184,80 @@ export default function SettingsModal({
             <span>5s</span>
             <span>6s</span>
           </div>
+        </div>
+
+        {/* App Data Section */}
+        <div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.75px',
+            color: 'var(--text-muted)',
+            marginBottom: '12px'
+          }}>
+            <Database size={16} />
+            <span>App Data</span>
+          </div>
+
+          <button
+            onClick={async () => {
+              if (window.confirm('Are you sure you want to clear all app data, including saved playlists and settings? This action cannot be undone.')) {
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                if (window.caches) {
+                  try {
+                    const cacheKeys = await window.caches.keys();
+                    await Promise.all(cacheKeys.map(key => window.caches.delete(key)));
+                  } catch (err) {
+                    console.error('Failed to clear caches', err);
+                  }
+                }
+
+                if (window.indexedDB && window.indexedDB.databases) {
+                  try {
+                    const dbs = await window.indexedDB.databases();
+                    dbs.forEach(db => {
+                      if (db.name) window.indexedDB.deleteDatabase(db.name);
+                    });
+                  } catch (err) {
+                    console.error('Failed to clear indexedDB', err);
+                  }
+                }
+                
+                window.location.reload();
+              }
+            }}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              padding: '10px',
+              backgroundColor: 'transparent',
+              border: '1px solid #ef4444',
+              color: '#ef4444',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent';
+            }}
+          >
+            <AlertTriangle size={18} />
+            Clear All Data
+          </button>
         </div>
       </div>
     </div>

@@ -10,8 +10,22 @@ export function usePlayback({
   setRestoredSong,
   playerRef
 }) {
-  const [repeatMode, setRepeatMode] = useState(0); // 0=off, 1=repeat, 2=repeat once
-  const [isShuffle, setIsShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState(() => {
+    const saved = localStorage.getItem('nadanada-repeat-mode');
+    return saved !== null ? parseInt(saved, 10) : 0;
+  }); // 0=off, 1=repeat, 2=repeat once
+  
+  const [isShuffle, setIsShuffle] = useState(() => {
+    return localStorage.getItem('nadanada-is-shuffle') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-repeat-mode', repeatMode.toString());
+  }, [repeatMode]);
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-is-shuffle', isShuffle.toString());
+  }, [isShuffle]);
   const [shuffleHistory, setShuffleHistory] = useState([]);
   const [upcomingShuffleIndex, setUpcomingShuffleIndex] = useState(null);
 
