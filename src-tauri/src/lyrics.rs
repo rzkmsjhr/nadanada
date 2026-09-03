@@ -302,13 +302,47 @@ pub async fn get_lyrics(
     artist: String,
     duration: Option<f64>,
     video_id: Option<String>,
+    app_handle: tauri::AppHandle,
 ) -> Result<LyricsResponse, String> {
-    let client = get_client();
+    use tauri::Manager;
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("lyrics_cache_v1");
+    let _ = std::fs::create_dir_all(&cache_dir);
+
     let vid = video_id.unwrap_or_default();
+    let cache_key = if !vid.is_empty() {
+        vid.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "")
+    } else {
+        format!("{}_{}", sanitize_title(&title), artist)
+            .replace(|c: char| !c.is_alphanumeric() && c != '_', "")
+    };
+    let cache_file = cache_dir.join(format!("{}.json", cache_key));
+
+    // ── STEP 0: Check Local Disk Cache ──
+    if cache_file.exists() {
+        if let Ok(content) = std::fs::read_to_string(&cache_file) {
+            if let Ok(cached_resp) = serde_json::from_str::<LyricsResponse>(&content) {
+                if cached_resp.success {
+                    println!("[Lyrics] Serving cached lyrics from disk: {}", cache_key);
+                    return Ok(cached_resp);
+                }
+            }
+        }
+    }
+
+    let client = get_client();
 
     // ── STEP 1: LRCLIB (Primary Synced Database) ──
     if let Some(resp) = fetch_lrclib(&client, &title, &artist, duration).await {
         println!("[Lyrics] Successfully retrieved synced lyrics from LRCLIB");
+        if resp.success {
+            if let Ok(json) = serde_json::to_string_pretty(&resp) {
+                let _ = std::fs::write(&cache_file, json);
+            }
+        }
         return Ok(resp);
     }
 
@@ -316,6 +350,11 @@ pub async fn get_lyrics(
     if !vid.is_empty() {
         if let Some(resp) = fetch_youtube_captions(&client, &vid).await {
             println!("[Lyrics] Successfully retrieved timed captions from YouTube Video");
+            if resp.success {
+                if let Ok(json) = serde_json::to_string_pretty(&resp) {
+                    let _ = std::fs::write(&cache_file, json);
+                }
+            }
             return Ok(resp);
         }
     }
@@ -329,4 +368,42 @@ pub async fn get_lyrics(
         instrumental: false,
         error: Some("No synced lyrics found for this song.".to_string()),
     })
+}
+
+#[tauri::command]
+pub async fn save_lyrics(
+    video_id: String,
+    title: String,
+    artist: String,
+    synced_lyrics: String,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    use tauri::Manager;
+    let cache_dir = app_handle
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("lyrics_cache_v1");
+    let _ = std::fs::create_dir_all(&cache_dir);
+
+    let cache_key = if !video_id.is_empty() {
+        video_id.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "")
+    } else {
+        format!("{}_{}", sanitize_title(&title), artist)
+            .replace(|c: char| !c.is_alphanumeric() && c != '_', "")
+    };
+
+    let cache_file = cache_dir.join(format!("{}.json", cache_key));
+    let resp = LyricsResponse {
+        success: true,
+        synced_lyrics: Some(synced_lyrics),
+        plain_lyrics: None,
+        source: "Saved".to_string(),
+        instrumental: false,
+        error: None,
+    };
+    let json = serde_json::to_string_pretty(&resp).map_err(|e| e.to_string())?;
+    std::fs::write(&cache_file, json).map_err(|e| e.to_string())?;
+    println!("[Lyrics] Saved modified lyrics to disk: {}", cache_key);
+    Ok(true)
 }

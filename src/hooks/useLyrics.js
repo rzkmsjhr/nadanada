@@ -101,7 +101,7 @@ export function useLyrics(currentSong, isAudioPlaying, api) {
 
   // Load song sync offsets and fetch lyrics when showLyrics is active
   useEffect(() => {
-    if (currentSong) {
+    if (currentSong?.id) {
       const savedSync = localStorage.getItem(`lyrics_sync_${currentSong.id}`);
       setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
 
@@ -118,17 +118,43 @@ export function useLyrics(currentSong, isAudioPlaying, api) {
     }
   }, [currentSong?.id, showLyrics]);
 
-  // Save sync offset when changed
-  useEffect(() => {
-    const id = songIdForSaveRef.current;
-    if (id) {
-      if (syncOffset !== 0) {
-        localStorage.setItem(`lyrics_sync_${id}`, syncOffset.toString());
+  // Explicit sync offset updater that immediately commits to localStorage for the active song
+  const handleSyncChange = useCallback((updaterOrValue) => {
+    const songId = songIdForSaveRef.current;
+    if (!songId) return;
+
+    setSyncOffset((prev) => {
+      const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
+      if (next !== 0) {
+        localStorage.setItem(`lyrics_sync_${songId}`, next.toString());
       } else {
-        localStorage.removeItem(`lyrics_sync_${id}`);
+        localStorage.removeItem(`lyrics_sync_${songId}`);
       }
+      return next;
+    });
+  }, []);
+
+  // Allows saving custom / modified lyrics directly into disk cache
+  const saveModifiedLyrics = useCallback(async (syncedLyricsText) => {
+    const song = currentSong;
+    if (!song?.id) return false;
+    try {
+      await api.saveLyrics(song.id, song.title, song.channel || song.artist || '', syncedLyricsText);
+      const parsed = parseLrc(syncedLyricsText);
+      setLyricsData({
+        isInstrumental: false,
+        isSynced: true,
+        lines: parsed,
+        rawLrc: syncedLyricsText,
+        source: 'Saved',
+        _songId: song.id
+      });
+      return true;
+    } catch (e) {
+      console.error('Failed to save modified lyrics to disk:', e);
+      return false;
     }
-  }, [syncOffset]);
+  }, [currentSong, api]);
 
   const handleRetry = useCallback(() => {
     if (currentSong) {
@@ -147,7 +173,8 @@ export function useLyrics(currentSong, isAudioPlaying, api) {
     lyricsError,
     setLyricsError,
     syncOffset,
-    setSyncOffset,
+    setSyncOffset: handleSyncChange,
+    saveModifiedLyrics,
     handleRetry
   };
 }

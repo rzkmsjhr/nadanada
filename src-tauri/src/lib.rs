@@ -69,7 +69,8 @@ pub fn run() {
             downloads::delete_downloaded_song,
             playlists::load_playlists,
             playlists::save_playlists,
-            lyrics::get_lyrics
+            lyrics::get_lyrics,
+            lyrics::save_lyrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
