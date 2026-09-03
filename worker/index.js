@@ -40,6 +40,22 @@ const EMBED_HTML = `<!DOCTYPE html>
 
   var player;
   var timeInterval;
+  var userRequestedCaption = false;
+
+  function forceDisableCaptions() {
+    if (userRequestedCaption) return;
+    try {
+      if (player && typeof player.unloadModule === 'function') {
+        player.unloadModule('captions');
+        player.unloadModule('cc');
+      }
+    } catch(err) {}
+    try {
+      if (player && typeof player.setOption === 'function') {
+        player.setOption('captions', 'track', {});
+      }
+    } catch(err) {}
+  }
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('player', {
@@ -54,12 +70,14 @@ const EMBED_HTML = `<!DOCTYPE html>
         modestbranding: 1,
         rel: 0,
         cc_load_policy: 0,
+        iv_load_policy: 3,
         start: startSeconds > 0 ? startSeconds : undefined,
         origin: window.location.origin
       },
       events: {
         onReady: function(e) {
           e.target.setVolume(initialVolume);
+          forceDisableCaptions();
           window.parent.postMessage({ type: 'yt-proxy-ready' }, '*');
           // Start periodic time updates
           timeInterval = setInterval(function() {
@@ -75,6 +93,9 @@ const EMBED_HTML = `<!DOCTYPE html>
           }, 100);
         },
         onApiChange: function(e) {
+          if (!userRequestedCaption) {
+            forceDisableCaptions();
+          }
           try {
             var tList = player.getOption('captions', 'tracklist');
             if (tList && tList.length > 0) window.parent.postMessage({ type: 'yt-proxy-captions', data: tList }, '*');
@@ -82,6 +103,9 @@ const EMBED_HTML = `<!DOCTYPE html>
         },
         onStateChange: function(e) {
           window.parent.postMessage({ type: 'yt-proxy-state', data: e.data }, '*');
+          if (!userRequestedCaption) {
+            forceDisableCaptions();
+          }
           if (e.data === 1) {
             try { player.setPlaybackQuality('hd1080'); } catch(err) {}
             try {
@@ -113,8 +137,22 @@ const EMBED_HTML = `<!DOCTYPE html>
         case 'setVolume': player.setVolume(msg.value); break;
         case 'mute': player.mute(); break;
         case 'unmute': player.unMute(); break;
-        case 'loadVideoById': window.captionsEmitted = false; player.loadVideoById({videoId: msg.videoId, startSeconds: msg.startSeconds || 0, suggestedQuality: 'hd1080'}); break;
-        case 'setCaption': player.setOption('captions', 'track', msg.value ? {languageCode: msg.value} : {}); break;
+        case 'loadVideoById':
+          userRequestedCaption = false;
+          window.captionsEmitted = false;
+          player.loadVideoById({videoId: msg.videoId, startSeconds: msg.startSeconds || 0, suggestedQuality: 'hd1080'});
+          forceDisableCaptions();
+          break;
+        case 'setCaption':
+          if (msg.value) {
+            userRequestedCaption = true;
+            try { if (player.loadModule) player.loadModule('captions'); } catch(e) {}
+            player.setOption('captions', 'track', {languageCode: msg.value});
+          } else {
+            userRequestedCaption = false;
+            forceDisableCaptions();
+          }
+          break;
       }
     } catch(err) {}
   });
