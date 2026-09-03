@@ -274,9 +274,16 @@ export default function SettingsModal({
 
           <button
             onClick={async () => {
-              if (window.confirm('Are you sure you want to clear all app data, including saved playlists and settings? This action cannot be undone.')) {
+              if (window.confirm('Are you sure you want to clear app data and cache? Your saved playlists and downloaded songs will be kept.')) {
+                // Preserve saved playlists (NOT the current "my playlist" queue)
+                const savedPlaylists = localStorage.getItem('nadanada-saved-playlists');
+
                 localStorage.clear();
                 sessionStorage.clear();
+
+                if (savedPlaylists) {
+                  localStorage.setItem('nadanada-saved-playlists', savedPlaylists);
+                }
                 
                 if (window.caches) {
                   try {

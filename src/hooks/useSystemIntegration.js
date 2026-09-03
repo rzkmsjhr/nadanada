@@ -41,22 +41,47 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       debounceTimer = setTimeout(async () => {
         try {
           const maximized = await appWindow.isMaximized();
-          if (maximized === isMaximizedRef.current) return; // not a maximize change
+          if (maximized !== isMaximizedRef.current) {
+            // Step 1 — hide video now (synchronous state update)
+            setIsVideoHidden(true);
 
-          // Step 1 — hide video now (synchronous state update)
-          setIsVideoHidden(true);
-
-          // Step 2 — wait two animation frames so the hide actually paints
-          // before we touch the layout (double-rAF = guaranteed post-paint)
-          requestAnimationFrame(() => {
+            // Step 2 — wait two animation frames so the hide actually paints
+            // before we touch the layout (double-rAF = guaranteed post-paint)
             requestAnimationFrame(() => {
-              isMaximizedRef.current = maximized;
-              setIsMaximized(maximized);
+              requestAnimationFrame(() => {
+                isMaximizedRef.current = maximized;
+                setIsMaximized(maximized);
 
-              // Step 3 — reveal video after the new layout has settled
-              showTimer = setTimeout(() => setIsVideoHidden(false), 250);
+                // Step 3 — reveal video after the new layout has settled
+                showTimer = setTimeout(() => setIsVideoHidden(false), 250);
+              });
             });
-          });
+          } else if (!maximized && !isFullscreenRef.current) {
+            // Persist resized window dimensions (excluding maximized and fullscreen)
+            try {
+              const currentSize = await appWindow.innerSize();
+              const scale = await appWindow.scaleFactor();
+              const logical = currentSize.toLogical(scale);
+              const roundedWidth = Math.round(logical.width);
+              const roundedHeight = Math.round(logical.height);
+
+              if (isMiniPlayerRef.current) {
+                if (roundedWidth >= 320 && roundedHeight >= 180) {
+                  localStorage.setItem('nadanada-mini-player-size', JSON.stringify({
+                    width: roundedWidth,
+                    height: roundedHeight
+                  }));
+                }
+              } else {
+                if (roundedWidth >= 375 && roundedHeight >= 580) {
+                  localStorage.setItem('nadanada-default-window-size', JSON.stringify({
+                    width: roundedWidth,
+                    height: roundedHeight
+                  }));
+                }
+              }
+            } catch {}
+          }
         } catch {}
       }, 150); // 150ms debounce — longer than Windows Aero animation (~100ms)
     });
@@ -95,10 +120,23 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       if (isMiniPlayerRef.current) {
         setIsMiniPlayer(false);
         try {
+          let defWidth = 375;
+          let defHeight = 580;
+          try {
+            const s = localStorage.getItem('nadanada-default-window-size');
+            if (s) {
+              const parsed = JSON.parse(s);
+              if (parsed.width && parsed.height) {
+                defWidth = parsed.width;
+                defHeight = parsed.height;
+              }
+            }
+          } catch {}
+
           if (prevSizeRef.current) {
             await invoke('force_resize_window', { 
-              width: prevSizeRef.current.width, 
-              height: prevSizeRef.current.height, 
+              width: prevSizeRef.current.width || defWidth, 
+              height: prevSizeRef.current.height || defHeight, 
               minWidth: 375, 
               minHeight: 580,
               alwaysOnTop: false
@@ -106,6 +144,8 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
             if (prevSizeRef.current.wasMaximized) {
               await appWindow.maximize();
             }
+          } else {
+            await invoke('force_resize_window', { width: defWidth, height: defHeight, minWidth: 375, minHeight: 580, alwaysOnTop: false });
           }
         } catch (err) {
           console.error("Failed to restore window on close:", err);
@@ -156,10 +196,23 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     if (isMiniPlayer) {
       setIsMiniPlayer(false);
       try {
+        let defWidth = 375;
+        let defHeight = 580;
+        try {
+          const s = localStorage.getItem('nadanada-default-window-size');
+          if (s) {
+            const parsed = JSON.parse(s);
+            if (parsed.width && parsed.height) {
+              defWidth = parsed.width;
+              defHeight = parsed.height;
+            }
+          }
+        } catch {}
+
         if (prevSizeRef.current) {
           await invoke('force_resize_window', { 
-            width: prevSizeRef.current.width, 
-            height: prevSizeRef.current.height, 
+            width: prevSizeRef.current.width || defWidth, 
+            height: prevSizeRef.current.height || defHeight, 
             minWidth: 375, 
             minHeight: 580,
             alwaysOnTop: false
@@ -168,7 +221,7 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
             await appWindow.maximize();
           }
         } else {
-          await invoke('force_resize_window', { width: 375, height: 580, minWidth: 375, minHeight: 580, alwaysOnTop: false });
+          await invoke('force_resize_window', { width: defWidth, height: defHeight, minWidth: 375, minHeight: 580, alwaysOnTop: false });
         }
       } catch (err) {
         console.error("Failed to restore window:", err);
@@ -188,8 +241,23 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
       if (isMax) {
         await appWindow.unmaximize();
       }
+
+      // Check for user-customized mini player size
+      let miniWidth = 320;
+      let miniHeight = 180;
       try {
-        await invoke('force_resize_window', { width: 320, height: 180, minWidth: 320, minHeight: 180, alwaysOnTop: true });
+        const s = localStorage.getItem('nadanada-mini-player-size');
+        if (s) {
+          const parsed = JSON.parse(s);
+          if (parsed.width && parsed.height) {
+            miniWidth = parsed.width;
+            miniHeight = parsed.height;
+          }
+        }
+      } catch {}
+
+      try {
+        await invoke('force_resize_window', { width: miniWidth, height: miniHeight, minWidth: 320, minHeight: 180, alwaysOnTop: true });
       } catch (err) {
         console.error("Failed to resize window:", err);
       }
