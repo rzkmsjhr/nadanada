@@ -126,17 +126,33 @@ export function usePlaylistManager({
   };
 
   const handleReorder = (fromIndex, toIndex) => {
-    if (fromIndex === toIndex) return;
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+
+    if (savedPlaylist) {
+      setSavedPlaylist(prev => {
+        if (!prev || fromIndex >= prev.length || toIndex >= prev.length) return prev;
+        const next = [...prev];
+        const [item] = next.splice(fromIndex, 1);
+        next.splice(toIndex, 0, item);
+        return next;
+      });
+    }
+
     setPlaylist(prev => {
+      if (fromIndex >= prev.length || toIndex >= prev.length) return prev;
       const currentTrack = prev[currentIndex];
       const newPlaylist = [...prev];
       const [movedItem] = newPlaylist.splice(fromIndex, 1);
       newPlaylist.splice(toIndex, 0, movedItem);
 
       if (currentTrack) {
-        const newIdx = newPlaylist.findIndex(s => s.id === currentTrack.id);
-        if (newIdx !== -1) {
-          setCurrentIndex(newIdx);
+        const newIdx = newPlaylist.findIndex(s =>
+          (currentTrack.queueId && s.queueId === currentTrack.queueId) ||
+          s === currentTrack ||
+          s.id === currentTrack.id
+        );
+        if (newIdx !== -1 && newIdx !== currentIndex) {
+          queueMicrotask(() => setCurrentIndex(newIdx));
         }
       }
       return newPlaylist;

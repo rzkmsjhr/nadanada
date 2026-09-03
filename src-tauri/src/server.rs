@@ -4,7 +4,7 @@ pub static EMBED_PORT: AtomicU16 = AtomicU16::new(0);
 
 pub fn start_embed_server() -> u16 {
     let server = tiny_http::Server::http("127.0.0.1:0").expect("Failed to start embed server");
-    let port = server.server_addr().to_ip().unwrap().port();
+    let port = server.server_addr().to_ip().map(|ip| ip.port()).unwrap_or(0);
     EMBED_PORT.store(port, Ordering::Relaxed);
 
     std::thread::spawn(move || {

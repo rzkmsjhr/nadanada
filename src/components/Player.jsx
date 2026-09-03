@@ -8,7 +8,7 @@ import { usePlayerCore } from '../hooks/usePlayerCore';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
-  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, onRestoreHandled, isSearchExpanded,
+  repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, isSearchExpanded,
   albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer,
   crossfadeDuration, setCrossfadeDuration
 }, ref) {

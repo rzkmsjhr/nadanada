@@ -29,8 +29,6 @@ export function useDownloadManager(api, setGlobalError) {
 
   useEffect(() => {
     loadDownloadedSongs();
-    const interval = setInterval(loadDownloadedSongs, 5000);
-    return () => clearInterval(interval);
   }, []);
 
   const handleDownloadSong = async song => {
@@ -47,16 +45,7 @@ export function useDownloadManager(api, setGlobalError) {
         artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
       }
       await api.downloadSong(song.id, title, artist);
-      if (showDownloadedList) {
-        loadDownloadedSongs();
-      }
-      setDownloadedSongs(prev => {
-        if (prev.find(s => s.id === song.id)) return prev;
-        return [...prev, {
-          id: song.id,
-          file_path: ''
-        }]; // Optimistic update
-      });
+      await loadDownloadedSongs();
     } catch (e) {
       console.error('Download failed:', e);
       setGlobalError(`Failed to download song: ${e.toString()}`);

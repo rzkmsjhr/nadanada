@@ -440,7 +440,16 @@ export function useMusicDiscovery({
             
             for (let i = 0; i < spotifyTracks.length; i++) {
               const track = spotifyTracks[i];
+              const songLabel = track.artist ? `${track.artist} - ${track.title}` : (track.title || track.query);
               setImportProgress(`Checking ${i + 1}/${spotifyTracks.length}...`);
+
+              // 1. Check local cache first (instant, 0 requests to YouTube)
+              const cached = getCachedVideo(track.query);
+              if (cached) {
+                importedSongs.push(cached);
+                continue;
+              }
+
               try {
                 const results = await api.searchYouTube(track.query, null);
                 if (results && results.length > 0) {
@@ -471,12 +480,7 @@ export function useMusicDiscovery({
                       }
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
-                      
-                      // YouTube's search is very smart (it knows Japanese translations, etc.).
-                      // We add a penalty for lower-ranked search results (15 secs per rank position)
-                      // so we don't accidentally pick the 9th result just because its duration matched closer.
                       const rankPenalty = index * 15;
-                      
                       const score = durationDiff + (missingWords * 2) + rankPenalty - officialBonus;
                       
                       return {
@@ -490,35 +494,23 @@ export function useMusicDiscovery({
                   // Completely filter out fake/instrumental/karaoke versions unless requested
                   validResults = validResults.filter(r => !r.hasBadWord).sort((a, b) => a.score - b.score);
 
-                  let bestVideo = null;
-                  let lastError = null;
-                  for (const v of validResults.slice(0, 3)) {
-                      try {
-                          await api.getStreamUrl(v.id);
-                          bestVideo = v;
-                          break;
-                      } catch (e) {
-                          lastError = e;
-                          console.log(`Video ${v.id} blocked/premium, trying next...`, e);
-                      }
-                  }
-                  
+                  const bestVideo = validResults.length > 0 ? validResults[0] : results[0];
                   if (bestVideo) {
+                    setCachedVideo(track.query, bestVideo);
                     importedSongs.push(bestVideo);
                   } else {
-                    failedSongs.push(track.query + " (" + (lastError ? lastError.toString() : "unknown") + ")");
+                    failedSongs.push(songLabel);
                   }
                 } else {
-                  failedSongs.push(track.query);
+                  failedSongs.push(songLabel);
                 }
               } catch (e) {
                 console.error("Failed to search track:", track.query, e);
-                failedSongs.push(track.query);
+                failedSongs.push(songLabel);
               }
               
-              // THROTTLING: Add a 1.5-second delay between each track to prevent 
-              // flooding YouTube and getting IP banned (HTTP 429 Too Many Requests).
-              await new Promise(resolve => setTimeout(resolve, 1500));
+              // Safe pacing between network requests to prevent HTTP 429 rate limiting
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
             
             if (importedSongs.length > 0) {
@@ -531,10 +523,10 @@ export function useMusicDiscovery({
                 setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported Spotify Playlist", items: importedSongs }]);
               }
               let msg = `Imported ${importedSongs.length} out of ${spotifyTracks.length} songs from Spotify.`;
-              if (failedSongs.length > 0) {
-                msg += ` Failed to import ${failedSongs.length} songs (premium/blocked).`;
-              }
-              setSuccessMessage(msg);
+              setSuccessMessage({
+                text: msg,
+                failedSongs: failedSongs
+              });
               setImportUrl('');
             } else {
               errorMsg = "Could not find any playable matching songs. Error from first track: " + (failedSongs[0] || "Unknown");

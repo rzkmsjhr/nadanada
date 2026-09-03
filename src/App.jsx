@@ -561,7 +561,6 @@ function App() {
                 if (newVal) setIsEndlessPlay(false);
               }} 
               onSongEnded={handleNext} 
-              onRestoreHandled={() => setRestoredMainTime(null)}
               albumInfo={albumInfo} 
               isLoadingAlbum={isLoadingAlbum} 
               onAlbumClick={handleAlbumClick} 

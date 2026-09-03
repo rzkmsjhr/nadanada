@@ -6,6 +6,7 @@ use tokio::process::Command;
 
 lazy_static! {
     pub static ref IO_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub static ref YTDLP_DOWNLOAD_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::new(());
 }
 
 pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
@@ -27,6 +28,11 @@ pub async fn get_yt_dlp_path() -> Result<std::path::PathBuf, String> {
     let exe_path = data_dir.join(exe_name);
 
     if !exe_path.exists() {
+        let _guard = YTDLP_DOWNLOAD_LOCK.lock().await;
+        if exe_path.exists() {
+            return Ok(exe_path);
+        }
+
         println!("{} not found, downloading now...", exe_name);
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
@@ -267,7 +273,7 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
     let final_path_clone = final_path.clone();
     let id_clone = id.clone();
     tokio::task::spawn_blocking(move || {
-        let _lock = IO_LOCK.lock().unwrap();
+        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let registry_path = data_dir.join("youtube_downloads.json");
         let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
             if let Ok(content) = fs::read_to_string(&registry_path) {
@@ -278,11 +284,27 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
         } else {
             std::collections::HashMap::new()
         };
-        registry.insert(final_path_clone, id_clone);
+        registry.insert(final_path_clone.clone(), id_clone);
         let _ = fs::write(
             &registry_path,
             serde_json::to_string(&registry).unwrap_or_default(),
         );
+
+        // If the file was previously hidden from the list, unhide it so it appears again
+        let hidden_json_path = data_dir.join("hidden_downloads.json");
+        if hidden_json_path.exists() {
+            if let Ok(content) = fs::read_to_string(&hidden_json_path) {
+                if let Ok(mut hidden) = serde_json::from_str::<Vec<String>>(&content) {
+                    if hidden.contains(&final_path_clone) {
+                        hidden.retain(|p| p != &final_path_clone);
+                        let _ = fs::write(
+                            &hidden_json_path,
+                            serde_json::to_string(&hidden).unwrap_or_default(),
+                        );
+                    }
+                }
+            }
+        }
     }).await.map_err(|e| e.to_string())?;
 
     Ok("".to_string()) // The frontend ignores this return value and scans the directory
@@ -299,7 +321,7 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
 
-    let _lock = IO_LOCK.lock().unwrap();
+    let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let hidden_paths: Vec<String> = if hidden_json_path.exists() {
         if let Ok(content) = fs::read_to_string(&hidden_json_path) {
@@ -439,7 +461,7 @@ pub fn add_local_song(file_path: String) -> Result<(), String> {
         fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
 
-    let _lock = IO_LOCK.lock().unwrap();
+    let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let json_path = data_dir.join("local_songs.json");
     let mut local_paths: Vec<String> = if json_path.exists() {
         if let Ok(content) = fs::read_to_string(&json_path) {
@@ -452,12 +474,28 @@ pub fn add_local_song(file_path: String) -> Result<(), String> {
     };
 
     if !local_paths.contains(&file_path) {
-        local_paths.push(file_path);
+        local_paths.push(file_path.clone());
         fs::write(
             &json_path,
             serde_json::to_string(&local_paths).unwrap_or_default(),
         )
         .map_err(|e| e.to_string())?;
+    }
+
+    // If this local song was previously hidden, unhide it
+    let hidden_json_path = data_dir.join("hidden_downloads.json");
+    if hidden_json_path.exists() {
+        if let Ok(content) = fs::read_to_string(&hidden_json_path) {
+            if let Ok(mut hidden_paths) = serde_json::from_str::<Vec<String>>(&content) {
+                if hidden_paths.contains(&file_path) {
+                    hidden_paths.retain(|p| p != &file_path);
+                    let _ = fs::write(
+                        &hidden_json_path,
+                        serde_json::to_string(&hidden_paths).unwrap_or_default(),
+                    );
+                }
+            }
+        }
     }
 
     Ok(())
@@ -468,8 +506,9 @@ pub fn delete_downloaded_song(file_path: String) -> Result<(), String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     data_dir.push("NadaNada");
 
+    let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
     // 1. Remove from local_songs.json if it exists there
-    let _lock = IO_LOCK.lock().unwrap();
     let local_json_path = data_dir.join("local_songs.json");
     if local_json_path.exists() {
         if let Ok(content) = fs::read_to_string(&local_json_path) {
@@ -486,7 +525,22 @@ pub fn delete_downloaded_song(file_path: String) -> Result<(), String> {
         }
     }
 
-    // 2. Add to hidden_downloads.json so it gets ignored during folder scans
+    // 2. Remove from youtube_downloads.json so the frontend unmarks it as downloaded
+    let registry_path = data_dir.join("youtube_downloads.json");
+    if registry_path.exists() {
+        if let Ok(content) = fs::read_to_string(&registry_path) {
+            if let Ok(mut registry) = serde_json::from_str::<std::collections::HashMap<String, String>>(&content) {
+                if registry.remove(&file_path).is_some() {
+                    let _ = fs::write(
+                        &registry_path,
+                        serde_json::to_string(&registry).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+    }
+
+    // 3. Add to hidden_downloads.json so it gets ignored during folder scans (keeps file on disk)
     let hidden_json_path = data_dir.join("hidden_downloads.json");
     let mut hidden_paths: Vec<String> = if hidden_json_path.exists() {
         if let Ok(content) = fs::read_to_string(&hidden_json_path) {

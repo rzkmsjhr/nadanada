@@ -24,6 +24,8 @@ pub struct AlbumInfo {
 
 #[derive(serde::Serialize, Clone)]
 pub struct SpotifyTrack {
+    pub title: String,
+    pub artist: String,
     pub query: String,
     pub duration_ms: u64,
 }

@@ -11,15 +11,21 @@ pub async fn search_youtube(
         if st == "album" {
             format!(
                 "https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D",
-                query
+                urlencoding::encode(&query)
             )
         } else {
             query.push_str(" topic");
-            format!("https://www.youtube.com/results?search_query={}", query)
+            format!(
+                "https://www.youtube.com/results?search_query={}",
+                urlencoding::encode(&query)
+            )
         }
     } else {
         query.push_str(" topic");
-        format!("https://www.youtube.com/results?search_query={}", query)
+        format!(
+            "https://www.youtube.com/results?search_query={}",
+            urlencoding::encode(&query)
+        )
     };
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -302,6 +308,8 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
                 let duration_ms = track.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
                 if !title.is_empty() {
                     queries.push(SpotifyTrack {
+                        title: title.to_string(),
+                        artist: artist.to_string(),
                         query: format!("{} {}", title, artist).trim().to_string(),
                         duration_ms,
                     });

@@ -8,7 +8,7 @@ pub async fn scrape_chords(
     let cache_dir = app_handle
         .path()
         .app_data_dir()
-        .unwrap()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("chords_cache_v4");
     let _ = std::fs::create_dir_all(&cache_dir);
 
@@ -68,7 +68,7 @@ pub async fn scrape_chords(
 
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis();
     static WINDOW_COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -286,11 +286,16 @@ pub async fn scrape_chords(
     let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
     let tx_mutex_clone = tx_mutex.clone();
 
+    let parsed_search_url = match search_url.parse() {
+        Ok(u) => u,
+        Err(e) => return Err(format!("Failed to parse search URL: {}", e)),
+    };
+
     println!("Building hidden scraper window for URL: {}", search_url);
     let window = match tauri::WebviewWindowBuilder::new(
         &app_handle,
         &window_label,
-        tauri::WebviewUrl::External(search_url.parse().unwrap()),
+        tauri::WebviewUrl::External(parsed_search_url),
     )
     .incognito(true)
     .visible(false)
@@ -363,7 +368,7 @@ pub async fn scrape_chords(
 
         let ts2 = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis();
         let counter2 = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let window_label2 = format!("scraper_{}_{}_{}_y", safe_id, ts2, counter2);
@@ -372,10 +377,15 @@ pub async fn scrape_chords(
         let tx_mutex2 = std::sync::Arc::new(std::sync::Mutex::new(Some(tx2)));
         let tx_mutex2_clone = tx_mutex2.clone();
 
+        let parsed_yahoo_url = match yahoo_fallback_url.parse() {
+            Ok(u) => u,
+            Err(e) => return Err(format!("Failed to parse Yahoo fallback URL: {}", e)),
+        };
+
         let window2 = match tauri::WebviewWindowBuilder::new(
             &app_handle,
             &window_label2,
-            tauri::WebviewUrl::External(yahoo_fallback_url.parse().unwrap()),
+            tauri::WebviewUrl::External(parsed_yahoo_url),
         )
         .incognito(true)
         .visible(false)
@@ -434,7 +444,7 @@ pub async fn scrape_chords(
 
         let ts3 = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_millis();
         let counter3 = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let window_label3 = format!("scraper_{}_{}_{}_g", safe_id, ts3, counter3);
@@ -443,10 +453,15 @@ pub async fn scrape_chords(
         let tx_mutex3 = std::sync::Arc::new(std::sync::Mutex::new(Some(tx3)));
         let tx_mutex3_clone = tx_mutex3.clone();
 
+        let parsed_google_url = match google_fallback_url.parse() {
+            Ok(u) => u,
+            Err(e) => return Err(format!("Failed to parse Google fallback URL: {}", e)),
+        };
+
         let window3 = match tauri::WebviewWindowBuilder::new(
             &app_handle,
             &window_label3,
-            tauri::WebviewUrl::External(google_fallback_url.parse().unwrap()),
+            tauri::WebviewUrl::External(parsed_google_url),
         )
         .incognito(true)
         .visible(false)

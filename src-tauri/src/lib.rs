@@ -19,22 +19,24 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             server::start_embed_server();
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .on_tray_icon_event(|tray, event| match event {
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        ..
-                    } => {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            window.show().unwrap();
-                            window.set_focus().unwrap();
+            if let Some(icon) = app.default_window_icon() {
+                let _tray = TrayIconBuilder::new()
+                    .icon(icon.clone())
+                    .on_tray_icon_event(|tray, event| match event {
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            ..
+                        } => {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
-                    }
-                    _ => {}
-                })
-                .build(app)?;
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -43,7 +45,7 @@ pub fn run() {
                     // Prevent the default close behavior
                     api.prevent_close();
                     // Tell the frontend that we want to close, so it can show our custom prompt
-                    window.emit("close-requested", ()).unwrap();
+                    let _ = window.emit("close-requested", ());
                 }
             }
         })
