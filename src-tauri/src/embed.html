@@ -38,15 +38,16 @@
         disablekb: 1,
         modestbranding: 1,
         rel: 0,
-        cc_load_policy: 1,
-        cc_lang_pref: 'id',
-        hl: 'id',
+        cc_load_policy: 0,
         start: startSeconds > 0 ? startSeconds : undefined,
         origin: window.location.origin
       },
       events: {
         onReady: function(e) {
           e.target.setVolume(initialVolume);
+          try {
+            e.target.setOption('captions', 'track', {});
+          } catch(err) {}
           window.parent.postMessage({ type: 'yt-proxy-ready' }, '*');
           // Start periodic time updates
           timeInterval = setInterval(function() {
@@ -99,7 +100,11 @@
         case 'setVolume': player.setVolume(msg.value); break;
         case 'mute': player.mute(); break;
         case 'unmute': player.unMute(); break;
-        case 'loadVideoById': window.captionsEmitted = false; player.loadVideoById({videoId: msg.videoId, startSeconds: msg.startSeconds || 0}); break;
+        case 'loadVideoById':
+          window.captionsEmitted = false;
+          player.loadVideoById({videoId: msg.videoId, startSeconds: msg.startSeconds || 0});
+          try { player.setOption('captions', 'track', {}); } catch(e) {}
+          break;
         case 'setCaption': player.setOption('captions', 'track', msg.value ? {languageCode: msg.value} : {}); break;
       }
     } catch(err) {}

@@ -53,9 +53,7 @@ const EMBED_HTML = `<!DOCTYPE html>
         disablekb: 1,
         modestbranding: 1,
         rel: 0,
-        cc_load_policy: 1,
-          cc_lang_pref: 'id',
-          hl: 'id',
+        cc_load_policy: 0,
         start: startSeconds > 0 ? startSeconds : undefined,
         origin: window.location.origin
       },

@@ -356,17 +356,6 @@ export function usePlayerCore({
 
   const handleCaptionsReceived = (tracks) => {
     setCaptions(tracks || []);
-    if (tracks && tracks.length > 0 && !hasAutoSelectedCaptionRef.current) {
-      hasAutoSelectedCaptionRef.current = true;
-      const preferred = tracks.find(t => t.languageCode === 'id') || 
-                        tracks.find(t => t.languageCode !== 'en' && t.languageCode !== 'en-US' && t.languageCode !== 'a.en') || 
-                        tracks[0];
-      const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
-      if (preferred && activePlayer && activePlayer.setCaption) {
-        activePlayer.setCaption(preferred.languageCode);
-        setActiveCaptionCode(preferred.languageCode);
-      }
-    }
   };
   
   const selectCaption = (code) => {
