@@ -59,6 +59,7 @@ pub fn run() {
             downloads::get_stream_url,
             app_commands::quit_app,
             app_commands::force_resize_window,
+            app_commands::clear_cached_data,
             server::get_embed_port,
             youtube::get_playlist_title,
             youtube::get_video_album_info,

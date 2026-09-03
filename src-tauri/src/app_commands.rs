@@ -37,12 +37,26 @@ pub fn force_resize_window(window: tauri::Window, width: f64, height: f64, min_w
                 new_y = bottom_bound - target_physical_height;
             }
             if new_x < monitor_pos.x { new_x = monitor_pos.x; }
-            if new_y < monitor_pos.y { new_y = monitor_pos.y; }
-            
             if new_x != current_pos.x || new_y != current_pos.y {
                 let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x: new_x, y: new_y }));
             }
         }
     }
+}
+
+#[tauri::command]
+pub fn clear_cached_data(app_handle: tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    if let Ok(app_dir) = app_handle.path().app_data_dir() {
+        let lyrics_dir = app_dir.join("lyrics_cache_v1");
+        if lyrics_dir.exists() {
+            let _ = std::fs::remove_dir_all(lyrics_dir);
+        }
+        let chords_dir = app_dir.join("chords_cache_v4");
+        if chords_dir.exists() {
+            let _ = std::fs::remove_dir_all(chords_dir);
+        }
+    }
+    Ok(true)
 }
 

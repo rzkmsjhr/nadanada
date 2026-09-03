@@ -40,6 +40,7 @@ export const api = {
     }
   },
   getCachedEmbedPort: () => cachedEmbedPort,
+  clearCachedData: () => invoke('clear_cached_data'),
   quitApp: () => invoke('quit_app')
 };
 

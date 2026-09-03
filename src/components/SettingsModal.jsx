@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2 } from 'lucide-react';
+import { api } from '../services/api';
 
 const THEMES = [
   { id: 'lavender-steel', name: 'Lavender Steel', bg: '#FFDBED', accent: '#E34877' },
@@ -295,6 +296,13 @@ export default function SettingsModal({
                   } catch (err) {
                     console.error('Failed to clear indexedDB', err);
                   }
+                }
+
+                // Clear offline lyrics and chords disk cache
+                try {
+                  await api.clearCachedData();
+                } catch (err) {
+                  console.error('Failed to clear cached disk data', err);
                 }
                 
                 window.location.reload();
