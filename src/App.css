@@ -650,3 +650,67 @@ body {
   pointer-events: auto;
 }
 
+/* Button hover variable default */
+:root {
+  --button-hover: rgba(128, 128, 128, 0.15);
+}
+
+/* Dropdown Menu Styles with Rich Hover Effects */
+.dropdown-menu-portal {
+  position: fixed;
+  z-index: 999999;
+  background: var(--bg-color);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  min-width: 130px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  animation: dropdownFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+  width: 100%;
+}
+
+.dropdown-item-btn:hover {
+  background: var(--panel-bg);
+  color: var(--accent-color);
+}
+
+.dropdown-item-btn svg {
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.dropdown-item-btn:hover svg {
+  transform: scale(1.15);
+}
+
+

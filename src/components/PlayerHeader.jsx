@@ -136,7 +136,7 @@ export default function PlayerHeader({
                 height: '18px',
                 borderRadius: '50%',
                 border: '1px solid var(--panel-border)',
-                background: 'var(--button-hover)',
+                background: 'var(--panel-bg)',
                 color: 'var(--text-muted)',
                 display: 'flex',
                 alignItems: 'center',
@@ -322,7 +322,7 @@ export default function PlayerHeader({
               onClick={handleToggleDropdown} 
               title="Lyrics & Chords" 
               style={{
-                background: showDropdown ? 'var(--button-hover)' : 'transparent',
+                background: showDropdown ? 'var(--panel-bg)' : 'transparent',
                 boxShadow: 'none',
                 color: showDropdown ? 'var(--accent-color)' : 'inherit'
               }}
@@ -333,71 +333,31 @@ export default function PlayerHeader({
             {showDropdown && menuCoords && createPortal(
               <div 
                 ref={dropdownRef}
+                className="dropdown-menu-portal"
                 style={{
-                  position: 'fixed',
                   top: `${menuCoords.top}px`,
-                  right: `${menuCoords.right}px`,
-                  zIndex: 999999,
-                  background: 'var(--bg-color)',
-                  border: '1px solid var(--panel-border)',
-                  borderRadius: '8px',
-                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-                  minWidth: '130px',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  padding: '4px'
+                  right: `${menuCoords.right}px`
                 }}
               >
                 <button
+                  className="dropdown-item-btn"
                   onClick={() => {
                     setShowLyrics?.(true);
                     setShowChords?.(false);
                     setShowDropdown(false);
                   }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: 'var(--text-main)',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'background 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--button-hover)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
                   <Mic2 size={15} color="var(--accent-color)" />
                   <span>Lyrics</span>
                 </button>
 
                 <button
+                  className="dropdown-item-btn"
                   onClick={() => {
                     setShowChords?.(true);
                     setShowLyrics?.(false);
                     setShowDropdown(false);
                   }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    padding: '8px 12px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderRadius: '6px',
-                    color: 'var(--text-main)',
-                    fontSize: '0.82rem',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    transition: 'background 0.15s ease'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--button-hover)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                 >
                   <ListMusic size={15} color="var(--accent-color)" />
                   <span>Chords</span>
