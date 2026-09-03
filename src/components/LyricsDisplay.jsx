@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 
 const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, isLoading, error, onRetry }) => {
   const [time, setTime] = useState(0);
@@ -13,6 +13,58 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, isLoading, error, o
     window.addEventListener('timeupdate', handleTime);
     return () => window.removeEventListener('timeupdate', handleTime);
   }, [syncOffset]);
+
+  const lines = data?.lines || [];
+
+  let activeIndex = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (time >= lines[i].time) {
+      activeIndex = i;
+    } else {
+      break;
+    }
+  }
+
+  const activeLine = activeIndex >= 0 ? lines[activeIndex] : null;
+  const nextLine = activeIndex + 1 < lines.length ? lines[activeIndex + 1] : null;
+
+  // Dynamic auto-scale to guarantee text NEVER overflows or shows ellipsis
+  const updateScales = useCallback(() => {
+    if (!containerRef.current) return;
+    const parentWidth = containerRef.current.clientWidth;
+    if (parentWidth <= 0) return;
+
+    if (activeTextRef.current) {
+      const el = activeTextRef.current;
+      el.style.transform = 'none';
+      const w = el.scrollWidth;
+      if (w > parentWidth) {
+        setActiveScale(parentWidth / w);
+      } else {
+        setActiveScale(1);
+      }
+    }
+
+    if (nextTextRef.current) {
+      const el = nextTextRef.current;
+      el.style.transform = 'none';
+      const w = el.scrollWidth;
+      if (w > parentWidth) {
+        setNextScale(parentWidth / w);
+      } else {
+        setNextScale(1);
+      }
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    updateScales();
+  }, [activeLine?.text, nextLine?.text, updateScales]);
+
+  useEffect(() => {
+    window.addEventListener('resize', updateScales);
+    return () => window.removeEventListener('resize', updateScales);
+  }, [updateScales]);
 
   if (isLoading) {
     return (
@@ -97,7 +149,6 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, isLoading, error, o
   }
 
   // ── Time-Synced Lyrics Mode ──
-  const lines = data.lines || [];
   if (lines.length === 0) {
     return (
       <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', minHeight: '36px', fontSize: '0.82rem' }}>
@@ -105,56 +156,6 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, isLoading, error, o
       </div>
     );
   }
-
-  let activeIndex = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (time >= lines[i].time) {
-      activeIndex = i;
-    } else {
-      break;
-    }
-  }
-
-  const activeLine = activeIndex >= 0 ? lines[activeIndex] : null;
-  const nextLine = activeIndex + 1 < lines.length ? lines[activeIndex + 1] : null;
-
-  // Dynamic auto-scale to guarantee text NEVER overflows or shows ellipsis
-  const updateScales = () => {
-    if (!containerRef.current) return;
-    const parentWidth = containerRef.current.clientWidth;
-    if (parentWidth <= 0) return;
-
-    if (activeTextRef.current) {
-      const el = activeTextRef.current;
-      el.style.transform = 'none';
-      const w = el.scrollWidth;
-      if (w > parentWidth) {
-        setActiveScale(parentWidth / w);
-      } else {
-        setActiveScale(1);
-      }
-    }
-
-    if (nextTextRef.current) {
-      const el = nextTextRef.current;
-      el.style.transform = 'none';
-      const w = el.scrollWidth;
-      if (w > parentWidth) {
-        setNextScale(parentWidth / w);
-      } else {
-        setNextScale(1);
-      }
-    }
-  };
-
-  useLayoutEffect(() => {
-    updateScales();
-  }, [activeLine?.text, nextLine?.text]);
-
-  useEffect(() => {
-    window.addEventListener('resize', updateScales);
-    return () => window.removeEventListener('resize', updateScales);
-  }, []);
 
   // Responsive font size calculation restored to +25%
   const get25PercentFontSize = (text) => {
