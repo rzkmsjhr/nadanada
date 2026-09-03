@@ -557,7 +557,7 @@ function App() {
           flex: 1,
           display: 'flex',
           flexDirection: 'column',
-          padding: '16px',
+          padding: '4px 16px 16px 16px',
           minHeight: 0,
           overflow: 'hidden'
         } : {

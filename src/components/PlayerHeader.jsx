@@ -79,9 +79,9 @@ export default function PlayerHeader({
     <header className="header" style={isMaximized ? {
       display: 'flex',
       alignItems: 'center',
-      minHeight: '84px',
+      minHeight: '64px',
       height: 'auto',
-      padding: '12px 24px',
+      padding: '8px 24px 4px 24px',
       flexShrink: 0,
       boxShadow: '0 1px 0 0 var(--panel-border)'
     } : {
@@ -111,9 +111,9 @@ export default function PlayerHeader({
               border: '1px solid var(--panel-border)',
               borderRadius: '10px',
               background: 'var(--bg-color)',
-              minHeight: isMaximized ? '74px' : '58px',
-              padding: isMaximized ? '14px 34px 14px 18px' : '10px 28px 10px 14px',
-              margin: isMaximized ? '6px 0' : '0',
+              minHeight: isMaximized ? '60px' : '58px',
+              padding: isMaximized ? '8px 34px 8px 18px' : '10px 28px 10px 14px',
+              margin: '0',
               display: 'flex',
               flexDirection: 'column',
               justifyContent: 'center',
