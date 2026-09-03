@@ -101,7 +101,7 @@ async fn fetch_lrclib(
         .get(&get_url)
         .header(
             "User-Agent",
-            "NadaNada/0.5.7 (https://github.com/rzkmsjhr/nadanada)",
+            "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
         )
         .send()
         .await
@@ -145,7 +145,7 @@ async fn fetch_lrclib(
         .get(&search_url)
         .header(
             "User-Agent",
-            "NadaNada/0.5.7 (https://github.com/rzkmsjhr/nadanada)",
+            "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
         )
         .send()
         .await

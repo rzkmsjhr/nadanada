@@ -5037,7 +5037,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-app"
-version = "0.5.7"
+version = "0.5.8"
 dependencies = [
  "dirs",
  "lazy_static",
