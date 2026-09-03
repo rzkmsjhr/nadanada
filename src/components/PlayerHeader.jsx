@@ -81,7 +81,7 @@ export default function PlayerHeader({
       alignItems: 'center',
       minHeight: '64px',
       height: 'auto',
-      padding: '8px 24px 4px 24px',
+      padding: '8px 16px 4px 16px',
       flexShrink: 0,
       boxShadow: '0 1px 0 0 var(--panel-border)'
     } : {
