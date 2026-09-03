@@ -183,40 +183,7 @@ export default function PlayerHeader({
                     fontSize: '0.7rem',
                     color: 'var(--text-muted)'
                   }}>
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      background: 'var(--panel-bg)',
-                      border: '1px solid var(--panel-border)',
-                      borderRadius: '6px',
-                      padding: '1px 5px'
-                    }}>
-                      <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Key:</span>
-                      <button onClick={() => setTransposeOffset?.(s => (s - 1) % 12)} style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
-                      }} title="Transpose Down">-</button>
-                      <span style={{
-                        minWidth: '18px',
-                        textAlign: 'center',
-                        fontWeight: 'bold',
-                        color: 'var(--text-main)'
-                      }}>{transposeOffset > 0 ? '+' : ''}{transposeOffset}</span>
-                      <button onClick={() => setTransposeOffset?.(s => (s + 1) % 12)} style={{
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'inherit',
-                        cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
-                      }} title="Transpose Up">+</button>
-                    </div>
-
+                    {/* Sync Capsule first on the left */}
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -249,6 +216,41 @@ export default function PlayerHeader({
                         padding: '0 3px',
                         fontSize: '0.75rem'
                       }} title="Advance Chords">+</button>
+                    </div>
+
+                    {/* Key Capsule second on the right */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      background: 'var(--panel-bg)',
+                      border: '1px solid var(--panel-border)',
+                      borderRadius: '6px',
+                      padding: '1px 5px'
+                    }}>
+                      <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Key:</span>
+                      <button onClick={() => setTransposeOffset?.(s => (s - 1) % 12)} style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '0 3px',
+                        fontSize: '0.75rem'
+                      }} title="Transpose Down">-</button>
+                      <span style={{
+                        minWidth: '18px',
+                        textAlign: 'center',
+                        fontWeight: 'bold',
+                        color: 'var(--text-main)'
+                      }}>{transposeOffset > 0 ? '+' : ''}{transposeOffset}</span>
+                      <button onClick={() => setTransposeOffset?.(s => (s + 1) % 12)} style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '0 3px',
+                        fontSize: '0.75rem'
+                      }} title="Transpose Up">+</button>
                     </div>
                   </div>
                 )}
