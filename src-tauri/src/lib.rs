@@ -5,6 +5,7 @@ pub mod models;
 pub mod playlists;
 pub mod server;
 pub mod youtube;
+pub mod lyrics;
 
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -67,7 +68,8 @@ pub fn run() {
             downloads::add_local_song,
             downloads::delete_downloaded_song,
             playlists::load_playlists,
-            playlists::save_playlists
+            playlists::save_playlists,
+            lyrics::get_lyrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

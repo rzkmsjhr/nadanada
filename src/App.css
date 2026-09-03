@@ -603,7 +603,7 @@ body {
   overflow: hidden !important;
 }
 
-.mini-player-mode { opacity: 0.25; transition: opacity 0.2s ease; }
+.mini-player-mode { opacity: var(--mini-player-opacity, 0.2); transition: opacity 0.2s ease; }
 
 .mini-player-mode:hover { opacity: 1; }
 
@@ -626,3 +626,27 @@ body {
   0%, 10% { transform: translateX(0); }
   90%, 100% { transform: translateX(min(0px, calc(-100% + 100cqw))); }
 }
+
+/* Lyrics & Chords Card Hover Controls */
+.card-hover-container {
+  transition: padding 0.2s ease, min-height 0.2s ease;
+}
+
+.card-hover-controls {
+  opacity: 0;
+  max-height: 0;
+  margin-top: 0 !important;
+  transform: translateY(-4px);
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), margin-top 0.25s ease, transform 0.2s ease;
+}
+
+.card-hover-container:hover .card-hover-controls {
+  opacity: 1;
+  max-height: 36px;
+  margin-top: 8px !important;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+

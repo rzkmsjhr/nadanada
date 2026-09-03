@@ -12,6 +12,7 @@ import PlaylistHeader from './components/PlaylistHeader';
 import ChordDisplay from "./components/ChordDisplay";
 import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
+import { useLyrics } from "./hooks/useLyrics";
 import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
@@ -130,6 +131,17 @@ function App() {
   useEffect(() => {
     localStorage.setItem('nadanada-crossfade-duration', crossfadeDuration.toString());
   }, [crossfadeDuration]);
+
+  const [miniPlayerOpacity, setMiniPlayerOpacity] = useState(() => {
+    const saved = localStorage.getItem('nadanada-mini-player-opacity');
+    const parsed = saved !== null ? parseInt(saved, 10) : 20;
+    return isNaN(parsed) ? 20 : Math.max(10, Math.min(100, Math.round(parsed / 10) * 10));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-mini-player-opacity', miniPlayerOpacity.toString());
+    document.documentElement.style.setProperty('--mini-player-opacity', (miniPlayerOpacity / 100).toString());
+  }, [miniPlayerOpacity]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
@@ -339,6 +351,14 @@ function App() {
     syncOffset, setSyncOffset, 
     transposeOffset, setTransposeOffset 
   } = useChords(currentSong, isAudioPlaying, api);
+  const {
+    showLyrics, setShowLyrics,
+    lyricsData, setLyricsData,
+    isFetchingLyrics,
+    lyricsError, setLyricsError,
+    syncOffset: lyricsSyncOffset, setSyncOffset: setLyricsSyncOffset,
+    handleRetry: handleRetryLyrics
+  } = useLyrics(currentSong, isAudioPlaying, api);
   const artistFact = useArtistFact(currentSong);
   const {
     repeatMode, setRepeatMode,
@@ -413,7 +433,8 @@ function App() {
     successMessage, setSuccessMessage,
     showSettings, setShowSettings,
     theme, setTheme,
-    crossfadeDuration, setCrossfadeDuration
+    crossfadeDuration, setCrossfadeDuration,
+    miniPlayerOpacity, setMiniPlayerOpacity
   };
 
   return (
@@ -426,7 +447,8 @@ function App() {
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
-    borderRadius: isMiniPlayer ? '12px' : '0'
+    borderRadius: isMiniPlayer ? '12px' : '0',
+    '--mini-player-opacity': (miniPlayerOpacity / 100).toString()
   }}>
 
 
@@ -504,6 +526,14 @@ function App() {
                 setSyncOffset={setSyncOffset}
                 transposeOffset={transposeOffset}
                 setTransposeOffset={setTransposeOffset}
+                showLyrics={showLyrics}
+                setShowLyrics={setShowLyrics}
+                lyricsData={lyricsData}
+                isFetchingLyrics={isFetchingLyrics}
+                lyricsError={lyricsError}
+                lyricsSyncOffset={lyricsSyncOffset}
+                setLyricsSyncOffset={setLyricsSyncOffset}
+                onRetryLyrics={handleRetryLyrics}
                 artistFact={artistFact}
                 playlist={playlist}
                 currentIndex={currentIndex}

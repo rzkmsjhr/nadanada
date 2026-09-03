@@ -25,6 +25,7 @@ export const api = {
   
   // Utilities
   scrapeChords: (id, title) => invoke('scrape_chords', { id, title }),
+  getLyrics: (title, artist, duration = null, videoId = null) => invoke('get_lyrics', { title, artist, duration, videoId }),
   getStreamUrl: (videoId) => invoke('get_stream_url', { videoId }),
   getVideoAlbumInfo: (videoId) => invoke('get_video_album_info', { videoId }),
   getEmbedPort: async () => {

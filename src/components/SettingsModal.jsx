@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Check, Palette, Sliders, Database, AlertTriangle } from 'lucide-react';
+import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2 } from 'lucide-react';
 
 const THEMES = [
   { id: 'lavender-steel', name: 'Lavender Steel', bg: '#FFDBED', accent: '#E34877' },
@@ -17,7 +17,9 @@ export default function SettingsModal({
   theme,
   setTheme,
   crossfadeDuration,
-  setCrossfadeDuration
+  setCrossfadeDuration,
+  miniPlayerOpacity = 20,
+  setMiniPlayerOpacity
 }) {
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 10000 }}>
@@ -27,6 +29,8 @@ export default function SettingsModal({
         style={{
           maxWidth: '360px',
           width: '90%',
+          maxHeight: '90vh',
+          overflowY: 'auto',
           padding: '24px',
           borderRadius: '16px',
           display: 'flex',
@@ -183,6 +187,70 @@ export default function SettingsModal({
             <span>4s</span>
             <span>5s</span>
             <span>6s</span>
+          </div>
+        </div>
+
+        {/* Mini Player Transparency Section */}
+        <div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '10px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.75px',
+              color: 'var(--text-muted)'
+            }}>
+              <PictureInPicture2 size={16} />
+              <span>Mini Player Transparency</span>
+            </div>
+            <span style={{
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              color: 'var(--accent-color)'
+            }}>
+              {miniPlayerOpacity}%
+            </span>
+          </div>
+
+          <input
+            type="range"
+            min="10"
+            max="100"
+            step="10"
+            value={miniPlayerOpacity}
+            onChange={(e) => {
+              if (setMiniPlayerOpacity) setMiniPlayerOpacity(Number(e.target.value));
+            }}
+            className="seek-bar"
+            style={{
+              width: '100%',
+              accentColor: 'var(--accent-color)',
+              background: `linear-gradient(to right, var(--accent-color) ${((miniPlayerOpacity - 10) / 90) * 100}%, var(--panel-border) ${((miniPlayerOpacity - 10) / 90) * 100}%)`,
+              cursor: 'pointer'
+            }}
+          />
+
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            fontSize: '0.7rem',
+            color: 'var(--text-muted)',
+            marginTop: '6px',
+            userSelect: 'none'
+          }}>
+            <span>10%</span>
+            <span>30%</span>
+            <span>50%</span>
+            <span>70%</span>
+            <span>100%</span>
           </div>
         </div>
 

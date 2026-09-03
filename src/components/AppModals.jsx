@@ -45,7 +45,9 @@ export default function AppModals() {
     theme,
     setTheme,
     crossfadeDuration,
-    setCrossfadeDuration
+    setCrossfadeDuration,
+    miniPlayerOpacity,
+    setMiniPlayerOpacity
   } = useAppContext();
   return (
     <>
@@ -60,6 +62,8 @@ export default function AppModals() {
           setTheme={setTheme}
           crossfadeDuration={crossfadeDuration}
           setCrossfadeDuration={setCrossfadeDuration}
+          miniPlayerOpacity={miniPlayerOpacity}
+          setMiniPlayerOpacity={setMiniPlayerOpacity}
         />
       )}
 
