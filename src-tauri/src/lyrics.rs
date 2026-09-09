@@ -53,7 +53,7 @@ struct CaptionJson3 {
 
 lazy_static! {
     static ref RE_BRACKET_NOISE: Regex = Regex::new(
-        r"(?i)[\(\[\{【『「〔《〈<][^)\]}】』」〕》〉>]*?(?:official|music\s*video|audio|video|lyrics?|hd|hq|4k|8k|mv|m/v|pv|visualizer|feat\.?|ft\.?|with|prod\.?|remaster(?:ed)?|live|remix|version|edit|extended|album|explicit|clean|sub\s*español|lirik|terjemahan|karaoke|instrumental|cover|original)[^)\]}】』」〕》〉>]*?[\)\]\}】』」〕》〉>]"
+        r"(?i)[\(\[\{【『「〔《〈<][^)\]}】』」〕》〉>]*?(?:official|music\s*video|audio|video|lyrics?|hd|hq|4k|8k|mv|m/v|pv|visualizer|feat\.?|ft\.?|with|prod\.?|remaster(?:ed)?|live|remix|version|studio|edit|extended|album|explicit|clean|sub\s*español|lirik|terjemahan|karaoke|instrumental|cover|original)[^)\]}】』」〕》〉>]*?[\)\]\}】』」〕》〉>]"
     ).unwrap();
 
     static ref RE_STANDALONE_BRACKETS: Regex = Regex::new(
@@ -61,18 +61,26 @@ lazy_static! {
     ).unwrap();
 
     static ref RE_TRAILING_META: Regex = Regex::new(
-        r"(?i)\s*-\s*(?:remaster(?:ed)?|radio\s*edit|live|mono|stereo|anniversary|deluxe|bonus\s*track|original\s*mix).*$"
+        r"(?i)\s*[-|~/:]\s*(?:studio(?:\s*version)?|version|official(?:\s*(?:video|audio|music\s*video))?|music\s*video|lyric\s*video|audio|video|lyrics?|visualizer|remaster(?:ed)?|radio\s*edit|live(?:\s*at|\s*in|\s*\d+)?|mono|stereo|anniversary(?:\s*edition)?|deluxe(?:\s*edition)?|bonus\s*track|original\s*mix|extended(?:\s*mix|\s*version)?|remix|acoustic(?:\s*version)?|instrumental|clean(?:\s*version)?|explicit|cover).*$"
     ).unwrap();
 
     static ref RE_NOISE_WORDS: Regex = Regex::new(
-        r"(?i)\b(?:official\s*video|official\s*audio|official\s*music\s*video|lyric\s*video|music\s*video|full\s*album|hq|hd|4k|8k|mv|visualizer)\b"
+        r"(?i)\b(?:official\s*video|official\s*audio|official\s*music\s*video|lyric\s*video|music\s*video|studio\s*version|full\s*album|hq|hd|4k|8k|mv|visualizer)\b"
     ).unwrap();
 
     static ref RE_PARENTHETICALS: Regex = Regex::new(
         r"[\(\[\{【『「〔《〈<][^)\]}】』」〕》〉>]*?[\)\]\}】』」〕》〉>]"
     ).unwrap();
 
+    static ref RE_PARENTHETICAL_CONTENT: Regex = Regex::new(
+        r"[\(\[\{【『「〔《〈<]([^\)\]\}】』」〕》〉>]+)[\)\]\}】』」〕》〉>]"
+    ).unwrap();
+
     static ref RE_SPACES: Regex = Regex::new(r"\s+").unwrap();
+
+    static ref RE_ARTIST_SEPARATORS: Regex = Regex::new(
+        r"(?i)\s+(?:and|&|feat\.?|ft\.?|x|with)\s+|[,/]\s*"
+    ).unwrap();
 }
 
 fn sanitize_title(title: &str) -> String {
@@ -89,6 +97,32 @@ fn strip_parentheticals(s: &str) -> String {
     RE_SPACES.replace_all(&res, " ").trim().to_string()
 }
 
+fn extract_parenthetical_contents(s: &str) -> Vec<String> {
+    let mut contents = Vec::new();
+    for cap in RE_PARENTHETICAL_CONTENT.captures_iter(s) {
+        if let Some(m) = cap.get(1) {
+            let trimmed = m.as_str().trim();
+            if !trimmed.is_empty() && trimmed.len() <= 60 {
+                let lower = trimmed.to_lowercase();
+                let is_noise = lower.contains("feat")
+                    || lower.contains("ft.")
+                    || lower.contains("prod")
+                    || lower.contains("remaster")
+                    || lower.contains("official")
+                    || lower.contains("video")
+                    || lower.contains("audio")
+                    || lower.contains("version")
+                    || lower.contains("edit")
+                    || lower.contains("mix");
+                if !is_noise && !contents.iter().any(|c: &String| c.eq_ignore_ascii_case(trimmed)) {
+                    contents.push(trimmed.to_string());
+                }
+            }
+        }
+    }
+    contents
+}
+
 fn sanitize_artist(artist: &str) -> String {
     let cleaned = artist
         .replace(" - Topic", "")
@@ -98,6 +132,40 @@ fn sanitize_artist(artist: &str) -> String {
         .replace(" VEVO", "")
         .replace("VEVO", "");
     RE_SPACES.replace_all(&cleaned, " ").trim().to_string()
+}
+
+fn extract_sub_artists(artist: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let sanitized = sanitize_artist(artist);
+    if sanitized.is_empty() {
+        return results;
+    }
+    results.push(sanitized.clone());
+
+    for piece in RE_ARTIST_SEPARATORS.split(&sanitized) {
+        let trimmed = piece.trim();
+        if !trimmed.is_empty() && !results.iter().any(|r: &String| r.eq_ignore_ascii_case(trimmed)) {
+            results.push(trimmed.to_string());
+        }
+    }
+    results
+}
+
+fn with_the_variants(title: &str) -> Vec<String> {
+    let mut vars = vec![title.to_string()];
+    let lower = title.to_lowercase();
+    if lower.starts_with("the ") && title.len() > 4 {
+        let without_the = title[4..].trim().to_string();
+        if !without_the.is_empty() && !vars.iter().any(|v| v.eq_ignore_ascii_case(&without_the)) {
+            vars.push(without_the);
+        }
+    } else if !title.is_empty() && !lower.starts_with("the ") {
+        let with_the = format!("The {}", title);
+        if !vars.iter().any(|v| v.eq_ignore_ascii_case(&with_the)) {
+            vars.push(with_the);
+        }
+    }
+    vars
 }
 
 #[derive(Debug, Clone)]
@@ -115,140 +183,182 @@ fn extract_candidates(
     let mut search_queries: Vec<String> = Vec::new();
     let mut known_artists: Vec<String> = Vec::new();
 
+    let sub_artists = extract_sub_artists(clean_artist);
+    for a in &sub_artists {
+        if !known_artists.contains(a) {
+            known_artists.push(a.clone());
+        }
+    }
+
+    let is_artist_match = |s: &str| -> bool {
+        let s_lower = s.to_lowercase();
+        if s_lower.is_empty() {
+            return false;
+        }
+        for a in &sub_artists {
+            let a_lower = a.to_lowercase();
+            if a_lower == s_lower || a_lower.contains(&s_lower) || s_lower.contains(&a_lower) {
+                return true;
+            }
+        }
+        false
+    };
+
     let delimiters = [" - ", " – ", " — ", " | ", " ~ ", " // ", " / ", " : "];
     let mut split_found = false;
 
     for &delim in &delimiters {
         if clean_title.contains(delim) {
-            let parts: Vec<&str> = clean_title.splitn(2, delim).collect();
-            if parts.len() == 2 {
-                let part_a = parts[0].trim().to_string();
-                let part_b = parts[1].trim().to_string();
-                let core_a = strip_parentheticals(&part_a);
-                let core_b = strip_parentheticals(&part_b);
+            let raw_parts: Vec<&str> = clean_title
+                .split(delim)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if raw_parts.len() >= 2 {
+                split_found = true;
 
-                if !part_a.is_empty() && !part_b.is_empty() {
-                    split_found = true;
-                    let clean_art_lower = clean_artist.to_lowercase();
-                    let a_matches_artist = !clean_artist.is_empty()
-                        && (clean_art_lower.contains(&part_a.to_lowercase())
-                            || part_a.to_lowercase().contains(&clean_art_lower));
-                    let b_matches_artist = !clean_artist.is_empty()
-                        && (clean_art_lower.contains(&part_b.to_lowercase())
-                            || part_b.to_lowercase().contains(&clean_art_lower));
+                let mut add_pair = |artist: &str, track: &str| {
+                    if artist.is_empty() || track.is_empty() {
+                        return;
+                    }
+                    if !known_artists.iter().any(|a| a.eq_ignore_ascii_case(artist)) {
+                        known_artists.push(artist.to_string());
+                    }
 
-                    if a_matches_artist {
-                        // Part A is Artist, Part B is Track
-                        known_artists.push(part_a.clone());
-                        candidates.push(TrackCandidate {
-                            track_name: part_b.clone(),
-                            artist_name: part_a.clone(),
-                        });
-                        if !core_b.is_empty() && core_b != part_b {
-                            candidates.push(TrackCandidate {
-                                track_name: core_b.clone(),
-                                artist_name: part_a.clone(),
-                            });
-                        }
-                        title_only_candidates.push(part_b.clone());
-                        if !core_b.is_empty() && core_b != part_b {
-                            title_only_candidates.push(core_b.clone());
-                        }
-                    } else if b_matches_artist {
-                        // Part B is Artist, Part A is Track
-                        known_artists.push(part_b.clone());
-                        candidates.push(TrackCandidate {
-                            track_name: part_a.clone(),
-                            artist_name: part_b.clone(),
-                        });
-                        if !core_a.is_empty() && core_a != part_a {
-                            candidates.push(TrackCandidate {
-                                track_name: core_a.clone(),
-                                artist_name: part_b.clone(),
-                            });
-                        }
-                        title_only_candidates.push(part_a.clone());
-                        if !core_a.is_empty() && core_a != part_a {
-                            title_only_candidates.push(core_a.clone());
-                        }
-                    } else {
-                        // Unknown channel (e.g. Deses) - try both directions!
-                        known_artists.push(part_b.clone());
-                        known_artists.push(part_a.clone());
+                    let core_track = strip_parentheticals(track);
+                    let paren_contents = extract_parenthetical_contents(track);
 
-                        // Direction 1: Track = Part A, Artist = Part B
-                        candidates.push(TrackCandidate {
-                            track_name: part_a.clone(),
-                            artist_name: part_b.clone(),
-                        });
-                        if !core_a.is_empty() && core_a != part_a {
-                            candidates.push(TrackCandidate {
-                                track_name: core_a.clone(),
-                                artist_name: part_b.clone(),
-                            });
-                        }
-
-                        // Direction 2: Track = Part B, Artist = Part A
-                        candidates.push(TrackCandidate {
-                            track_name: part_b.clone(),
-                            artist_name: part_a.clone(),
-                        });
-                        if !core_b.is_empty() && core_b != part_b {
-                            candidates.push(TrackCandidate {
-                                track_name: core_b.clone(),
-                                artist_name: part_a.clone(),
-                            });
-                        }
-
-                        title_only_candidates.push(part_a.clone());
-                        if !core_a.is_empty() && core_a != part_a {
-                            title_only_candidates.push(core_a.clone());
-                        }
-                        title_only_candidates.push(part_b.clone());
-                        if !core_b.is_empty() && core_b != part_b {
-                            title_only_candidates.push(core_b.clone());
+                    let mut track_variations = vec![track.to_string()];
+                    if !core_track.is_empty() && core_track != track {
+                        track_variations.push(core_track.clone());
+                    }
+                    for pc in paren_contents {
+                        if !track_variations.iter().any(|v| v.eq_ignore_ascii_case(&pc)) {
+                            track_variations.push(pc);
                         }
                     }
 
-                    search_queries.push(format!("{} {}", part_a, part_b));
-                    if !core_a.is_empty() && core_a != part_a {
-                        search_queries.push(format!("{} {}", core_a, part_b));
+                    // Add "The " variants
+                    let mut expanded_tracks = Vec::new();
+                    for tv in &track_variations {
+                        for v in with_the_variants(tv) {
+                            if !expanded_tracks.iter().any(|e: &String| e.eq_ignore_ascii_case(&v)) {
+                                expanded_tracks.push(v);
+                            }
+                        }
                     }
-                    if !core_b.is_empty() && core_b != part_b {
-                        search_queries.push(format!("{} {}", part_a, core_b));
+
+                    let mut artist_list = vec![artist.to_string()];
+                    for sa in &sub_artists {
+                        if !artist_list.iter().any(|a| a.eq_ignore_ascii_case(sa)) {
+                            artist_list.push(sa.clone());
+                        }
                     }
-                    search_queries.push(format!("{} {}", part_b, part_a));
-                    break;
+
+                    for art in &artist_list {
+                        for trk in &expanded_tracks {
+                            candidates.push(TrackCandidate {
+                                track_name: trk.clone(),
+                                artist_name: art.clone(),
+                            });
+                        }
+                    }
+
+                    for trk in &expanded_tracks {
+                        if !title_only_candidates.iter().any(|t| t.eq_ignore_ascii_case(trk)) {
+                            title_only_candidates.push(trk.clone());
+                        }
+                    }
+
+                    search_queries.push(format!("{} {}", artist, track));
+                    if !core_track.is_empty() && core_track != track {
+                        search_queries.push(format!("{} {}", artist, core_track));
+                    }
+                    search_queries.push(format!("{} {}", track, artist));
+                };
+
+                let p0 = raw_parts[0];
+                let p1 = raw_parts[1];
+                let plast = raw_parts[raw_parts.len() - 1];
+
+                if is_artist_match(p0) {
+                    add_pair(p0, p1);
+                    if raw_parts.len() > 2 {
+                        let combined_title = raw_parts[1..].join(" - ");
+                        add_pair(p0, &combined_title);
+                    }
+                } else if is_artist_match(plast) {
+                    add_pair(plast, p0);
+                    if raw_parts.len() > 2 {
+                        let combined_title = raw_parts[..raw_parts.len() - 1].join(" - ");
+                        add_pair(plast, &combined_title);
+                    }
+                } else if is_artist_match(p1) && raw_parts.len() > 2 {
+                    add_pair(p1, raw_parts[2]);
+                } else {
+                    add_pair(p0, p1);
+                    add_pair(p1, p0);
+                    if raw_parts.len() > 2 {
+                        let rem_after_0 = raw_parts[1..].join(" - ");
+                        add_pair(p0, &rem_after_0);
+                        let rem_before_last = raw_parts[..raw_parts.len() - 1].join(" - ");
+                        add_pair(plast, &rem_before_last);
+                    }
                 }
+                break;
             }
         }
     }
 
     if !split_found {
-        if !clean_artist.is_empty() {
-            known_artists.push(clean_artist.to_string());
-            candidates.push(TrackCandidate {
-                track_name: clean_title.to_string(),
-                artist_name: clean_artist.to_string(),
-            });
-            let core_title = strip_parentheticals(clean_title);
-            if !core_title.is_empty() && core_title != clean_title {
-                candidates.push(TrackCandidate {
-                    track_name: core_title.clone(),
-                    artist_name: clean_artist.to_string(),
-                });
-                title_only_candidates.push(core_title);
-            }
-            title_only_candidates.push(clean_title.to_string());
-            search_queries.push(format!("{} {}", clean_title, clean_artist));
-        } else {
-            candidates.push(TrackCandidate {
-                track_name: clean_title.to_string(),
-                artist_name: "".to_string(),
-            });
-            title_only_candidates.push(clean_title.to_string());
+        let core_title = strip_parentheticals(clean_title);
+        let paren_contents = extract_parenthetical_contents(clean_title);
+        let mut expanded_tracks = vec![clean_title.to_string()];
+        if !core_title.is_empty() && core_title != clean_title {
+            expanded_tracks.push(core_title.clone());
         }
-        search_queries.push(clean_title.to_string());
+        for pc in paren_contents {
+            if !expanded_tracks.iter().any(|v| v.eq_ignore_ascii_case(&pc)) {
+                expanded_tracks.push(pc);
+            }
+        }
+        let mut final_tracks = Vec::new();
+        for tv in &expanded_tracks {
+            for v in with_the_variants(tv) {
+                if !final_tracks.iter().any(|e: &String| e.eq_ignore_ascii_case(&v)) {
+                    final_tracks.push(v);
+                }
+            }
+        }
+
+        for trk in &final_tracks {
+            if !title_only_candidates.iter().any(|t| t.eq_ignore_ascii_case(trk)) {
+                title_only_candidates.push(trk.clone());
+            }
+        }
+
+        if !sub_artists.is_empty() {
+            for sa in &sub_artists {
+                for trk in &final_tracks {
+                    candidates.push(TrackCandidate {
+                        track_name: trk.clone(),
+                        artist_name: sa.clone(),
+                    });
+                }
+                search_queries.push(format!("{} {}", clean_title, sa));
+                if !core_title.is_empty() && core_title != clean_title {
+                    search_queries.push(format!("{} {}", core_title, sa));
+                }
+            }
+        } else {
+            for trk in &final_tracks {
+                candidates.push(TrackCandidate {
+                    track_name: trk.clone(),
+                    artist_name: "".to_string(),
+                });
+            }
+            search_queries.push(clean_title.to_string());
+        }
     }
 
     // Fuzzy net query (clean title + first word of artist)
@@ -266,11 +376,28 @@ fn extract_candidates(
         title_only_candidates.push(clean_title.to_string());
     }
 
+    // Deduplicate candidates
+    let mut unique_candidates: Vec<TrackCandidate> = Vec::new();
+    for c in candidates {
+        let trk = c.track_name.trim().to_string();
+        let art = c.artist_name.trim().to_string();
+        if !trk.is_empty()
+            && !unique_candidates.iter().any(|u| {
+                u.track_name.eq_ignore_ascii_case(&trk) && u.artist_name.eq_ignore_ascii_case(&art)
+            })
+        {
+            unique_candidates.push(TrackCandidate {
+                track_name: trk,
+                artist_name: art,
+            });
+        }
+    }
+
     // Deduplicate queries
     let mut unique_queries = Vec::new();
     for q in search_queries {
         let trimmed = q.trim().to_string();
-        if !trimmed.is_empty() && !unique_queries.contains(&trimmed) {
+        if !trimmed.is_empty() && !unique_queries.iter().any(|u: &String| u.eq_ignore_ascii_case(&trimmed)) {
             unique_queries.push(trimmed);
         }
     }
@@ -278,12 +405,12 @@ fn extract_candidates(
     let mut unique_titles = Vec::new();
     for t in title_only_candidates {
         let trimmed = t.trim().to_string();
-        if !trimmed.is_empty() && !unique_titles.contains(&trimmed) {
+        if !trimmed.is_empty() && !unique_titles.iter().any(|u: &String| u.eq_ignore_ascii_case(&trimmed)) {
             unique_titles.push(trimmed);
         }
     }
 
-    (candidates, unique_titles, unique_queries, known_artists)
+    (unique_candidates, unique_titles, unique_queries, known_artists)
 }
 
 fn score_candidate(
@@ -349,16 +476,15 @@ fn score_candidate(
                 artist_matched = true;
                 break;
             } else {
-                let split_parts: Vec<&str> = item_art_lower
-                    .split(|c| c == ',' || c == '&')
-                    .map(|s| s.trim())
-                    .collect();
-                if split_parts
-                    .iter()
-                    .any(|part| cand_lower.contains(part) || part.contains(&cand_lower))
-                {
-                    score += 450.0;
-                    artist_matched = true;
+                for piece in RE_ARTIST_SEPARATORS.split(&item_art_lower) {
+                    let p = piece.trim();
+                    if !p.is_empty() && (cand_lower.contains(p) || p.contains(&cand_lower)) {
+                        score += 450.0;
+                        artist_matched = true;
+                        break;
+                    }
+                }
+                if artist_matched {
                     break;
                 }
             }
@@ -874,3 +1000,97 @@ pub async fn save_lyrics(
     println!("[Lyrics] Saved modified lyrics to disk: {}", cache_key);
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vitas_sanitization_and_candidates() {
+        let title = "Vitas - 7th Element (7 элемент) - Studio Version";
+        let channel = "Kaiden and Vitas";
+
+        let clean_title = sanitize_title(title);
+        assert_eq!(clean_title, "Vitas - 7th Element (7 элемент)");
+
+        let sub_artists = extract_sub_artists(channel);
+        assert!(sub_artists.iter().any(|a| a.eq_ignore_ascii_case("Vitas")));
+        assert!(sub_artists.iter().any(|a| a.eq_ignore_ascii_case("Kaiden")));
+
+        let (candidates, title_only, queries, known_artists) = extract_candidates(&clean_title, channel);
+
+        // Check that Vitas is a known artist
+        assert!(known_artists.iter().any(|a| a.eq_ignore_ascii_case("Vitas")));
+
+        // Check that (7th Element, Vitas) or (The 7th Element, Vitas) is in candidates
+        assert!(
+            candidates.iter().any(|c| c.track_name.eq_ignore_ascii_case("7th Element")
+                && c.artist_name.eq_ignore_ascii_case("Vitas")),
+            "Expected (7th Element, Vitas) in candidates, found: {:?}",
+            candidates
+        );
+        assert!(
+            candidates.iter().any(|c| c.track_name.eq_ignore_ascii_case("The 7th Element")
+                && c.artist_name.eq_ignore_ascii_case("Vitas")),
+            "Expected (The 7th Element, Vitas) in candidates, found: {:?}",
+            candidates
+        );
+
+        // Check title-only candidates
+        assert!(title_only.iter().any(|t| t.eq_ignore_ascii_case("7th Element")));
+        assert!(title_only.iter().any(|t| t.eq_ignore_ascii_case("The 7th Element")));
+
+        // Check search queries
+        assert!(queries.iter().any(|q| q.contains("Vitas") && q.contains("7th Element")));
+    }
+
+    #[test]
+    fn test_live_and_remaster_sanitization() {
+        assert_eq!(
+            sanitize_title("Coldplay - Yellow - Live in São Paulo"),
+            "Coldplay - Yellow"
+        );
+        assert_eq!(
+            sanitize_title("Queen - Bohemian Rhapsody (Remastered 2011)"),
+            "Queen - Bohemian Rhapsody"
+        );
+        assert_eq!(
+            sanitize_title("Modjo - Lady (Hear Me Tonight) [Official Music Video]"),
+            "Modjo - Lady (Hear Me Tonight)"
+        );
+    }
+
+    #[test]
+    fn test_the_variants() {
+        let v1 = with_the_variants("7th Element");
+        assert!(v1.contains(&"7th Element".to_string()));
+        assert!(v1.contains(&"The 7th Element".to_string()));
+
+        let v2 = with_the_variants("The Reason");
+        assert!(v2.contains(&"The Reason".to_string()));
+        assert!(v2.contains(&"Reason".to_string()));
+    }
+
+    #[test]
+    fn test_fetch_lrclib_vitas_live() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = get_client();
+            let resp = fetch_lrclib(
+                &client,
+                "Vitas - 7th Element (7 элемент) - Studio Version",
+                "Kaiden and Vitas",
+                Some(250.0),
+            )
+            .await;
+
+            assert!(resp.is_some(), "LRCLIB failed to fetch lyrics for Vitas!");
+            let r = resp.unwrap();
+            assert!(r.success, "Lyrics response success was false");
+            assert!(r.synced_lyrics.is_some(), "Synced lyrics should be present");
+            let synced = r.synced_lyrics.unwrap();
+            assert!(synced.contains("Я пришёл дать эту песню") || synced.contains("Chandra Bendram"));
+        });
+    }
+}
+
