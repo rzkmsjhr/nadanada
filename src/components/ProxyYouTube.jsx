@@ -95,6 +95,8 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
 
   useEffect(() => {
     if (videoId && (videoId !== currentLoadedVideoId.current || startSecs !== currentLoadedStart.current)) {
+      latestTime.current = startSecs || 0;
+      latestDuration.current = 0;
       playerProxy.current.loadVideoById(videoId, startSecs);
       currentLoadedVideoId.current = videoId;
       currentLoadedStart.current = startSecs;

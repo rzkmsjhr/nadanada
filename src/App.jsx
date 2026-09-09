@@ -111,6 +111,14 @@ function App() {
   const appWindow = getCurrentWindow();
 
   const [showClosePrompt, setShowClosePrompt] = useState(false);
+  const [closeBehavior, setCloseBehavior] = useState(() => {
+    return localStorage.getItem('nadanada-close-behavior') || 'prompt';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-close-behavior', closeBehavior);
+  }, [closeBehavior]);
+
   const {
     theme, setTheme, toggleTheme,
     isMaximized,
@@ -120,7 +128,7 @@ function App() {
     toggleMiniPlayer,
     isFullscreen,
     toggleFullscreen
-  } = useSystemIntegration(appWindow, setShowClosePrompt);
+  } = useSystemIntegration(appWindow, setShowClosePrompt, closeBehavior);
 
   const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
     const saved = localStorage.getItem('nadanada-crossfade-duration');
@@ -434,7 +442,8 @@ function App() {
     showSettings, setShowSettings,
     theme, setTheme,
     crossfadeDuration, setCrossfadeDuration,
-    miniPlayerOpacity, setMiniPlayerOpacity
+    miniPlayerOpacity, setMiniPlayerOpacity,
+    closeBehavior, setCloseBehavior
   };
 
   return (

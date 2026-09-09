@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2 } from 'lucide-react';
+import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow } from 'lucide-react';
 import { api } from '../services/api';
 
 const THEMES = [
@@ -20,7 +20,9 @@ export default function SettingsModal({
   crossfadeDuration,
   setCrossfadeDuration,
   miniPlayerOpacity = 20,
-  setMiniPlayerOpacity
+  setMiniPlayerOpacity,
+  closeBehavior = 'prompt',
+  setCloseBehavior
 }) {
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 10000 }}>
@@ -252,6 +254,75 @@ export default function SettingsModal({
             <span>50%</span>
             <span>70%</span>
             <span>100%</span>
+          </div>
+        </div>
+
+        {/* Window Close Behavior Section */}
+        <div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.75px',
+            color: 'var(--text-muted)',
+            marginBottom: '12px'
+          }}>
+            <AppWindow size={16} />
+            <span>Window Close Button Behavior</span>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}>
+            {[
+              { id: 'minimize', label: 'Minimize to Tray' },
+              { id: 'close', label: 'Close the App' },
+              { id: 'prompt', label: 'Ask Every Time' }
+            ].map(item => {
+              const isSelected = (closeBehavior || 'prompt') === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setCloseBehavior && setCloseBehavior(item.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    border: isSelected ? '1.5px solid var(--accent-color)' : '1px solid var(--panel-border)',
+                    background: isSelected ? 'var(--panel-border)' : 'transparent',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    transition: 'all 0.15s ease',
+                    color: 'inherit'
+                  }}
+                >
+                  <span style={{ 
+                    fontSize: '0.85rem', 
+                    fontWeight: 600, 
+                    color: isSelected ? 'var(--accent-color)' : 'var(--text-main)' 
+                  }}>
+                    {item.label}
+                  </span>
+                  <div style={{
+                    width: '14px',
+                    height: '14px',
+                    borderRadius: '50%',
+                    border: isSelected ? '4px solid var(--accent-color)' : '1.5px solid var(--text-muted)',
+                    background: isSelected ? 'var(--text-main)' : 'transparent',
+                    boxSizing: 'border-box',
+                    flexShrink: 0,
+                    marginLeft: '8px'
+                  }} />
+                </button>
+              );
+            })}
           </div>
         </div>
 

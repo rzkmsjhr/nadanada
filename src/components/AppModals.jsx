@@ -47,7 +47,9 @@ export default function AppModals() {
     crossfadeDuration,
     setCrossfadeDuration,
     miniPlayerOpacity,
-    setMiniPlayerOpacity
+    setMiniPlayerOpacity,
+    closeBehavior,
+    setCloseBehavior
   } = useAppContext();
   return (
     <>
@@ -64,10 +66,18 @@ export default function AppModals() {
           setCrossfadeDuration={setCrossfadeDuration}
           miniPlayerOpacity={miniPlayerOpacity}
           setMiniPlayerOpacity={setMiniPlayerOpacity}
+          closeBehavior={closeBehavior}
+          setCloseBehavior={setCloseBehavior}
         />
       )}
 
-      {showClosePrompt && <ClosePromptModal onClose={() => setShowClosePrompt(false)} />}
+      {showClosePrompt && (
+        <ClosePromptModal 
+          onClose={() => setShowClosePrompt(false)} 
+          closeBehavior={closeBehavior}
+          setCloseBehavior={setCloseBehavior}
+        />
+      )}
 
       {showClearPrompt && <ClearPlaylistModal onClear={() => {
         setPlaylist([]);

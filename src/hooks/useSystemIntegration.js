@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { LogicalSize, PhysicalSize } from '@tauri-apps/api/dpi';
+import { api } from '../services/api';
 
-export function useSystemIntegration(appWindow, setShowClosePrompt) {
+export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavior = 'prompt') {
   const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
   const [isMaximized, setIsMaximized] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
@@ -115,8 +116,15 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
     localStorage.setItem('nadanada-theme', theme);
   }, [theme]);
 
+  const closeBehaviorRef = useRef(closeBehavior);
+  useEffect(() => {
+    closeBehaviorRef.current = closeBehavior;
+  }, [closeBehavior]);
+
   useEffect(() => {
     const unlisten = listen('close-requested', async () => {
+      const behavior = closeBehaviorRef.current || localStorage.getItem('nadanada-close-behavior') || 'prompt';
+
       if (isMiniPlayerRef.current) {
         setIsMiniPlayer(false);
         try {
@@ -151,6 +159,25 @@ export function useSystemIntegration(appWindow, setShowClosePrompt) {
           console.error("Failed to restore window on close:", err);
         }
       }
+
+      if (behavior === 'minimize') {
+        try {
+          await appWindow.hide();
+        } catch (err) {
+          console.error("Failed to hide window on close:", err);
+        }
+        return;
+      }
+
+      if (behavior === 'close') {
+        try {
+          await api.quitApp();
+        } catch (err) {
+          console.error("Failed to quit app on close:", err);
+        }
+        return;
+      }
+
       setShowClosePrompt(true);
     });
     return () => {
