@@ -3,7 +3,8 @@ import { api } from '../services/api';
 
 export const parseDuration = (durationStr) => {
   if (!durationStr) return 0;
-  const parts = durationStr.split(':').map(Number);
+  if (typeof durationStr === 'number') return durationStr;
+  const parts = String(durationStr).split(':').map(Number);
   if (parts.length === 2) return parts[0] * 60 + parts[1];
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
   return 0;
