@@ -5,12 +5,16 @@ import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Rep
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
+import VideoOverlay from './VideoOverlay';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
   repeatMode, onToggleRepeat, isShuffle, onToggleShuffle, onSongEnded, isSearchExpanded,
   albumInfo, isLoadingAlbum, onAlbumClick, isMiniPlayer, onToggleMiniPlayer,
-  crossfadeDuration, setCrossfadeDuration
+  crossfadeDuration, setCrossfadeDuration,
+  videoOverlayMode, setVideoOverlayMode,
+  lyricsData, lyricsSyncOffset, setLyricsSyncOffset, isFetchingLyrics, lyricsError, onRetryLyrics,
+  chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords
 }, ref) {
   
   const core = usePlayerCore({
@@ -272,7 +276,7 @@ const Player = React.forwardRef(function Player({
               </div>
             )}
 
-            {core.captions.length > 0 && !isMiniPlayer && !isFullscreen && (
+            {core.captions.length > 0 && !isMiniPlayer && !isFullscreen && !videoOverlayMode && (
               <div
                 style={{
                   position: 'absolute',
@@ -483,14 +487,15 @@ const Player = React.forwardRef(function Player({
               style={{
                 position: 'absolute',
                 inset: 0,
-                background: core.isVideoHovered ? 'rgba(0,0,0,0.6)' : 'transparent',
+                background: (!videoOverlayMode && core.isVideoHovered) ? 'rgba(0,0,0,0.6)' : 'transparent',
                 opacity: core.isVideoHovered ? 1 : 0,
                 transition: 'all 0.2s ease',
-                zIndex: 20,
+                zIndex: videoOverlayMode ? 40 : 20,
+                pointerEvents: core.isVideoHovered ? (videoOverlayMode ? 'none' : 'auto') : 'none',
                 display: 'flex',
-                alignItems: 'center',
+                alignItems: videoOverlayMode ? 'flex-end' : 'center',
                 justifyContent: 'center',
-                gap: '16px',
+                paddingBottom: videoOverlayMode ? '10px' : 0,
                 borderRadius: '12px'
               }}
             >
@@ -499,7 +504,8 @@ const Player = React.forwardRef(function Player({
                 display: 'flex', flexDirection: 'column', gap: '2px',
                 color: '#fff', zIndex: 25,
                 textShadow: '0 1px 4px rgba(0,0,0,0.8)',
-                overflow: 'hidden'
+                overflow: 'hidden',
+                pointerEvents: 'none'
               }}>
                 <div data-tauri-drag-region className="mini-player-marquee-container" style={{ fontSize: '0.9rem', fontWeight: 600 }}>
                   <span data-tauri-drag-region className="mini-player-marquee-text">{currentSong.title}</span>
@@ -515,26 +521,122 @@ const Player = React.forwardRef(function Player({
                   position: 'absolute', top: '12px', right: '12px',
                   background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff',
                   borderRadius: '50%', padding: '6px', cursor: 'pointer', zIndex: 25,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  pointerEvents: 'auto'
                 }}
+                title="Exit Mini Player"
               >
                 <X size={16} />
               </button>
 
-              <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious} style={{ zIndex: 25, color: '#fff', background: 'transparent' }}>
-                <SkipBack size={24} />
-              </button>
-              <button className="btn btn-icon" onClick={core.togglePlay} style={{ background: 'var(--accent-color)', color: '#fff', borderRadius: '50%', padding: '12px', zIndex: 25 }}>
-                {core.isPlaying ? <Pause size={24} /> : <Play size={24} />}
-              </button>
-              <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} style={{ zIndex: 25, color: '#fff', background: 'transparent' }}>
-                <SkipForward size={24} />
-              </button>
+              {/* Media Controls */}
+              <div
+                data-no-drag="true"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: videoOverlayMode ? '12px' : '16px',
+                  pointerEvents: 'auto',
+                  zIndex: 25
+                }}
+              >
+                <button 
+                  className="btn btn-icon" 
+                  onClick={onPrevious} 
+                  disabled={!hasPrevious} 
+                  style={{ 
+                    zIndex: 25, 
+                    color: '#fff', 
+                    background: videoOverlayMode ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
+                    backdropFilter: videoOverlayMode ? 'blur(6px)' : undefined,
+                    border: videoOverlayMode ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
+                    borderRadius: '50%',
+                    padding: videoOverlayMode ? '5px' : '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'auto',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Previous"
+                >
+                  <SkipBack size={videoOverlayMode ? 15 : 24} />
+                </button>
+                <button 
+                  className="btn btn-icon" 
+                  onClick={core.togglePlay} 
+                  style={{ 
+                    background: 'var(--accent-color)', 
+                    color: '#fff', 
+                    borderRadius: '50%', 
+                    padding: videoOverlayMode ? '7px' : '12px', 
+                    zIndex: 25, 
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'auto',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title={core.isPlaying ? "Pause" : "Play"}
+                >
+                  {core.isPlaying ? <Pause size={videoOverlayMode ? 16 : 24} /> : <Play size={videoOverlayMode ? 16 : 24} />}
+                </button>
+                <button 
+                  className="btn btn-icon" 
+                  onClick={onNext} 
+                  disabled={!hasNext} 
+                  style={{ 
+                    zIndex: 25, 
+                    color: '#fff', 
+                    background: videoOverlayMode ? 'rgba(0, 0, 0, 0.7)' : 'transparent',
+                    backdropFilter: videoOverlayMode ? 'blur(6px)' : undefined,
+                    border: videoOverlayMode ? '1px solid rgba(255, 255, 255, 0.2)' : 'none',
+                    borderRadius: '50%',
+                    padding: videoOverlayMode ? '5px' : '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    pointerEvents: 'auto',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Next"
+                >
+                  <SkipForward size={videoOverlayMode ? 15 : 24} />
+                </button>
+              </div>
             </div>
           )}
 
           {/* Invisible overlay */}
           {!isMiniPlayer && !isFullscreen && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+
+          {/* Video Overlay (Lyrics / Chords) */}
+          {videoOverlayMode && (
+            <VideoOverlay
+              mode={videoOverlayMode}
+              onClose={() => setVideoOverlayMode?.(null)}
+              onTogglePlay={core.togglePlay}
+              isFullscreen={isFullscreen}
+              isMiniPlayer={isMiniPlayer}
+              currentSong={currentSong}
+              lyricsData={lyricsData}
+              lyricsSyncOffset={lyricsSyncOffset}
+              onLyricsSyncChange={setLyricsSyncOffset}
+              isFetchingLyrics={isFetchingLyrics}
+              lyricsError={lyricsError}
+              onRetryLyrics={onRetryLyrics}
+              chordsData={chordsData}
+              syncOffset={syncOffset}
+              onSyncChange={setSyncOffset}
+              transposeOffset={transposeOffset}
+              onTransposeChange={setTransposeOffset}
+              isFetchingChords={isFetchingChords}
+              chordsError={chordsError}
+              onRetryChords={onRetryChords}
+            />
+          )}
         </div>
       </div>
 

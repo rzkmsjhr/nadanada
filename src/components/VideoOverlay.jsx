@@ -1,0 +1,654 @@
+import React, { useState, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { transposeChord } from './ChordDisplay';
+
+export default function VideoOverlay({
+  mode, // 'lyrics' | 'chords'
+  onClose,
+  onTogglePlay,
+  isFullscreen,
+  isMiniPlayer,
+  currentSong,
+  // Lyrics props
+  lyricsData,
+  lyricsSyncOffset = 0,
+  onLyricsSyncChange,
+  isFetchingLyrics,
+  lyricsError,
+  onRetryLyrics,
+  // Chords props
+  chordsData,
+  syncOffset = 0,
+  onSyncChange,
+  transposeOffset = 0,
+  onTransposeChange,
+  isFetchingChords,
+  chordsError,
+  onRetryChords
+}) {
+  const [time, setTime] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+
+  // Tauri window dragging support for mini-player view
+  const handleMouseDown = (e) => {
+    if (!isMiniPlayer) return;
+    if (e.button !== 0) return; // Only left mouse button initiates window drag
+    // Do not drag when clicking buttons, inputs, or interactive capsules
+    if (e.target.closest('button, input, select, textarea, [data-no-drag]')) return;
+    try {
+      getCurrentWindow().startDragging().catch(() => {});
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    const currentOffset = mode === 'lyrics' ? (lyricsSyncOffset || 0) : (syncOffset || 0);
+    const handleTime = (e) => setTime(e.detail + currentOffset);
+    window.addEventListener('timeupdate', handleTime);
+    return () => window.removeEventListener('timeupdate', handleTime);
+  }, [mode, lyricsSyncOffset, syncOffset]);
+
+  const isLyricsLoading = isFetchingLyrics || (Boolean(currentSong?.id) && lyricsData?._songId !== currentSong?.id);
+  const isChordsLoading = isFetchingChords || (Boolean(currentSong?.id) && chordsData?._songId !== currentSong?.id);
+
+  const isCurrentLyrics = !currentSong?.id || (lyricsData?._songId === currentSong?.id);
+  const isCurrentChords = !currentSong?.id || (chordsData?._songId === currentSong?.id);
+
+  // ── Lyrics Resolution ──
+  const lyricsLines = isCurrentLyrics ? (lyricsData?.lines || []) : [];
+  let activeLyricIdx = -1;
+  for (let i = 0; i < lyricsLines.length; i++) {
+    if (time >= lyricsLines[i].time) {
+      activeLyricIdx = i;
+    } else {
+      break;
+    }
+  }
+  const activeLine = activeLyricIdx >= 0 ? lyricsLines[activeLyricIdx] : null;
+  const nextLine = activeLyricIdx + 1 < lyricsLines.length ? lyricsLines[activeLyricIdx + 1] : null;
+
+  // ── Chords Resolution ──
+  const chords = isCurrentChords ? (chordsData?.chords || []) : [];
+  let activeChordIdx = -1;
+  for (let i = 0; i < chords.length; i++) {
+    if (time >= chords[i].time_sec) {
+      activeChordIdx = i;
+    } else {
+      break;
+    }
+  }
+  const activeChord = activeChordIdx >= 0 ? chords[activeChordIdx] : (chords.length > 0 ? chords[0] : null);
+  const prevChords = activeChordIdx > 0 ? chords.slice(Math.max(0, activeChordIdx - 2), activeChordIdx) : [];
+  const nextChords = activeChordIdx >= 0 ? chords.slice(activeChordIdx + 1, activeChordIdx + 4) : chords.slice(1, 4);
+
+  // Auto-close overlay immediately if no lyrics or no chords are available, reverting to header view
+  useEffect(() => {
+    if (!currentSong) {
+      onClose?.();
+      return;
+    }
+
+    if (mode === 'lyrics') {
+      if (lyricsError) {
+        onClose?.();
+        return;
+      }
+      if (!isLyricsLoading && isCurrentLyrics) {
+        if (!lyricsLines || lyricsLines.length === 0) {
+          onClose?.();
+        }
+      }
+    } else if (mode === 'chords') {
+      if (chordsError) {
+        onClose?.();
+        return;
+      }
+      if (!isChordsLoading && isCurrentChords) {
+        if (!chords || chords.length === 0) {
+          onClose?.();
+        }
+      }
+    }
+  }, [
+    mode,
+    currentSong?.id,
+    lyricsError,
+    isLyricsLoading,
+    isCurrentLyrics,
+    lyricsLines.length,
+    chordsError,
+    isChordsLoading,
+    isCurrentChords,
+    chords.length,
+    onClose
+  ]);
+
+  const getActiveFontSize = (text) => {
+    const len = text?.length || 0;
+    if (len <= 20) return 'clamp(1.65rem, 5.0vw, 3.2rem)';
+    if (len <= 35) return 'clamp(1.35rem, 4.0vw, 2.6rem)';
+    if (len <= 55) return 'clamp(1.15rem, 3.2vw, 2.1rem)';
+    return 'clamp(1.0rem, 2.6vw, 1.7rem)';
+  };
+
+  const getNextFontSize = (text) => {
+    const len = text?.length || 0;
+    if (len <= 30) return 'clamp(1.15rem, 3.2vw, 1.7rem)';
+    return 'clamp(0.95rem, 2.4vw, 1.4rem)';
+  };
+
+  // If in error or empty state, render nothing so video remains completely unobstructed while overlay closes
+  if (mode === 'lyrics') {
+    if (lyricsError || (!isLyricsLoading && isCurrentLyrics && lyricsLines.length === 0)) {
+      return null;
+    }
+  } else if (mode === 'chords') {
+    if (chordsError || (!isChordsLoading && isCurrentChords && chords.length === 0)) {
+      return null;
+    }
+  }
+
+  return (
+    <div
+      data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+      onMouseDown={handleMouseDown}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 35,
+        borderRadius: isFullscreen ? 0 : '12px',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        background: 'linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.72) 40%, rgba(0,0,0,0.72) 60%, rgba(0,0,0,0.88) 100%)',
+        pointerEvents: 'auto',
+        userSelect: 'none',
+        cursor: isMiniPlayer ? 'grab' : 'default',
+        transition: 'background 0.2s ease',
+        boxSizing: 'border-box',
+        padding: isMiniPlayer ? '8px 10px' : '10px 14px'
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onMouseMove={() => setIsHovered(true)}
+      onClick={(e) => {
+        // Toggle play/pause when clicking background of video in regular mode (never in mini-player where clicking drags)
+        if (!isMiniPlayer && (e.target === e.currentTarget || e.target.getAttribute('data-bg') === 'true')) {
+          onTogglePlay?.();
+        }
+      }}
+      data-bg="true"
+    >
+      {/* ── Top-Right (X) Return Button (Visible on Hover, Hidden in Mini Player) ── */}
+      {!isMiniPlayer && (
+        <button
+          data-no-drag="true"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose?.();
+          }}
+          title="Switch back to header view"
+          style={{
+            position: 'absolute',
+            top: '12px',
+            right: '12px',
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            color: '#ffffff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: 0,
+            zIndex: 45,
+            opacity: isHovered ? 1 : 0,
+            pointerEvents: isHovered ? 'auto' : 'none',
+            transition: 'opacity 0.25s ease, transform 0.15s ease, background 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.25)';
+            e.currentTarget.style.transform = 'scale(1.1)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(0, 0, 0, 0.65)';
+            e.currentTarget.style.transform = 'scale(1)';
+          }}
+        >
+          <X size={15} strokeWidth={2.5} />
+        </button>
+      )}
+
+      {/* ── LYRICS MODE CONTENT ── */}
+      {mode === 'lyrics' && (
+        <div
+          data-bg="true"
+          data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            textAlign: 'center',
+            padding: isMiniPlayer ? '16px 8px 26px 8px' : '24px 8px 36px 8px',
+            boxSizing: 'border-box'
+          }}
+        >
+          {isLyricsLoading ? (
+            <div
+              data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+              style={{
+                color: '#ffffff',
+                fontSize: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                textShadow: '0 2px 8px rgba(0,0,0,0.9)'
+              }}
+            >
+              <span className="spinner-mini" style={{
+                display: 'inline-block',
+                width: '16px',
+                height: '16px',
+                border: '2px solid rgba(255,255,255,0.6)',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+              <span>Searching lyrics (LRCLIB, YouTube)...</span>
+            </div>
+          ) : (
+            <div data-bg="true" data-tauri-drag-region={isMiniPlayer ? '' : undefined} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', minWidth: 0 }}>
+              {/* Active (current) lyric line - prominent pure white, bold with glowing text-shadow, NO ELLIPSIS */}
+              <div
+                data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                style={{
+                  fontSize: getActiveFontSize(activeLine?.text),
+                  fontWeight: 700,
+                  color: activeLine ? '#ffffff' : 'rgba(255, 255, 255, 0.5)',
+                  textShadow: '0 2px 14px rgba(0,0,0,0.98), 0 1px 4px rgba(0,0,0,0.95), 0 0 30px rgba(0,0,0,0.9)',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
+                  overflowWrap: 'break-word',
+                  textWrap: 'balance',
+                  width: '100%',
+                  fontStyle: activeLine ? 'normal' : 'italic',
+                  transition: 'color 0.2s ease, font-size 0.2s ease',
+                  lineHeight: 1.25,
+                  textAlign: 'center'
+                }}
+              >
+                {activeLine ? activeLine.text : '♪ ...'}
+              </div>
+
+              {/* Next lyric line */}
+              {nextLine && (
+                <div
+                  data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                  style={{
+                    fontSize: getNextFontSize(nextLine.text),
+                    color: 'rgba(255, 255, 255, 0.85)',
+                    textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+                    marginTop: '4px',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                    overflowWrap: 'break-word',
+                    textWrap: 'balance',
+                    width: '100%',
+                    lineHeight: 1.25,
+                    textAlign: 'center'
+                  }}
+                >
+                  {nextLine.text}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Bottom Floating Sync Calibration Capsule (Visible on Hover, Hidden in Mini Player) */}
+          {!isMiniPlayer && lyricsLines.length > 0 && !isLyricsLoading && onLyricsSyncChange && (
+            <div
+              data-no-drag="true"
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                bottom: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                borderRadius: '8px',
+                padding: '3px 8px',
+                fontSize: '0.75rem',
+                color: '#ffffff',
+                zIndex: 45,
+                opacity: isHovered ? 1 : 0,
+                pointerEvents: isHovered ? 'auto' : 'none',
+                transition: 'opacity 0.25s ease'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Sync:</span>
+                <button
+                  onClick={() => onLyricsSyncChange(s => Math.max(-30, Number((s - 0.25).toFixed(2))))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem',
+                    lineHeight: 1
+                  }}
+                  title="Delay Lyrics by 0.25s"
+                >
+                  -
+                </button>
+                <span style={{ minWidth: '30px', textAlign: 'center', fontWeight: 'bold', color: '#fff' }}>
+                  {lyricsSyncOffset > 0 ? '+' : ''}{lyricsSyncOffset}s
+                </span>
+                <button
+                  onClick={() => onLyricsSyncChange(s => Math.min(30, Number((s + 0.25).toFixed(2))))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem',
+                    lineHeight: 1
+                  }}
+                  title="Advance Lyrics by 0.25s"
+                >
+                  +
+                </button>
+              </div>
+
+              {lyricsSyncOffset !== 0 && (
+                <button
+                  onClick={() => onLyricsSyncChange(0)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer',
+                    fontSize: '0.72rem',
+                    textDecoration: 'underline',
+                    padding: '0 2px'
+                  }}
+                  title="Reset sync offset to 0s"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CHORDS MODE CONTENT ── */}
+      {mode === 'chords' && (
+        <div
+          data-bg="true"
+          data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '100%',
+            height: '100%',
+            padding: isMiniPlayer ? '16px 8px 26px 8px' : '24px 8px 36px 8px',
+            boxSizing: 'border-box'
+          }}
+        >
+          {isChordsLoading ? (
+            <div
+              data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+              style={{ color: '#ffffff', fontSize: '1rem', textShadow: '0 2px 8px rgba(0,0,0,0.9)' }}
+            >
+              Scraping chords from Chordify...
+            </div>
+          ) : (
+            <div
+              data-bg="true"
+              data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '100%',
+                height: '100%',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+            >
+              {/* Left Side (Past Chords) */}
+              <div
+                data-bg="true"
+                data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  gap: 'clamp(12px, 2.5vw, 24px)',
+                  overflow: 'hidden',
+                  paddingRight: 'clamp(14px, 3.0vw, 32px)',
+                  maskImage: 'linear-gradient(to left, black 50%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(to left, black 50%, transparent 100%)'
+                }}
+              >
+                {prevChords.map((c, idx) => {
+                  const dist = prevChords.length - idx;
+                  const opacity = dist === 1 ? 0.35 : 0.18;
+                  const size = dist === 1 ? 'clamp(1.6rem, 3.8vw, 2.4rem)' : 'clamp(1.3rem, 3.0vw, 1.9rem)';
+
+                  return (
+                    <div
+                      key={`prev-${idx}`}
+                      data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                      style={{
+                        fontSize: size,
+                        color: '#ffffff',
+                        fontWeight: 'normal',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        opacity,
+                        textShadow: '0 2px 8px rgba(0,0,0,0.95)'
+                      }}
+                    >
+                      {transposeChord(c.chord, transposeOffset || 0)}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Center (Active Chord - DEAD CENTER, CLEAN CRISP WHITE) */}
+              <div
+                data-bg="true"
+                data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                style={{
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  textAlign: 'center',
+                  padding: '0 10px',
+                  zIndex: 10
+                }}
+              >
+                <span
+                  data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                  style={{
+                    fontSize: 'clamp(2.5rem, 6.2vw, 4.0rem)',
+                    fontWeight: 'bold',
+                    color: '#ffffff',
+                    textShadow: '0 2px 12px rgba(0, 0, 0, 0.98), 0 1px 4px rgba(0, 0, 0, 0.95)',
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                    letterSpacing: '-0.01em',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {activeChord ? transposeChord(activeChord.chord, transposeOffset || 0) : '—'}
+                </span>
+              </div>
+
+              {/* Right Side (Upcoming Chords) */}
+              <div
+                data-bg="true"
+                data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                style={{
+                  flex: 1,
+                  display: 'flex',
+                  justifyContent: 'flex-start',
+                  alignItems: 'center',
+                  gap: 'clamp(12px, 2.5vw, 24px)',
+                  overflow: 'hidden',
+                  paddingLeft: 'clamp(14px, 3.0vw, 32px)',
+                  maskImage: 'linear-gradient(to right, black 50%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(to right, black 50%, transparent 100%)'
+                }}
+              >
+                {nextChords.map((c, idx) => {
+                  const opacity = idx === 0 ? 0.55 : idx === 1 ? 0.32 : 0.15;
+                  const size = idx === 0 ? 'clamp(1.7rem, 4.0vw, 2.6rem)' : idx === 1 ? 'clamp(1.4rem, 3.2vw, 2.1rem)' : 'clamp(1.2rem, 2.6vw, 1.7rem)';
+
+                  return (
+                    <div
+                      key={`next-${idx}`}
+                      data-tauri-drag-region={isMiniPlayer ? '' : undefined}
+                      style={{
+                        fontSize: size,
+                        color: '#ffffff',
+                        fontWeight: 'normal',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                        opacity,
+                        textShadow: '0 2px 8px rgba(0,0,0,0.95)',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {transposeChord(c.chord, transposeOffset || 0)}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Bottom Floating Sync & Key Capsule (Visible on Hover, Hidden in Mini Player) */}
+          {!isMiniPlayer && chords.length > 0 && !isChordsLoading && (
+            <div
+              data-no-drag="true"
+              onMouseDown={(e) => e.stopPropagation()}
+              style={{
+                position: 'absolute',
+                bottom: '10px',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '12px',
+                background: 'rgba(0, 0, 0, 0.75)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255, 255, 255, 0.25)',
+                borderRadius: '8px',
+                padding: '3px 10px',
+                fontSize: '0.75rem',
+                color: '#ffffff',
+                zIndex: 45,
+                opacity: isHovered ? 1 : 0,
+                pointerEvents: isHovered ? 'auto' : 'none',
+                transition: 'opacity 0.25s ease'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Sync Controls */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Sync:</span>
+                <button
+                  onClick={() => onSyncChange?.(s => Math.max(-30, Number((s - 0.25).toFixed(2))))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem'
+                  }}
+                  title="Delay Chords"
+                >
+                  -
+                </button>
+                <span style={{ minWidth: '28px', textAlign: 'center', fontWeight: 'bold' }}>
+                  {syncOffset > 0 ? '+' : ''}{syncOffset}s
+                </span>
+                <button
+                  onClick={() => onSyncChange?.(s => Math.min(30, Number((s + 0.25).toFixed(2))))}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem'
+                  }}
+                  title="Advance Chords"
+                >
+                  +
+                </button>
+              </div>
+
+              {/* Key Controls */}
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '8px' }}>
+                <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>Key:</span>
+                <button
+                  onClick={() => onTransposeChange?.(s => (s - 1) % 12)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem'
+                  }}
+                  title="Transpose Down"
+                >
+                  -
+                </button>
+                <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: 'bold' }}>
+                  {transposeOffset > 0 ? '+' : ''}{transposeOffset}
+                </span>
+                <button
+                  onClick={() => onTransposeChange?.(s => (s + 1) % 12)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'inherit',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: '0.85rem'
+                  }}
+                  title="Transpose Up"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

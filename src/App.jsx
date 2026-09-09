@@ -367,6 +367,7 @@ function App() {
     syncOffset: lyricsSyncOffset, setSyncOffset: setLyricsSyncOffset,
     handleRetry: handleRetryLyrics
   } = useLyrics(currentSong, isAudioPlaying, api);
+  const [videoOverlayMode, setVideoOverlayMode] = useState(null); // 'lyrics' | 'chords' | null
   const artistFact = useArtistFact(currentSong);
   const {
     repeatMode, setRepeatMode,
@@ -548,6 +549,8 @@ function App() {
                 currentIndex={currentIndex}
                 isFetchingEndless={isFetchingEndless}
                 onOpenSettings={() => setShowSettings(true)}
+                videoOverlayMode={videoOverlayMode}
+                setVideoOverlayMode={setVideoOverlayMode}
               />
             </div>
           </div>
@@ -607,6 +610,25 @@ function App() {
               onToggleMiniPlayer={toggleMiniPlayer} 
               crossfadeDuration={crossfadeDuration}
               setCrossfadeDuration={setCrossfadeDuration}
+              videoOverlayMode={videoOverlayMode}
+              setVideoOverlayMode={setVideoOverlayMode}
+              lyricsData={lyricsData}
+              lyricsSyncOffset={lyricsSyncOffset}
+              setLyricsSyncOffset={setLyricsSyncOffset}
+              isFetchingLyrics={isFetchingLyrics}
+              lyricsError={lyricsError}
+              onRetryLyrics={handleRetryLyrics}
+              chordsData={chordsData}
+              syncOffset={syncOffset}
+              setSyncOffset={setSyncOffset}
+              transposeOffset={transposeOffset}
+              setTransposeOffset={setTransposeOffset}
+              isFetchingChords={isFetchingChords}
+              chordsError={chordsError}
+              onRetryChords={() => {
+                setChordsData(null);
+                setChordsError(null);
+              }}
             />
           </div>
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { ListMusic, Settings, Mic2, X } from 'lucide-react';
+import { ListMusic, Settings, Mic2, X, Maximize2 } from 'lucide-react';
 import ChordDisplay from './ChordDisplay';
 import LyricsDisplay from './LyricsDisplay';
 
@@ -30,9 +30,11 @@ export default function PlayerHeader({
   playlist,
   currentIndex,
   isFetchingEndless,
-  onOpenSettings
+  onOpenSettings,
+  videoOverlayMode,
+  setVideoOverlayMode
 }) {
-  const isViewActive = showLyrics || showChords;
+  const isViewActive = (showLyrics || showChords) && !videoOverlayMode;
   const [showDropdown, setShowDropdown] = useState(false);
   const [menuCoords, setMenuCoords] = useState(null);
   const dropdownRef = useRef(null);
@@ -252,6 +254,40 @@ export default function PlayerHeader({
                         fontSize: '0.75rem'
                       }} title="Transpose Up">+</button>
                     </div>
+
+                    {/* Fullscreen Overlay button next to Key */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVideoOverlayMode?.('chords');
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'var(--panel-bg)',
+                        border: '1px solid var(--panel-border)',
+                        borderRadius: '6px',
+                        padding: '2px 5px',
+                        color: 'var(--text-muted)',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        lineHeight: 1,
+                        height: '18px',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = 'var(--text-main)';
+                        e.currentTarget.style.borderColor = 'var(--accent-color)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = 'var(--text-muted)';
+                        e.currentTarget.style.borderColor = 'var(--panel-border)';
+                      }}
+                      title="Overlay on video"
+                    >
+                      <Maximize2 size={11} strokeWidth={2.2} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -260,6 +296,7 @@ export default function PlayerHeader({
                 data={lyricsData}
                 syncOffset={lyricsSyncOffset}
                 onSyncChange={setLyricsSyncOffset}
+                onSwitchToOverlay={() => setVideoOverlayMode?.('lyrics')}
                 isLoading={isFetchingLyrics}
                 error={lyricsError}
                 onRetry={onRetryLyrics}
@@ -346,6 +383,7 @@ export default function PlayerHeader({
                   onClick={() => {
                     setShowLyrics?.(true);
                     setShowChords?.(false);
+                    setVideoOverlayMode?.(null);
                     setShowDropdown(false);
                   }}
                 >
@@ -358,6 +396,7 @@ export default function PlayerHeader({
                   onClick={() => {
                     setShowChords?.(true);
                     setShowLyrics?.(false);
+                    setVideoOverlayMode?.(null);
                     setShowDropdown(false);
                   }}
                 >

@@ -10,7 +10,7 @@ const SHARPS_MAP = {
   'C♯': 'C#', 'D♯': 'D#', 'E♯': 'F', 'F♯': 'F#', 'G♯': 'G#', 'A♯': 'A#', 'B♯': 'C'
 };
 
-function transposeChord(chord, semitones) {
+export function transposeChord(chord, semitones) {
   if (!chord || chord === 'N.C.' || chord === '') return chord;
   if (semitones === 0) return chord;
   
