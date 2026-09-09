@@ -124,13 +124,25 @@ fn extract_parenthetical_contents(s: &str) -> Vec<String> {
 }
 
 fn sanitize_artist(artist: &str) -> String {
-    let cleaned = artist
+    let mut cleaned = artist
         .replace(" - Topic", "")
         .replace("- Topic", "")
         .replace(" Official", "")
         .replace("Official", "")
         .replace(" VEVO", "")
         .replace("VEVO", "");
+
+    // If artist contains middle dot '·' or '•', take the artist part (before dot)
+    if let Some((art_part, _album_part)) = cleaned.split_once(['·', '•']) {
+        cleaned = art_part.to_string();
+    }
+
+    // Deduplicate comma-separated identical names (e.g. "Muse Petal, Muse Petal" -> "Muse Petal")
+    let parts: Vec<&str> = cleaned.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+    if parts.len() > 1 && parts.iter().all(|p| p.eq_ignore_ascii_case(parts[0])) {
+        cleaned = parts[0].to_string();
+    }
+
     RE_SPACES.replace_all(&cleaned, " ").trim().to_string()
 }
 
@@ -413,6 +425,96 @@ fn extract_candidates(
     (unique_candidates, unique_titles, unique_queries, known_artists)
 }
 
+fn is_title_match(cand: &str, item_track: &str) -> (bool, bool) {
+    let c = cand.trim().to_lowercase();
+    let i = item_track.trim().to_lowercase();
+    if c.is_empty() || i.is_empty() {
+        return (false, false);
+    }
+    if c == i {
+        return (true, true);
+    }
+
+    // Compare without "the " prefix
+    let c_trim = if c.starts_with("the ") && c.len() > 4 { c[4..].trim() } else { c.as_str() };
+    let i_trim = if i.starts_with("the ") && i.len() > 4 { i[4..].trim() } else { i.as_str() };
+    if c_trim == i_trim {
+        return (true, true);
+    }
+
+    // Compare stripped parentheticals e.g. "Song (Acoustic)" vs "Song"
+    let c_core = strip_parentheticals(&c);
+    let i_core = strip_parentheticals(&i);
+    let c_core_trim = if c_core.starts_with("the ") && c_core.len() > 4 { c_core[4..].trim() } else { c_core.as_str() };
+    let i_core_trim = if i_core.starts_with("the ") && i_core.len() > 4 { i_core[4..].trim() } else { i_core.as_str() };
+    if !c_core_trim.is_empty() && c_core_trim == i_core_trim {
+        return (true, true);
+    }
+
+    // If one starts with the other, verify that the remainder is ONLY bracket/metadata noise, NOT extra title words!
+    // e.g. "Take Me Somewhere Nice" starts with "Take Me Somewhere", but "Nice" is a substantive word -> REJECT!
+    // e.g. "Take Me Somewhere - Studio Version" starts with "Take Me Somewhere", "- Studio Version" is noise -> ACCEPT!
+    if i.starts_with(&c) {
+        let remainder = i[c.len()..].trim();
+        let cleaned_rem = RE_TRAILING_META.replace_all(remainder, "").to_string();
+        let cleaned_rem = RE_BRACKET_NOISE.replace_all(&cleaned_rem, "").to_string();
+        let cleaned_rem = RE_NOISE_WORDS.replace_all(&cleaned_rem, "").to_string();
+        if cleaned_rem.trim().is_empty() {
+            return (true, false);
+        }
+    } else if c.starts_with(&i) {
+        let remainder = c[i.len()..].trim();
+        let cleaned_rem = RE_TRAILING_META.replace_all(remainder, "").to_string();
+        let cleaned_rem = RE_BRACKET_NOISE.replace_all(&cleaned_rem, "").to_string();
+        let cleaned_rem = RE_NOISE_WORDS.replace_all(&cleaned_rem, "").to_string();
+        if cleaned_rem.trim().is_empty() {
+            return (true, false);
+        }
+    }
+
+    (false, false)
+}
+
+fn is_artist_match_flexible(candidate_artists: &[&str], item_artist: &str) -> (bool, bool) {
+    if candidate_artists.is_empty() {
+        return (true, false);
+    }
+    let item_lower = item_artist.trim().to_lowercase();
+    if item_lower.is_empty() {
+        return (false, false);
+    }
+    let item_sub_artists = extract_sub_artists(&item_lower);
+
+    for &cand in candidate_artists {
+        let cand_lower = cand.trim().to_lowercase();
+        if cand_lower.is_empty() {
+            continue;
+        }
+
+        if cand_lower == item_lower {
+            return (true, true);
+        }
+
+        for ip in &item_sub_artists {
+            let ip_lower = ip.trim().to_lowercase();
+            if ip_lower.is_empty() {
+                continue;
+            }
+            if cand_lower == ip_lower {
+                return (true, true);
+            }
+            if (cand_lower.contains(&ip_lower) || ip_lower.contains(&cand_lower))
+                && cand_lower.len() >= 3
+                && ip_lower.len() >= 3
+            {
+                return (true, false);
+            }
+        }
+    }
+
+    (false, false)
+}
+
 fn score_candidate(
     item: &LrclibItem,
     target_duration: Option<f64>,
@@ -439,83 +541,73 @@ fn score_candidate(
         return (false, 9999.0, -10000.0);
     }
 
+    // Artist verification - MANDATORY when candidate artists are known!
+    let (artist_matched, artist_exact) = if let Some(item_art) = &item.artist_name {
+        is_artist_match_flexible(candidate_artists, item_art)
+    } else {
+        (candidate_artists.is_empty(), false)
+    };
+
+    if !candidate_artists.is_empty() && !artist_matched {
+        // Hard rejection: artist does NOT match!
+        return (false, 9999.0, -10000.0);
+    }
+
+    if artist_exact {
+        score += 800.0;
+    } else if artist_matched {
+        score += 500.0;
+    }
+
+    // Title verification - MANDATORY!
+    let (title_matched, title_exact) = if let Some(item_trk) = &item.track_name {
+        let mut matched = false;
+        let mut exact = false;
+        for &cand_title in candidate_titles {
+            let (m, e) = is_title_match(cand_title, item_trk);
+            if m {
+                matched = true;
+                if e {
+                    exact = true;
+                    break;
+                }
+            }
+        }
+        (matched, exact)
+    } else {
+        (false, false)
+    };
+
+    if !candidate_titles.is_empty() && !title_matched {
+        // Hard rejection: title does NOT match!
+        return (false, 9999.0, -10000.0);
+    }
+
+    if title_exact {
+        score += 800.0;
+    } else if title_matched {
+        score += 400.0;
+    }
+
     let dur_diff = if let (Some(target), Some(item_dur)) = (target_duration, item.duration) {
         let diff = (item_dur - target).abs();
-        if diff <= 2.0 {
+        if diff <= 1.5 {
             score += 1500.0 - diff * 20.0;
-        } else if diff <= 4.0 {
+        } else if diff <= 3.5 {
             score += 1000.0 - diff * 25.0;
-        } else if diff <= 8.0 {
+        } else if diff <= 6.0 {
             score += 500.0 - diff * 20.0;
-        } else if diff <= 15.0 {
+        } else if diff <= 10.0 {
             score += 150.0;
-        } else if diff <= 30.0 {
-            score -= 100.0;
+        } else if diff <= 20.0 {
+            score -= 200.0;
         } else {
-            score -= 800.0;
+            score -= 1000.0;
         }
         diff
     } else {
         0.0
     };
-
-    if let Some(item_artist) = &item.artist_name {
-        let item_art_lower = item_artist.to_lowercase();
-        let mut artist_matched = false;
-        for &cand in candidate_artists {
-            let cand_lower = cand.to_lowercase();
-            if cand_lower.is_empty() {
-                continue;
-            }
-            if item_art_lower == cand_lower {
-                score += 800.0;
-                artist_matched = true;
-                break;
-            } else if item_art_lower.contains(&cand_lower) || cand_lower.contains(&item_art_lower) {
-                score += 500.0;
-                artist_matched = true;
-                break;
-            } else {
-                for piece in RE_ARTIST_SEPARATORS.split(&item_art_lower) {
-                    let p = piece.trim();
-                    if !p.is_empty() && (cand_lower.contains(p) || p.contains(&cand_lower)) {
-                        score += 450.0;
-                        artist_matched = true;
-                        break;
-                    }
-                }
-                if artist_matched {
-                    break;
-                }
-            }
-        }
-        if !artist_matched && !candidate_artists.is_empty() {
-            score -= 150.0;
-        }
-    }
-
-    if let Some(item_track) = &item.track_name {
-        let item_trk_lower = item_track.to_lowercase();
-        let mut title_matched = false;
-        for &cand in candidate_titles {
-            let cand_lower = cand.to_lowercase();
-            if cand_lower.is_empty() {
-                continue;
-            }
-            if item_trk_lower == cand_lower {
-                score += 800.0;
-                title_matched = true;
-                break;
-            } else if item_trk_lower.contains(&cand_lower) || cand_lower.contains(&item_trk_lower) {
-                score += 400.0;
-                title_matched = true;
-                break;
-            }
-        }
-        if !title_matched && !candidate_titles.is_empty() {
-            score -= 150.0;
-        }
-    }
 
     (has_synced, dur_diff, score)
 }
@@ -665,26 +757,19 @@ async fn fetch_lrclib(
     }
 
     // ── STAGE 3: Title-ONLY Search + Strict Song Length Matching ──
-    // When uploader/artist is unknown or incorrect, querying with song title alone
-    // and matching duration (diff <= 3.0s) with synced lyrics is 95%+ accurate!
-    if let Some(target_dur) = duration {
-        if target_dur > 10.0 {
-            for title_cand in title_only_candidates.iter().take(3) {
-                // Try track_name specific search parameter first, then q search
-                let title_search_urls = [
-                    format!(
+    // ONLY run Stage 3 if known_artists is empty (e.g. unknown uploader without artist credit).
+    // If an artist is known, we must NEVER substitute an entirely different artist!
+    if known_artists.is_empty() {
+        if let Some(target_dur) = duration {
+            if target_dur > 10.0 {
+                for title_cand in title_only_candidates.iter().take(2) {
+                    let title_search_url = format!(
                         "https://lrclib.net/api/search?track_name={}",
                         urlencoding::encode(title_cand)
-                    ),
-                    format!(
-                        "https://lrclib.net/api/search?q={}",
-                        urlencoding::encode(title_cand)
-                    ),
-                ];
+                    );
 
-                for search_url in &title_search_urls {
                     if let Ok(res) = client
-                        .get(search_url)
+                        .get(&title_search_url)
                         .header(
                             "User-Agent",
                             "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
@@ -695,7 +780,6 @@ async fn fetch_lrclib(
                     {
                         if res.status().is_success() {
                             if let Ok(items) = res.json::<Vec<LrclibItem>>().await {
-                                // Find candidates with synced lyrics matching duration within 3.0s
                                 let mut length_matched_items: Vec<(f64, LrclibItem)> = items
                                     .into_iter()
                                     .filter_map(|it| {
@@ -704,10 +788,15 @@ async fn fetch_lrclib(
                                             .as_ref()
                                             .map_or(false, |s| !s.trim().is_empty());
                                         if has_synced {
-                                            if let Some(dur) = it.duration {
-                                                let diff = (dur - target_dur).abs();
-                                                if diff <= 3.0 {
-                                                    return Some((diff, it));
+                                            if let Some(trk) = &it.track_name {
+                                                let (t_match, t_exact) = is_title_match(title_cand, trk);
+                                                if t_match && t_exact {
+                                                    if let Some(dur) = it.duration {
+                                                        let diff = (dur - target_dur).abs();
+                                                        if diff <= 2.0 {
+                                                            return Some((diff, it));
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -716,13 +805,12 @@ async fn fetch_lrclib(
                                     .collect();
 
                                 if !length_matched_items.is_empty() {
-                                    // Sort by smallest duration difference
                                     length_matched_items.sort_by(|a, b| {
                                         a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal)
                                     });
                                     let (best_diff, matched_item) = length_matched_items.remove(0);
                                     println!(
-                                        "[Lyrics] LRCLIB Stage 3 (Title-only + Length match): {:?} by {:?} (diff={:.1}s)",
+                                        "[Lyrics] LRCLIB Stage 3 (Title-only + Strict length match): {:?} by {:?} (diff={:.1}s)",
                                         matched_item.track_name, matched_item.artist_name, best_diff
                                     );
                                     return Some(LyricsResponse {
@@ -748,9 +836,10 @@ async fn fetch_lrclib(
             .synced_lyrics
             .as_ref()
             .map_or(false, |s| !s.trim().is_empty());
-        let acceptable_duration = duration.is_none() || best_dur_diff <= 12.0;
+        let acceptable_duration = duration.is_none() || best_dur_diff <= 5.0;
 
-        if has_synced && acceptable_duration && highest_score > 0.0 {
+        // Requires highest_score > 1500.0, which guarantees artist AND title matched!
+        if has_synced && acceptable_duration && highest_score > 1500.0 {
             println!(
                 "[Lyrics] LRCLIB Stage 4 (Best candidate fallback): {:?} by {:?} (diff={:.1}s, score={:.0})",
                 item.track_name, item.artist_name, best_dur_diff, highest_score
@@ -765,7 +854,7 @@ async fn fetch_lrclib(
             });
         }
 
-        if item.instrumental.unwrap_or(false) && acceptable_duration {
+        if item.instrumental.unwrap_or(false) && acceptable_duration && highest_score > 500.0 {
             return Some(LyricsResponse {
                 success: true,
                 synced_lyrics: None,
@@ -902,7 +991,7 @@ pub async fn get_lyrics(
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("lyrics_cache_v1");
+        .join("lyrics_cache_v2");
     let _ = std::fs::create_dir_all(&cache_dir);
 
     let vid = video_id.unwrap_or_default();
@@ -976,7 +1065,7 @@ pub async fn save_lyrics(
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join("lyrics_cache_v1");
+        .join("lyrics_cache_v2");
     let _ = std::fs::create_dir_all(&cache_dir);
 
     let cache_key = if !video_id.is_empty() {
@@ -1087,10 +1176,60 @@ mod tests {
             assert!(resp.is_some(), "LRCLIB failed to fetch lyrics for Vitas!");
             let r = resp.unwrap();
             assert!(r.success, "Lyrics response success was false");
-            assert!(r.synced_lyrics.is_some(), "Synced lyrics should be present");
             let synced = r.synced_lyrics.unwrap();
             assert!(synced.contains("Я пришёл дать эту песню") || synced.contains("Chandra Bendram"));
         });
     }
+
+    #[test]
+    fn test_is_title_match() {
+        // Different song with extra substantive word MUST NOT match
+        assert_eq!(is_title_match("Take Me Somewhere", "Take Me Somewhere Nice"), (false, false));
+        assert_eq!(is_title_match("Take Me Somewhere", "Take Me Somewhere Else"), (false, false));
+        
+        // Exact and 'the' variants match
+        assert_eq!(is_title_match("Take Me Somewhere", "Take Me Somewhere"), (true, true));
+        assert_eq!(is_title_match("7th Element", "The 7th Element"), (true, true));
+        
+        // Parenthetical / meta noise matches
+        let (m, _) = is_title_match("Supernova", "Supernova (Music Video)");
+        assert!(m);
+    }
+
+    #[test]
+    fn test_muse_petal_sanitization_and_rejection_of_foreign_artist() {
+        let artist_raw = "Muse Petal, Muse Petal · My Mood is My Boss";
+        let clean = sanitize_artist(artist_raw);
+        assert_eq!(clean, "Muse Petal");
+
+        // Mogwai must NEVER match Muse Petal
+        let (art_match, _) = is_artist_match_flexible(&[&clean], "Mogwai");
+        assert!(!art_match);
+
+        // Live check: Muse Petal - Take Me Somewhere must NEVER return Mogwai's "Ghosts in the photograph"
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let client = get_client();
+            let resp = fetch_lrclib(
+                &client,
+                "Take Me Somewhere",
+                artist_raw,
+                Some(244.6),
+            ).await;
+
+            if let Some(r) = resp {
+                if let Some(synced) = r.synced_lyrics {
+                    assert!(!synced.contains("Ghosts in the photograph"), "WRONG LYRICS: returned Mogwai lyrics for Muse Petal!");
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_wim_supernova_does_not_match_dalton() {
+        let (m, _) = is_artist_match_flexible(&["WIM"], "Dalton Deschain & the Traveling Show, Jo Kroger, Jeremy Cimino");
+        assert!(!m);
+    }
 }
+
 
