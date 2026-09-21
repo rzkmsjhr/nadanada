@@ -368,6 +368,94 @@ async fn scrape_regular_youtube_search(
     Err("ytInitialData not found".to_string())
 }
 
+/// Helper to clean title of parenthetical notes like (Mariya Takeuchi 1984), [Cover], etc.
+fn clean_title_for_matching(title: &str) -> String {
+    let mut clean = String::new();
+    let mut depth = 0;
+    for c in title.chars() {
+        match c {
+            '(' | '[' | '（' | '【' => depth += 1,
+            ')' | ']' | '）' | '】' => {
+                if depth > 0 {
+                    depth -= 1;
+                }
+            }
+            _ => {
+                if depth == 0 {
+                    clean.push(c);
+                }
+            }
+        }
+    }
+    clean.to_lowercase()
+}
+
+/// Computes a relevance score for a search candidate.
+/// Lower is better.
+/// - Songs are prioritized over videos (-25 bonus).
+/// - But if a song has the wrong artist (channel matches none of the artist terms in query),
+///   the correct artist's video will have a much lower score and take priority.
+fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
+    let clean_title = clean_title_for_matching(&v.title);
+    let channel_lower = v.channel.to_lowercase();
+
+    let mut _matched_title_words = 0;
+    let mut matched_channel_words = 0;
+
+    for &w in query_words {
+        if clean_title.contains(w) {
+            _matched_title_words += 1;
+        }
+        if channel_lower.contains(w) {
+            matched_channel_words += 1;
+        }
+    }
+
+    let total_matched = query_words
+        .iter()
+        .filter(|&&w| clean_title.contains(w) || channel_lower.contains(w))
+        .count();
+
+    let mut score = 0;
+
+    // Missing query words penalty (60 points per missing word)
+    let missing = query_words.len().saturating_sub(total_matched);
+    score += (missing as i32) * 60;
+
+    // Artist mismatch penalty:
+    // If the query contains 3+ words (typically Title + Artist) and the candidate's
+    // channel does not match ANY of the query words:
+    if query_words.len() >= 3 && matched_channel_words == 0 {
+        let is_label_channel = channel_lower.contains("records")
+            || channel_lower.contains("music")
+            || channel_lower.contains("vevo")
+            || channel_lower.contains("official")
+            || channel_lower.contains("topic");
+
+        if !is_label_channel {
+            // Distinct artist channel that does not match the requested artist (e.g. Flower.far, Friday Night Plans)
+            score += 250;
+        } else {
+            score += 80;
+        }
+    }
+
+    // Penalize cover/karaoke/instrumental indicators if not requested in query
+    let lower_raw_title = v.title.to_lowercase();
+    for bad in &["karaoke", "cover", "instrumental", "tribute", "parody"] {
+        if lower_raw_title.contains(bad) && !query_words.iter().any(|&w| w == *bad) {
+            score += 150;
+        }
+    }
+
+    // Song bonus: if the artist matches or query is short, Song takes priority (-25) over Video (0)
+    if v.item_type.as_deref() == Some("song") {
+        score -= 25;
+    }
+
+    score
+}
+
 #[tauri::command]
 pub async fn search_youtube(
     query: String,
@@ -380,14 +468,33 @@ pub async fn search_youtube(
         Ok(mut results) if !results.is_empty() => {
             if st.is_none() || st == Some("song") {
                 let query_clean = query.to_lowercase();
-                let query_words: Vec<&str> = query_clean.split_whitespace().filter(|w| w.len() > 1).collect();
+                let query_words: Vec<&str> = query_clean
+                    .split_whitespace()
+                    .filter(|w| w.len() > 1)
+                    .collect();
+
                 if query_words.len() >= 2 {
+                    // Check if any song strongly matches both title and channel/artist.
+                    // A strong match requires:
+                    // 1) All query words matched across clean title or channel
+                    // 2) If query has 3+ words, channel must match at least one query word
                     let has_strong_match = results.iter().any(|v| {
-                        let text = format!("{} {}", v.title, v.channel).to_lowercase();
-                        query_words.iter().all(|&w| text.contains(w))
+                        let clean_title = clean_title_for_matching(&v.title);
+                        let channel = v.channel.to_lowercase();
+                        let all_matched = query_words
+                            .iter()
+                            .all(|&w| clean_title.contains(w) || channel.contains(w));
+                        let channel_matched = if query_words.len() >= 3 {
+                            query_words.iter().any(|&w| channel.contains(w))
+                        } else {
+                            true
+                        };
+                        all_matched && channel_matched
                     });
 
                     if !has_strong_match {
+                        // Song results only returned wrong-artist covers or incomplete matches.
+                        // Fetch videos so the original artist's video can be ranked!
                         if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
                             for vid in video_results {
                                 if !results.iter().any(|r| r.id == vid.id) {
@@ -396,6 +503,11 @@ pub async fn search_youtube(
                             }
                         }
                     }
+
+                    // Sort candidates using score_search_candidate:
+                    // Songs are preferred (-25) when artist matches.
+                    // But if a song has the wrong artist (channel mismatch), the real artist's video wins!
+                    results.sort_by_key(|v| score_search_candidate(v, &query_words));
                 }
             }
             return Ok(results);
@@ -1226,12 +1338,17 @@ mod tests {
             let results = search_youtube("Plastic Love Mariya Takeuchi".to_string(), Some("song".to_string()))
                 .await
                 .expect("Search should succeed");
+            for (i, v) in results.iter().enumerate().take(5) {
+                println!("Result #{}: title={:?}, channel={:?}, item_type={:?}", i, v.title, v.channel, v.item_type);
+            }
             assert!(!results.is_empty(), "Should return results");
-            let has_mariya = results.iter().any(|v| {
-                let text = format!("{} {}", v.title, v.channel).to_lowercase();
-                text.contains("mariya") || text.contains("takeuchi")
-            });
-            assert!(has_mariya, "Should include Mariya Takeuchi via video fallback");
+            let top = &results[0];
+            let top_channel_lower = top.channel.to_lowercase();
+            assert!(
+                top_channel_lower.contains("mariya") || top_channel_lower.contains("takeuchi"),
+                "Top result should be Mariya Takeuchi, not a cover! Got channel: {}",
+                top.channel
+            );
         });
     }
 }

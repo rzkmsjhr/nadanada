@@ -10,6 +10,59 @@ export const parseDuration = (durationStr) => {
   return 0;
 };
 
+export const normalizeText = (str) => (str || '').toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
+
+export const cleanTitleForArtistMatch = (title) => {
+  return (title || '')
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/（[^）]*）/g, ' ')
+    .replace(/【[^】]*】/g, ' ')
+    .trim();
+};
+
+export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
+  if (!artistWords || artistWords.length === 0) return true;
+  if (!candidate) return false;
+
+  const rawChannel = (candidate.channel || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').trim();
+  const channelNorm = normalizeText(rawChannel);
+
+  // 1. Channel match (applies to both songs and official video channels)
+  const matchedInChannel = artistWords.filter(w => channelNorm.includes(w)).length;
+  if (matchedInChannel >= Math.ceil(artistWords.length * 0.6)) {
+    return true;
+  }
+  if (rawArtist && channelNorm.includes(normalizeText(rawArtist).trim())) {
+    return true;
+  }
+
+  // 2. For songs: in YouTube Music, the artist is ALWAYS the channel.
+  // If channel didn't match, this song is a cover / different artist.
+  // Notes in title (e.g. "(Mariya Takeuchi 1984)" or "(Cover)") are NOT the performer!
+  if (candidate.item_type === 'song') {
+    return false;
+  }
+
+  // 3. For videos only: YouTube video titles often follow "Artist - Title" format
+  const cleanTitle = cleanTitleForArtistMatch(candidate.title);
+  const parts = cleanTitle.split(/\s*[-–—:]\s*/);
+  if (parts.length >= 2) {
+    const firstPartNorm = normalizeText(parts[0]);
+    const matchedInFirst = artistWords.filter(w => firstPartNorm.includes(w)).length;
+    if (matchedInFirst >= Math.ceil(artistWords.length * 0.6)) {
+      return true;
+    }
+  }
+
+  const titleNorm = normalizeText(cleanTitle);
+  if (artistWords.every(w => titleNorm.includes(w))) {
+    return true;
+  }
+
+  return false;
+};
+
 const getCachedVideo = query => {
   try {
     const raw = localStorage.getItem('nadanada-yt-cache');
@@ -230,7 +283,12 @@ export function useMusicDiscovery({
                     let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
                     const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist}`, 'song');
                     if (searchResults && searchResults.length > 0) {
-                      picked = searchResults[0];
+                      const candidateSong = searchResults[0];
+                      const artistWords = searchArtist ? [...new Set(normalizeText(searchArtist).split(/\s+/).filter(w => w.length > 1))] : [];
+                      // Only replace if the candidate song is genuinely by the same artist
+                      if (doesCandidateMatchArtist(candidateSong, artistWords, searchArtist)) {
+                        picked = candidateSong;
+                      }
                     }
                   } catch (err) {
                     console.error("Audio fallback search failed:", err);
@@ -446,16 +504,12 @@ export function useMusicDiscovery({
                 let results = await api.searchYouTube(track.query, 'song');
                 if (!results) results = [];
 
-                const normalize = (str) => (str || '').toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
-                const artistWords = track.artist ? [...new Set(normalize(track.artist).split(/\s+/).filter(w => w.length > 1))] : [];
+                const artistWords = track.artist ? [...new Set(normalizeText(track.artist).split(/\s+/).filter(w => w.length > 1))] : [];
 
-                // Check if any song in results matches the requested artist
-                const hasArtistMatch = artistWords.length === 0 || results.some(r => {
-                  const ytText = normalize((r.title || '') + " " + (r.channel || ''));
-                  return artistWords.some(w => ytText.includes(w));
-                });
+                // Check if any candidate in results genuinely matches the requested artist
+                const hasArtistMatch = artistWords.length === 0 || results.some(r => doesCandidateMatchArtist(r, artistWords, track.artist));
 
-                // If NO song matches the requested artist (e.g. Mariya Takeuchi - Plastic Love where
+                // If NO candidate matches the requested artist (e.g. Mariya Takeuchi - Plastic Love where
                 // only covers by other artists exist as songs, but the original exists as a video),
                 // query video results as well so the original artist is picked!
                 if (!hasArtistMatch) {
@@ -475,42 +529,32 @@ export function useMusicDiscovery({
 
                 if (results && results.length > 0) {
                   const spotifyDur = track.duration_ms / 1000;
-                  const queryWords = [...new Set(normalize(track.query).split(/\s+/).filter(w => w.length > 1))];
+                  const queryWords = [...new Set(normalizeText(track.query).split(/\s+/).filter(w => w.length > 1))];
                   
                   const badWords = ['karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 'remix', 'slowed', 'reverb', 'bass boosted'];
                   
                   let validResults = results.map((r, index) => {
-                      const ytText = normalize((r.title || '') + " " + (r.channel || ''));
+                      const ytCleanText = normalizeText(cleanTitleForArtistMatch(r.title) + " " + (r.channel || ''));
                       let missingWords = 0;
                       for (const word of queryWords) {
-                          if (!ytText.includes(word)) missingWords++;
+                          if (!ytCleanText.includes(word)) missingWords++;
                       }
                       
+                      const rawText = normalizeText((r.title || '') + " " + (r.channel || ''));
                       let hasBadWord = false;
                       for (const badWord of badWords) {
-                          if (ytText.includes(badWord) && !normalize(track.query).includes(badWord)) {
+                          if (rawText.includes(badWord) && !normalizeText(track.query).includes(badWord)) {
                               hasBadWord = true;
                               break;
                           }
                       }
 
                       // Check if candidate matches the target artist
-                      let artistMatched = false;
-                      if (artistWords.length > 0) {
-                          let matchedWords = 0;
-                          for (const w of artistWords) {
-                              if (ytText.includes(w)) matchedWords++;
-                          }
-                          if (matchedWords >= Math.ceil(artistWords.length / 2)) {
-                              artistMatched = true;
-                          }
-                      } else {
-                          artistMatched = true;
-                      }
+                      const artistMatched = doesCandidateMatchArtist(r, artistWords, track.artist);
 
-                      // Artist match is paramount: wrong artist receives large penalty (+200)
+                      // Artist match is paramount: wrong artist receives large penalty (+500)
                       // so a Video by the correct artist easily beats a Song by the wrong artist!
-                      const artistPenalty = artistMatched ? 0 : 200;
+                      const artistPenalty = artistMatched ? 0 : 500;
 
                       // Among candidates with the same artist match status:
                       // Song gets bonus (-30) over video (+10)
@@ -519,7 +563,7 @@ export function useMusicDiscovery({
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
                       const rankPenalty = index * 3;
-                      const score = artistPenalty + typeScore + durationDiff + (missingWords * 3) + rankPenalty;
+                      const score = artistPenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
                       
                       return {
                           ...r,
