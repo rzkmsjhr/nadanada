@@ -38,8 +38,20 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
     return true;
   }
 
+  // Check CJK vs Latin script difference (e.g. "高橋玲子" vs "Reiko Takahashi")
+  const hasCjk = (str) => /[\u3040-\u30ff\u4e00-\u9faf\uac00-\ud7af]/.test(str);
+  const artistHasCjk = hasCjk(rawArtist || '') || artistWords.some(w => hasCjk(w));
+  const channelHasCjk = hasCjk(rawChannel);
+
+  // If candidate is a song returned by YouTube Music search for this artist,
+  // and one is CJK while the other is Latin, YouTube Music mapped the artist entity across scripts.
+  if (candidate.item_type === 'song' && (artistHasCjk !== channelHasCjk)) {
+    return true;
+  }
+
   // 2. For songs: in YouTube Music, the artist is ALWAYS the channel.
-  // If channel didn't match, this song is a cover / different artist.
+  // If channel didn't match and both are same script (e.g. Flower.far vs Mariya Takeuchi),
+  // this song is a cover / different artist.
   // Notes in title (e.g. "(Mariya Takeuchi 1984)" or "(Cover)") are NOT the performer!
   if (candidate.item_type === 'song') {
     return false;
@@ -591,7 +603,18 @@ export function useMusicDiscovery({
                   const badWords = [
                     'karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 
                     'remix', 'slowed', 'reverb', 'bass boosted',
-                    'mashup', 'mash-up', 'mash up', 'bootleg', 'flip', 'sped up', 'speed up', 'nightcore'
+                    'mashup', 'mash-up', 'mash up', 'bootleg', 'flip', 'sped up', 'speed up', 'nightcore',
+                    // Japanese amateur / performance cover keywords
+                    '弾いてみた', '歌ってみた', '演奏してみた', '叩いてみた', '弾いてみ', '歌ってみ',
+                    '【ベース】', '[ベース]', 'ベースで', 'ベーシスト',
+                    '【ギター】', '[ギター]', 'ギターで', 'ギタリスト',
+                    '【ドラム】', '[ドラム]', 'ドラマー',
+                    '【ピアノ】', '[ピアノ]',
+                    'tab譜', 'タブ譜',
+                    // English amateur cover / play-along / tutorial keywords
+                    'bass cover', 'guitar cover', 'drum cover', 'piano cover', 'vocal cover',
+                    'play along', 'playalong', 'how to play', 'tutorial', 'lesson', 'fingerstyle',
+                    'amateur cover', 'fan cover'
                   ];
                   
                   let validResults = results.map((r, index) => {
@@ -636,9 +659,9 @@ export function useMusicDiscovery({
                       const titlePenalty = titleMatched ? 0 : 500;
 
                       // Among candidates of the SAME song and artist:
-                      // Song gets bonus (-30) over video (+10)
+                      // Song gets bonus (-40) over video (+20)
                       const isSong = r.item_type === 'song';
-                      const typeScore = isSong ? -30 : 10;
+                      const typeScore = isSong ? -40 : 20;
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
                       const rankPenalty = index * 3;
@@ -654,10 +677,21 @@ export function useMusicDiscovery({
                       };
                   });
 
-                  // Completely filter out fake/instrumental/karaoke versions unless requested
+                  // Completely filter out fake/instrumental/karaoke/amateur cover versions unless requested
                   validResults = validResults.filter(r => !r.hasBadWord).sort((a, b) => a.score - b.score);
 
-                  const bestVideo = validResults.length > 0 ? validResults[0] : results[0];
+                  // Priority to top valid song:
+                  // If results[0] is an official song matching title & artist without bad words, trust it directly!
+                  const topResult = results[0];
+                  const topResultIsStrongSong = topResult 
+                    && topResult.item_type === 'song' 
+                    && !badWords.some(bw => normalizeText((topResult.title || '') + " " + (topResult.channel || '')).includes(bw) && !normalizeText(track.query).includes(bw))
+                    && doesCandidateMatchTitle(topResult, track.title) 
+                    && doesCandidateMatchArtist(topResult, artistWords, track.artist);
+
+                  const bestVideo = topResultIsStrongSong 
+                    ? topResult 
+                    : (validResults.length > 0 ? validResults[0] : results[0]);
                   if (bestVideo) {
                     setCachedVideo(track.query, bestVideo);
                     importedSongs.push(bestVideo);
