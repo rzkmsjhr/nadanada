@@ -610,6 +610,7 @@ function App() {
               onToggleMiniPlayer={toggleMiniPlayer} 
               crossfadeDuration={crossfadeDuration}
               setCrossfadeDuration={setCrossfadeDuration}
+              downloadedIds={downloadedIds}
               videoOverlayMode={videoOverlayMode}
               setVideoOverlayMode={setVideoOverlayMode}
               lyricsData={lyricsData}

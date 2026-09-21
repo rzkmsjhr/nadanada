@@ -13,6 +13,8 @@ pub struct Video {
     pub track_count: Option<String>,
     #[serde(default)]
     pub first_video_id: Option<String>,
+    #[serde(default)]
+    pub item_type: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

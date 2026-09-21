@@ -75,25 +75,7 @@ export function useMusicDiscovery({
         setIsFetchingEndless(true);
         try {
           const current = playlist[currentIndex];
-          let seedId = current.id;
-          
-          // YouTube's "Topic" auto-generated tracks often have poor recommendation seeds
-          // that drift into unrelated genres. If the current song is a Topic track, 
-          // search for its official video counterpart to seed a much better mix.
-          if (current.channel && current.channel.toLowerCase().includes('- topic')) {
-            try {
-              const cleanArtist = current.channel.replace(/- topic/i, '').trim();
-              const searchResults = await api.searchYouTube(`${current.title} ${cleanArtist}`);
-              if (searchResults && searchResults.length > 0) {
-                // Find the first result that is NOT a topic channel to use as the seed
-                const officialVideo = searchResults.find(v => !(v.channel || '').toLowerCase().includes('- topic')) || searchResults[0];
-                seedId = officialVideo.id;
-              }
-            } catch (e) {
-              console.error("Failed to fetch official video for mix seed:", e);
-            }
-          }
-
+          const seedId = current.id;
           const results = await api.getYouTubeMix(seedId);
           
           const getWords = (song) => {
@@ -214,6 +196,15 @@ export function useMusicDiscovery({
           }
           
           if (available.length > 0) {
+            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b|lirik|lyrics|lyric|cover|live)/i;
+            available.sort((a, b) => {
+              const aIsSong = a.item_type === 'song' || (!videoRegex.test(a.title) && a.item_type !== 'video');
+              const bIsSong = b.item_type === 'song' || (!videoRegex.test(b.title) && b.item_type !== 'video');
+              if (aIsSong && !bIsSong) return -1;
+              if (!aIsSong && bIsSong) return 1;
+              return 0;
+            });
+
             let finalPicked = null;
             let fallbackCandidate = null;
 
@@ -223,21 +214,21 @@ export function useMusicDiscovery({
             for (let item of available) {
               let picked = item;
               
-              // If the recommended song is a "video" or "lyric" version, try to find the official audio version
-              const unofficialRegex = /(official video|music video|official hd video|official music video|\bvideo\b|lirik|lyrics|lyric|cover|live)/i;
+              // If the recommended track is explicitly a video or lyric version, try to find the official song audio version
               const isTopic = (picked.channel || '').toLowerCase().includes('- topic');
+              const isSong = picked.item_type === 'song';
               
-              if (!isTopic && unofficialRegex.test(picked.title)) {
+              if (!isTopic && !isSong && videoRegex.test(picked.title)) {
                 const cleanTitle = picked.title
                   .replace(/\[.*?\]|\(.*?\)/g, ' ')
-                  .replace(unofficialRegex, ' ')
+                  .replace(videoRegex, ' ')
                   .replace(/\s+/g, ' ')
                   .trim();
                   
                 if (cleanTitle.length > 0) {
                   try {
                     let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
-                    const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist} topic`);
+                    const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist}`, 'song');
                     if (searchResults && searchResults.length > 0) {
                       picked = searchResults[0];
                     }
@@ -348,7 +339,7 @@ export function useMusicDiscovery({
           const batchResults = await Promise.all(
             batch.map(async (track) => {
               try {
-                const searchResults = await api.searchYouTube(track.query, null);
+                const searchResults = await api.searchYouTube(track.query, 'song');
                 if (searchResults && searchResults.length > 0) {
                   const bestMatch = searchResults[0];
                   setCachedVideo(track.query, bestMatch);
@@ -452,16 +443,44 @@ export function useMusicDiscovery({
               }
 
               try {
-                const results = await api.searchYouTube(track.query, null);
+                let results = await api.searchYouTube(track.query, 'song');
+                if (!results) results = [];
+
+                const normalize = (str) => (str || '').toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
+                const artistWords = track.artist ? [...new Set(normalize(track.artist).split(/\s+/).filter(w => w.length > 1))] : [];
+
+                // Check if any song in results matches the requested artist
+                const hasArtistMatch = artistWords.length === 0 || results.some(r => {
+                  const ytText = normalize((r.title || '') + " " + (r.channel || ''));
+                  return artistWords.some(w => ytText.includes(w));
+                });
+
+                // If NO song matches the requested artist (e.g. Mariya Takeuchi - Plastic Love where
+                // only covers by other artists exist as songs, but the original exists as a video),
+                // query video results as well so the original artist is picked!
+                if (!hasArtistMatch) {
+                  try {
+                    const videoResults = await api.searchYouTube(track.query, 'video');
+                    if (videoResults && videoResults.length > 0) {
+                      for (const vid of videoResults) {
+                        if (!results.some(r => r.id === vid.id)) {
+                          results.push(vid);
+                        }
+                      }
+                    }
+                  } catch (vErr) {
+                    console.error("Video fallback search error:", vErr);
+                  }
+                }
+
                 if (results && results.length > 0) {
                   const spotifyDur = track.duration_ms / 1000;
-                  const normalize = (str) => str.toLowerCase().replace(/[^\w\s\u3040-\u30ff\u4e00-\u9faf]/gi, ' ');
                   const queryWords = [...new Set(normalize(track.query).split(/\s+/).filter(w => w.length > 1))];
                   
                   const badWords = ['karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 'remix', 'slowed', 'reverb', 'bass boosted'];
                   
                   let validResults = results.map((r, index) => {
-                      const ytText = normalize(r.title + " " + r.channel);
+                      const ytText = normalize((r.title || '') + " " + (r.channel || ''));
                       let missingWords = 0;
                       for (const word of queryWords) {
                           if (!ytText.includes(word)) missingWords++;
@@ -474,18 +493,37 @@ export function useMusicDiscovery({
                               break;
                           }
                       }
-                      
-                      let officialBonus = 0;
-                      if (ytText.includes('official') || ytText.includes('topic') || ytText.includes('mv') || ytText.includes('music video')) {
-                          officialBonus = 40; // 40 seconds leniency for official uploads (to account for MV intros/outros)
+
+                      // Check if candidate matches the target artist
+                      let artistMatched = false;
+                      if (artistWords.length > 0) {
+                          let matchedWords = 0;
+                          for (const w of artistWords) {
+                              if (ytText.includes(w)) matchedWords++;
+                          }
+                          if (matchedWords >= Math.ceil(artistWords.length / 2)) {
+                              artistMatched = true;
+                          }
+                      } else {
+                          artistMatched = true;
                       }
+
+                      // Artist match is paramount: wrong artist receives large penalty (+200)
+                      // so a Video by the correct artist easily beats a Song by the wrong artist!
+                      const artistPenalty = artistMatched ? 0 : 200;
+
+                      // Among candidates with the same artist match status:
+                      // Song gets bonus (-30) over video (+10)
+                      const isSong = r.item_type === 'song';
+                      const typeScore = isSong ? -30 : 10;
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
-                      const rankPenalty = index * 15;
-                      const score = durationDiff + (missingWords * 2) + rankPenalty - officialBonus;
+                      const rankPenalty = index * 3;
+                      const score = artistPenalty + typeScore + durationDiff + (missingWords * 3) + rankPenalty;
                       
                       return {
                           ...r,
+                          artistMatched,
                           durationDiff,
                           score,
                           hasBadWord

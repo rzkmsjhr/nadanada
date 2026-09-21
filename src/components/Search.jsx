@@ -44,8 +44,24 @@ const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId
           <div ref={textRef} className={`song-title ${isHovered && shouldScroll ? 'scrolling' : ''}`}>{video.title}</div>
         </div>
         <div className="song-duration" style={{ color: isAlbum ? 'var(--accent-color)' : 'var(--text-muted)' }}>
-          {isAlbum ? (video.track_count ? `${video.track_count} tracks` : 'Album') : video.duration}
-          {isAlbum && <span style={{ marginLeft: '6px', opacity: 0.7 }}>• {video.channel}</span>}
+          {isAlbum ? (
+            <>
+              <span>{video.track_count ? `${video.track_count} tracks` : 'Album'}</span>
+              {video.channel && <span style={{ marginLeft: '6px', opacity: 0.7 }}>• {video.channel}</span>}
+            </>
+          ) : (
+            <>
+              <span style={{ 
+                textTransform: 'capitalize', 
+                fontWeight: video.item_type === 'song' ? 600 : 400,
+                color: video.item_type === 'song' ? 'var(--accent-color)' : 'var(--text-muted)' 
+              }}>
+                {video.item_type || 'Song'}
+              </span>
+              {video.channel && <span style={{ marginLeft: '6px', opacity: 0.85 }}>• {video.channel.replace(/\s*-\s*Topic$/i, '')}</span>}
+              {video.duration && <span style={{ marginLeft: '6px', opacity: 0.7 }}>• {video.duration}</span>}
+            </>
+          )}
         </div>
       </div>
 
@@ -134,8 +150,8 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
   };
 
   const handleAddAlbum = async (album) => {
-    if (!album.first_video_id) {
-      onError("Cannot fetch playlist without a starting video.");
+    if (!album.id) {
+      onError("Cannot fetch album without a valid ID.");
       return false;
     }
     
@@ -148,7 +164,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
     try {
       let tracks = await invoke('get_youtube_playlist', { 
         playlistId: album.id, 
-        firstVideoId: album.first_video_id 
+        firstVideoId: album.first_video_id || '' 
       });
       if (tracks && tracks.length > 0) {
         if (tracks.length > 50) {

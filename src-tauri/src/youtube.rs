@@ -1,32 +1,258 @@
 use crate::models::{AlbumInfo, KworbTrack, SpotifyTrack, Video};
 use regex::Regex;
 
-#[tauri::command]
-pub async fn search_youtube(
-    mut query: String,
-    search_type: Option<String>,
+const YTM_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+fn get_ytm_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new())
+}
+
+/// Parses an item from YouTube Music's musicResponsiveListItemRenderer with a default item_type
+fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option<Video> {
+    let video_id = r.pointer("/playlistItemData/videoId")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId")
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| {
+            r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/watchEndpoint/videoId")
+                .and_then(|v| v.as_str())
+        })?
+        .to_string();
+
+    if video_id.is_empty() {
+        return None;
+    }
+
+    let title = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
+        .or_else(|| r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/title/runs/0/text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if title.is_empty() {
+        return None;
+    }
+
+    // Check fixedColumns for explicit duration
+    let fixed_dur = r.pointer("/fixedColumns/0/musicResponsiveListItemFixedColumnRenderer/text/runs/0/text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let flex1_runs = r.pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .or_else(|| r.pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/title/runs"))
+        .and_then(|v| v.as_array());
+
+    let mut artist = String::new();
+    let mut duration = fixed_dur.to_string();
+
+    if let Some(runs) = flex1_runs {
+        let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
+        let full_meta = texts.concat();
+        let parts: Vec<&str> = full_meta.split(" • ").collect();
+
+        if duration.is_empty() {
+            if let Some(last) = parts.last() {
+                if last.contains(':') {
+                    duration = last.trim().to_string();
+                }
+            }
+        }
+
+        if let Some(first) = parts.first() {
+            artist = first.trim().to_string();
+        }
+    }
+
+    let thumbnail = r.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last().or_else(|| arr.first()))
+        .and_then(|thumb| thumb.get("url").and_then(|u| u.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    Some(Video {
+        id: video_id,
+        title,
+        thumbnail,
+        duration,
+        channel: artist,
+        is_playlist: false,
+        track_count: None,
+        first_video_id: None,
+        item_type: Some(default_type.to_string()),
+    })
+}
+
+/// Parses an item from YouTube Music's musicResponsiveListItemRenderer into a "song" Video
+fn parse_ytm_song_item(r: &serde_json::Value) -> Option<Video> {
+    parse_ytm_item_with_type(r, "song")
+}
+
+/// Parses an album item from YouTube Music into an "album" Video
+fn parse_ytm_album_item(r: &serde_json::Value) -> Option<Video> {
+    let title = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
+        .or_else(|| r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/title/runs/0/text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if title.is_empty() {
+        return None;
+    }
+
+    let playlist_id = r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchPlaylistEndpoint/playlistId")
+        .or_else(|| r.pointer("/navigationEndpoint/browseEndpoint/browseId"))
+        .or_else(|| r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/browseEndpoint/browseId"))
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if playlist_id.is_empty() {
+        return None;
+    }
+
+    let first_video_id = r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId")
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchPlaylistEndpoint/videoId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let flex1_runs = r.pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .or_else(|| r.pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/title/runs"))
+        .and_then(|v| v.as_array());
+
+    let mut channel = String::new();
+    if let Some(runs) = flex1_runs {
+        let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
+        channel = texts.concat();
+    }
+
+    let thumbnail = r.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last().or_else(|| arr.first()))
+        .and_then(|thumb| thumb.get("url").and_then(|u| u.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    Some(Video {
+        id: playlist_id,
+        title,
+        thumbnail,
+        duration: String::new(),
+        channel,
+        is_playlist: true,
+        track_count: None,
+        first_video_id,
+        item_type: Some("album".to_string()),
+    })
+}
+
+/// Search YouTube Music using the WEB_REMIX client (prioritizing Songs and Albums)
+async fn search_youtube_music(query: &str, search_type: Option<&str>) -> Result<Vec<Video>, String> {
+    let client = get_ytm_client();
+    let is_album = search_type == Some("album");
+    let is_video = search_type == Some("video");
+    let params = if is_album {
+        "EgWKAQIYAWoOEAQQAxAFEAkQEBAKEBU%3D" // Albums filter
+    } else if is_video {
+        "EgWKAQIQAWoOEAQQAxAFEAkQEBAKEBU%3D" // Videos filter
+    } else {
+        "EgWKAQIIAWoOEAQQAxAFEAkQEBAKEBU%3D" // Songs filter
+    };
+
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "query": query,
+        "params": params
+    });
+
+    let res = client.post("https://music.youtube.com/youtubei/v1/search")
+        .header("User-Agent", YTM_USER_AGENT)
+        .header("Referer", "https://music.youtube.com/")
+        .header("Origin", "https://music.youtube.com")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let v: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+    let mut videos = Vec::new();
+
+    let sections = v.pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents")
+        .and_then(|c| c.as_array());
+
+    if let Some(secs) = sections {
+        for s in secs {
+            if let Some(shelf) = s.get("musicShelfRenderer") {
+                if let Some(contents) = shelf.get("contents").and_then(|c| c.as_array()) {
+                    for item in contents {
+                        if let Some(r) = item.get("musicResponsiveListItemRenderer") {
+                            if is_album {
+                                if let Some(v) = parse_ytm_album_item(r) {
+                                    videos.push(v);
+                                }
+                            } else if is_video {
+                                if let Some(v) = parse_ytm_item_with_type(r, "video") {
+                                    videos.push(v);
+                                }
+                            } else {
+                                if let Some(v) = parse_ytm_song_item(r) {
+                                    videos.push(v);
+                                }
+                            }
+                        }
+                        if videos.len() >= 20 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(videos)
+}
+
+/// Fallback scraper for regular YouTube search (video as last resort)
+async fn scrape_regular_youtube_search(
+    query: &str,
+    search_type: Option<&str>,
 ) -> Result<Vec<Video>, String> {
-    let url = if let Some(st) = &search_type {
-        println!("search_youtube called with search_type: {}", st);
+    let mut search_query = query.to_string();
+    let url = if let Some(st) = search_type {
         if st == "album" {
             format!(
                 "https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D",
-                urlencoding::encode(&query)
+                urlencoding::encode(&search_query)
             )
         } else {
-            query.push_str(" topic");
+            search_query.push_str(" topic");
             format!(
                 "https://www.youtube.com/results?search_query={}",
-                urlencoding::encode(&query)
+                urlencoding::encode(&search_query)
             )
         }
     } else {
-        query.push_str(" topic");
+        search_query.push_str(" topic");
         format!(
             "https://www.youtube.com/results?search_query={}",
-            urlencoding::encode(&query)
+            urlencoding::encode(&search_query)
         )
     };
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -56,9 +282,19 @@ pub async fn search_youtube(
                         let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let channel = video.pointer("/ownerText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
+
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration, channel, is_playlist: false, track_count: None, first_video_id: None });
+                            videos.push(Video {
+                                id,
+                                title,
+                                thumbnail,
+                                duration,
+                                channel,
+                                is_playlist: false,
+                                track_count: None,
+                                first_video_id: None,
+                                item_type: Some("video".to_string()),
+                            });
                         }
                     } else if let Some(playlist) = item.get("playlistRenderer") {
                         let id = playlist.get("playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -67,40 +303,58 @@ pub async fn search_youtube(
                         let track_count = playlist.pointer("/videoCount").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let channel = playlist.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let first_video = playlist.pointer("/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
+
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration: "".to_string(), channel, is_playlist: true, track_count: Some(track_count), first_video_id: Some(first_video) });
+                            videos.push(Video {
+                                id,
+                                title,
+                                thumbnail,
+                                duration: "".to_string(),
+                                channel,
+                                is_playlist: true,
+                                track_count: Some(track_count),
+                                first_video_id: Some(first_video),
+                                item_type: Some("album".to_string()),
+                            });
                         }
                     } else if let Some(lockup) = item.get("lockupViewModel") {
                         let lockup_str = lockup.to_string();
-                        
-                        // Try standard pointer first
+
                         let mut id = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let title = lockup.pointer("/metadata/lockupMetadataViewModel/title/content").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         let thumbnail = lockup.pointer("/contentImage/collectionThumbnailViewModel/primaryThumbnail/thumbnailViewModel/image/sources/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        
-                        // Regex fallback for IDs
+
                         if id.is_empty() {
                             if let Some(caps) = Regex::new(r#""playlistId":"([^"]+)""#).unwrap().captures(&lockup_str) {
                                 id = caps[1].to_string();
                             }
                         }
-                        
+
                         let mut first_video = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
                         if first_video.is_empty() {
                             if let Some(caps) = Regex::new(r#""videoId":"([^"]+)""#).unwrap().captures(&lockup_str) {
                                 first_video = caps[1].to_string();
                             }
                         }
-                        
+
                         let track_count_str = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/text").and_then(|v| v.as_str()).unwrap_or("");
                         let mut track_count = track_count_str.split(' ').next().unwrap_or("").to_string();
                         if track_count.is_empty() || !track_count_str.contains("videos") {
                             track_count = String::new();
                         }
-                        
+
                         if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video { id, title, thumbnail, duration: "".to_string(), channel: "".to_string(), is_playlist: true, track_count: Some(track_count), first_video_id: Some(first_video) });
+                            videos.push(Video {
+                                id,
+                                title,
+                                thumbnail,
+                                duration: "".to_string(),
+                                channel: "".to_string(),
+                                is_playlist: true,
+                                track_count: Some(track_count),
+                                first_video_id: Some(first_video),
+                                item_type: Some("album".to_string()),
+                            });
                         }
                     }
                     if videos.len() >= 15 {
@@ -115,7 +369,213 @@ pub async fn search_youtube(
 }
 
 #[tauri::command]
-pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
+pub async fn search_youtube(
+    query: String,
+    search_type: Option<String>,
+) -> Result<Vec<Video>, String> {
+    let st = search_type.as_deref();
+
+    // 1. Primary: Search YouTube Music ("song", "album", or "video" typed)
+    match search_youtube_music(&query, st).await {
+        Ok(mut results) if !results.is_empty() => {
+            if st.is_none() || st == Some("song") {
+                let query_clean = query.to_lowercase();
+                let query_words: Vec<&str> = query_clean.split_whitespace().filter(|w| w.len() > 1).collect();
+                if query_words.len() >= 2 {
+                    let has_strong_match = results.iter().any(|v| {
+                        let text = format!("{} {}", v.title, v.channel).to_lowercase();
+                        query_words.iter().all(|&w| text.contains(w))
+                    });
+
+                    if !has_strong_match {
+                        if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
+                            for vid in video_results {
+                                if !results.iter().any(|r| r.id == vid.id) {
+                                    results.push(vid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return Ok(results);
+        }
+        Ok(_) => {
+            println!("search_youtube: 0 YTM results for {:?}, falling back to video search", query);
+        }
+        Err(e) => {
+            println!("search_youtube: YTM search error ({}), falling back to video search", e);
+        }
+    }
+
+    // 2. Fallback: Search regular YouTube (video as last resort)
+    scrape_regular_youtube_search(&query, st).await
+}
+
+/// Helper function to space out tracks by the same artist (at least 7 tracks apart)
+fn space_out_artist_tracks(videos: Vec<Video>) -> Vec<Video> {
+    let mut spaced_videos = Vec::new();
+    let mut pending = videos;
+
+    if !pending.is_empty() {
+        spaced_videos.push(pending.remove(0));
+    }
+
+    let get_artist = |v: &Video| -> (String, String) {
+        let title = v.title.to_lowercase();
+        let channel = v.channel.to_lowercase()
+            .replace(" - topic", "")
+            .replace("vevo", "")
+            .replace("official", "")
+            .trim()
+            .to_string();
+        let title_artist = if let Some(parts) = title.split_once(" - ") {
+            parts.0.trim().to_string()
+        } else if let Some(parts) = title.split_once(" ~ ") {
+            parts.0.trim().to_string()
+        } else {
+            String::new()
+        };
+        (title_artist, channel)
+    };
+
+    let is_same_artist = |(ta1, ch1): &(String, String), (ta2, ch2): &(String, String)| -> bool {
+        let clean = |s: &str| -> String {
+            s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase()
+        };
+        let ta1_c = clean(ta1);
+        let ch1_c = clean(ch1);
+        let ta2_c = clean(ta2);
+        let ch2_c = clean(ch2);
+
+        let check_pair = |a: &str, b: &str| -> bool {
+            if a.is_empty() || b.is_empty() { return false; }
+            if a == b { return true; }
+            if a.len() > 3 && b.len() > 3 && (a.contains(b) || b.contains(a)) { return true; }
+            false
+        };
+
+        check_pair(&ta1_c, &ta2_c)
+            || check_pair(&ch1_c, &ch2_c)
+            || check_pair(&ta1_c, &ch2_c)
+            || check_pair(&ch1_c, &ta2_c)
+    };
+
+    while !pending.is_empty() {
+        let mut found_index = 0;
+
+        for (i, v) in pending.iter().enumerate() {
+            let current_artist = get_artist(v);
+            let mut recent_conflict = false;
+
+            let check_len = std::cmp::min(spaced_videos.len(), 7);
+            for recent_v in spaced_videos.iter().rev().take(check_len) {
+                let recent_artist = get_artist(recent_v);
+                if is_same_artist(&current_artist, &recent_artist) {
+                    recent_conflict = true;
+                    break;
+                }
+            }
+
+            if !recent_conflict {
+                found_index = i;
+                break;
+            }
+        }
+
+        spaced_videos.push(pending.remove(found_index));
+    }
+
+    spaced_videos
+}
+
+/// YouTube Music Radio Mix via next endpoint (pure Song tracks)
+async fn get_ytm_mix_internal(video_id: &str) -> Result<Vec<Video>, String> {
+    let client = get_ytm_client();
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "videoId": video_id,
+        "playlistId": format!("RDAMVM{}", video_id),
+        "isAudioOnly": true
+    });
+
+    let res = client.post("https://music.youtube.com/youtubei/v1/next")
+        .header("User-Agent", YTM_USER_AGENT)
+        .header("Referer", "https://music.youtube.com/")
+        .header("Origin", "https://music.youtube.com")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let v: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+    let contents = v.pointer("/contents/singleColumnMusicWatchNextResultsRenderer/tabbedRenderer/watchNextTabbedResultsRenderer/tabs/0/tabRenderer/content/musicQueueRenderer/content/playlistPanelRenderer/contents")
+        .and_then(|c| c.as_array());
+
+    let mut videos = Vec::new();
+    if let Some(arr) = contents {
+        for item in arr {
+            if let Some(video) = item.get("playlistPanelVideoRenderer") {
+                let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let title = video.pointer("/title/runs/0/text")
+                    .or_else(|| video.pointer("/title/simpleText"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let thumbnail = video.pointer("/thumbnail/thumbnails/0/url")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let duration = video.pointer("/lengthText/runs/0/text")
+                    .or_else(|| video.pointer("/lengthText/simpleText"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let channel = video.pointer("/longBylineText/runs/0/text")
+                    .or_else(|| video.pointer("/shortBylineText/runs/0/text"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                if !id.is_empty() && !title.is_empty() {
+                    videos.push(Video {
+                        id,
+                        title,
+                        thumbnail,
+                        duration,
+                        channel,
+                        is_playlist: false,
+                        track_count: None,
+                        first_video_id: None,
+                        item_type: Some("song".to_string()),
+                    });
+                }
+            }
+            if videos.len() >= 50 {
+                break;
+            }
+        }
+    }
+
+    if videos.is_empty() {
+        return Err("No tracks in YTM mix queue".to_string());
+    }
+
+    Ok(space_out_artist_tracks(videos))
+}
+
+/// Scraper fallback for regular YouTube mix (video as last resort)
+async fn scrape_youtube_mix(video_id: &str) -> Result<Vec<Video>, String> {
     let url = format!(
         "https://www.youtube.com/watch?v={}&list=RD{}",
         video_id, video_id
@@ -185,6 +645,7 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
                                 is_playlist: false,
                                 track_count: None,
                                 first_video_id: None,
+                                item_type: Some("video".to_string()),
                             });
                         }
                     }
@@ -195,84 +656,27 @@ pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
             }
         }
 
-        // Space out tracks by the same artist to mimic a real radio (at least 7 tracks apart)
-        let mut spaced_videos = Vec::new();
-        let mut pending = videos;
-        
-        if !pending.is_empty() {
-            spaced_videos.push(pending.remove(0));
-        }
-        
-        let get_artist = |v: &Video| -> (String, String) {
-            let title = v.title.to_lowercase();
-            let channel = v.channel.to_lowercase()
-                .replace(" - topic", "")
-                .replace("vevo", "")
-                .replace("official", "")
-                .trim()
-                .to_string();
-            let title_artist = if let Some(parts) = title.split_once(" - ") {
-                parts.0.trim().to_string()
-            } else if let Some(parts) = title.split_once(" ~ ") {
-                parts.0.trim().to_string()
-            } else {
-                String::new()
-            };
-            (title_artist, channel)
-        };
-
-        let is_same_artist = |(ta1, ch1): &(String, String), (ta2, ch2): &(String, String)| -> bool {
-            let clean = |s: &str| -> String {
-                s.chars().filter(|c| c.is_alphanumeric()).collect::<String>().to_lowercase()
-            };
-            let ta1_c = clean(ta1);
-            let ch1_c = clean(ch1);
-            let ta2_c = clean(ta2);
-            let ch2_c = clean(ch2);
-
-            let check_pair = |a: &str, b: &str| -> bool {
-                if a.is_empty() || b.is_empty() { return false; }
-                if a == b { return true; }
-                if a.len() > 3 && b.len() > 3 && (a.contains(b) || b.contains(a)) { return true; }
-                false
-            };
-
-            check_pair(&ta1_c, &ta2_c)
-                || check_pair(&ch1_c, &ch2_c)
-                || check_pair(&ta1_c, &ch2_c)
-                || check_pair(&ch1_c, &ta2_c)
-        };
-        
-        while !pending.is_empty() {
-            let mut found_index = 0; // Default to first available if we can't find a non-conflicting track
-            
-            // Try to find a track whose artist hasn't appeared in the last 7 tracks
-            for (i, v) in pending.iter().enumerate() {
-                let current_artist = get_artist(v);
-                let mut recent_conflict = false;
-                
-                let check_len = std::cmp::min(spaced_videos.len(), 7);
-                for recent_v in spaced_videos.iter().rev().take(check_len) {
-                    let recent_artist = get_artist(recent_v);
-                    if is_same_artist(&current_artist, &recent_artist) {
-                        recent_conflict = true;
-                        break;
-                    }
-                }
-                
-                if !recent_conflict {
-                    found_index = i;
-                    break;
-                }
-            }
-            
-            spaced_videos.push(pending.remove(found_index));
-        }
-
-        return Ok(spaced_videos);
+        return Ok(space_out_artist_tracks(videos));
     }
 
     Err("ytInitialData not found in mix".to_string())
+}
+
+#[tauri::command]
+pub async fn get_youtube_mix(video_id: String) -> Result<Vec<Video>, String> {
+    // 1. Primary: YouTube Music Radio (pure Song tracks)
+    match get_ytm_mix_internal(&video_id).await {
+        Ok(tracks) if !tracks.is_empty() => {
+            return Ok(tracks);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            println!("get_youtube_mix: YTM radio error ({}), falling back to watch next scraper", e);
+        }
+    }
+
+    // 2. Fallback: regular YouTube watch next mix scraper (video as last resort)
+    scrape_youtube_mix(&video_id).await
 }
 
 #[tauri::command]
@@ -322,15 +726,83 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
     Err("Could not parse Spotify playlist data".to_string())
 }
 
-#[tauri::command]
-pub async fn get_youtube_playlist(
-    playlist_id: String,
-    first_video_id: String,
+/// Fetch playlist/album tracks via YouTube Music browse API (pure Songs)
+async fn get_ytm_playlist_internal(playlist_id: &str) -> Result<Vec<Video>, String> {
+    let client = get_ytm_client();
+    let browse_id = if playlist_id.starts_with("VL") {
+        playlist_id.to_string()
+    } else {
+        format!("VL{}", playlist_id)
+    };
+
+    let body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "browseId": browse_id
+    });
+
+    let res = client.post("https://music.youtube.com/youtubei/v1/browse")
+        .header("User-Agent", YTM_USER_AGENT)
+        .header("Referer", "https://music.youtube.com/")
+        .header("Origin", "https://music.youtube.com")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let v: serde_json::Value = res.json().await.map_err(|e| e.to_string())?;
+
+    let shelf_contents = v.pointer("/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/contents")
+        .or_else(|| {
+            v.pointer("/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/contents")
+        })
+        .or_else(|| {
+            v.pointer("/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents/0/musicShelfRenderer/contents")
+        })
+        .and_then(|c| c.as_array());
+
+    let mut videos = Vec::new();
+    if let Some(arr) = shelf_contents {
+        for item in arr {
+            if let Some(r) = item.get("musicResponsiveListItemRenderer") {
+                if let Some(song) = parse_ytm_song_item(r) {
+                    videos.push(song);
+                }
+            }
+            if videos.len() >= 200 {
+                break;
+            }
+        }
+    }
+
+    if videos.is_empty() {
+        return Err("No tracks found via YTM browse".to_string());
+    }
+
+    Ok(videos)
+}
+
+/// Fallback scraper for regular YouTube playlists (video as last resort)
+async fn scrape_youtube_playlist(
+    playlist_id: &str,
+    first_video_id: &str,
 ) -> Result<Vec<Video>, String> {
-    let url = format!(
-        "https://www.youtube.com/watch?v={}&list={}",
-        first_video_id, playlist_id
-    );
+    let url = if !first_video_id.is_empty() {
+        format!(
+            "https://www.youtube.com/watch?v={}&list={}",
+            first_video_id, playlist_id
+        )
+    } else {
+        format!("https://www.youtube.com/playlist?list={}", playlist_id)
+    };
+
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
@@ -351,7 +823,8 @@ pub async fn get_youtube_playlist(
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
 
         let mut videos = Vec::new();
-        // Playlist panel rendering is same as mix
+
+        // 1. Try watch next panel contents
         if let Some(contents) =
             v.pointer("/contents/twoColumnWatchNextResults/playlist/playlist/contents")
         {
@@ -388,7 +861,6 @@ pub async fn get_youtube_playlist(
                             .to_string();
 
                         if !id.is_empty() && !title.is_empty() {
-                            // These are individual tracks
                             videos.push(Video {
                                 id,
                                 title,
@@ -398,20 +870,75 @@ pub async fn get_youtube_playlist(
                                 is_playlist: false,
                                 track_count: None,
                                 first_video_id: None,
+                                item_type: Some("video".to_string()),
                             });
                         }
                     }
                     if videos.len() >= 200 {
-                        // Max fetch 200 items for a playlist
                         break;
                     }
                 }
             }
         }
+
+        // 2. Try playlist page renderer contents if watch next panel was not found
+        if videos.is_empty() {
+            if let Some(contents) = v.pointer("/contents/twoColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/itemSectionRenderer/contents/0/playlistVideoListRenderer/contents") {
+                if let Some(arr) = contents.as_array() {
+                    for item in arr {
+                        if let Some(video) = item.get("playlistVideoRenderer") {
+                            let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let title = video.pointer("/title/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let channel = video.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                            if !id.is_empty() && !title.is_empty() {
+                                videos.push(Video {
+                                    id,
+                                    title,
+                                    thumbnail,
+                                    duration,
+                                    channel,
+                                    is_playlist: false,
+                                    track_count: None,
+                                    first_video_id: None,
+                                    item_type: Some("video".to_string()),
+                                });
+                            }
+                        }
+                        if videos.len() >= 200 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         return Ok(videos);
     }
 
     Err("ytInitialData not found in playlist".to_string())
+}
+
+#[tauri::command]
+pub async fn get_youtube_playlist(
+    playlist_id: String,
+    first_video_id: String,
+) -> Result<Vec<Video>, String> {
+    // 1. Primary: YouTube Music Browse (pure Song tracks for albums & playlists)
+    match get_ytm_playlist_internal(&playlist_id).await {
+        Ok(tracks) if !tracks.is_empty() => {
+            return Ok(tracks);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            println!("get_youtube_playlist: YTM browse error ({}), falling back to watch panel scraper", e);
+        }
+    }
+
+    // 2. Fallback: regular YouTube playlist / watch panel scraper (video as last resort)
+    scrape_youtube_playlist(&playlist_id, &first_video_id).await
 }
 
 #[tauri::command]
@@ -469,7 +996,7 @@ pub async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> 
             .replace("&quot;", "\"")
             .replace("&lt;", "<")
             .replace("&gt;", ">");
-        
+
         let decoded = Regex::new(r"\s+").unwrap().replace_all(&decoded, " ").trim().to_string();
 
         if !decoded.is_empty() {
@@ -540,7 +1067,7 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
 #[tauri::command]
 pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
-    
+
     // 1. Run yt-dlp for reliable album/artist extraction (YouTube's JSON structure is too flaky)
     let exe_path = crate::downloads::get_yt_dlp_path().await?;
     let mut cmd = tokio::process::Command::new(exe_path);
@@ -574,7 +1101,7 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-        
+
     let mut album_playlist_id = String::new();
     if let Ok(res) = client.get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -615,3 +1142,97 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
         album_playlist_id,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ytm_search_song() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let results = search_youtube("saujana bilal indrajaya".to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            assert!(!results.is_empty(), "Should find songs for Saujana");
+            let top = &results[0];
+            println!("Found song: {} by {}", top.title, top.channel);
+            assert_eq!(top.item_type.as_deref(), Some("song"), "Top result should be a song");
+            assert!(top.title.to_lowercase().contains("saujana"), "Title should contain saujana");
+        });
+    }
+
+    #[test]
+    fn test_ytm_search_album() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let results = search_youtube("nelangsa pasar turi".to_string(), Some("album".to_string()))
+                .await
+                .expect("Album search should succeed");
+            assert!(!results.is_empty(), "Should find albums");
+            let top = &results[0];
+            println!("Found album: {} (id: {})", top.title, top.id);
+            assert_eq!(top.item_type.as_deref(), Some("album"), "Top result should be an album");
+            assert!(top.is_playlist, "Album should be marked as playlist");
+        });
+    }
+
+    #[test]
+    fn test_ytm_mix_endless_play() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let tracks = get_youtube_mix("MAMSXxLnpXE".to_string())
+                .await
+                .expect("Mix should succeed");
+            assert!(!tracks.is_empty(), "Mix should return tracks");
+            println!("Mix returned {} tracks, first: {} by {}", tracks.len(), tracks[0].title, tracks[0].channel);
+            assert_eq!(tracks[0].item_type.as_deref(), Some("song"), "Mix tracks should be songs");
+        });
+    }
+
+    #[test]
+    fn test_ytm_playlist_browse() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            let tracks = get_youtube_playlist("OLAK5uy_nw7jqj_0l7BJ1s1b1pmlyGsWcNE1W2QK0".to_string(), "".to_string())
+                .await
+                .expect("Playlist browse should succeed");
+            assert!(!tracks.is_empty(), "Album playlist should contain tracks");
+            println!("Album playlist returned {} tracks, first: {}", tracks.len(), tracks[0].title);
+            assert_eq!(tracks[0].item_type.as_deref(), Some("song"), "Playlist tracks should be songs");
+        });
+    }
+
+    #[test]
+    fn test_ytm_search_wrong_artist_video_fallback() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // Plastic Love by Mariya Takeuchi only exists as video on YTM; covers exist as songs
+            let results = search_youtube("Plastic Love Mariya Takeuchi".to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            assert!(!results.is_empty(), "Should return results");
+            let has_mariya = results.iter().any(|v| {
+                let text = format!("{} {}", v.title, v.channel).to_lowercase();
+                text.contains("mariya") || text.contains("takeuchi")
+            });
+            assert!(has_mariya, "Should include Mariya Takeuchi via video fallback");
+        });
+    }
+}
+

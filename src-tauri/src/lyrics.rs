@@ -659,7 +659,7 @@ async fn fetch_lrclib(
             .get(&get_url)
             .header(
                 "User-Agent",
-                "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
+                "NadaNada/0.5.9 (https://github.com/rzkmsjhr/nadanada)",
             )
             .header("Lrclib-Client", "NadaNada (Tauri App)")
             .send()
@@ -713,7 +713,7 @@ async fn fetch_lrclib(
             .get(&search_url)
             .header(
                 "User-Agent",
-                "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
+                "NadaNada/0.5.9 (https://github.com/rzkmsjhr/nadanada)",
             )
             .header("Lrclib-Client", "NadaNada (Tauri App)")
             .send()
@@ -772,7 +772,7 @@ async fn fetch_lrclib(
                         .get(&title_search_url)
                         .header(
                             "User-Agent",
-                            "NadaNada/0.5.8 (https://github.com/rzkmsjhr/nadanada)",
+                            "NadaNada/0.5.9 (https://github.com/rzkmsjhr/nadanada)",
                         )
                         .header("Lrclib-Client", "NadaNada (Tauri App)")
                         .send()

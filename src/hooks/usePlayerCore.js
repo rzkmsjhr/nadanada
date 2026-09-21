@@ -14,7 +14,8 @@ export function usePlayerCore({
   repeatMode,
   onSongEnded,
   crossfadeDuration: externalCrossfadeDuration,
-  setCrossfadeDuration: externalSetCrossfadeDuration
+  setCrossfadeDuration: externalSetCrossfadeDuration,
+  downloadedIds
 }) {
   const [activeDeck, setActiveDeck] = useState(0); // 0 or 1
   const activeDeckRef = useRef(0);
@@ -75,6 +76,29 @@ export function usePlayerCore({
     const nextVal = currentIndex === -1 ? 3 : options[(currentIndex + 1) % options.length];
     setCrossfadeDuration(nextVal);
   };
+
+  // Offline / Downloaded playback crossfade bypass
+  const isSongOffline = (song) => {
+    if (!song) return false;
+    if (song.is_local || song.file_path) return true;
+    if (downloadedIds && typeof downloadedIds.has === 'function') {
+      if (song.id && downloadedIds.has(song.id)) return true;
+      if (song.file_path && downloadedIds.has(song.file_path)) return true;
+    }
+    return false;
+  };
+
+  const isCurrentOffline = isSongOffline(currentSong) || isSongOffline(activeDeckRef.current === 0 ? deck0Song : deck1Song);
+  const isNextOffline = isSongOffline(nextSong);
+  const isOfflinePlayback = isCurrentOffline || isNextOffline;
+  const effectiveCrossfadeDuration = isOfflinePlayback ? 0 : crossfadeDuration;
+
+  // If entering offline playback mode, immediately cancel any active or ramping crossfade
+  useEffect(() => {
+    if (isOfflinePlayback && (isCrossfadingRef.current || isPreloadingNextRef.current || isCrossfadeRampingRef.current)) {
+      cancelCrossfade();
+    }
+  }, [isOfflinePlayback]);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -150,13 +174,14 @@ export function usePlayerCore({
   const bufferingTimeoutRef = useRef(null);
 
   const startCrossfadeVolumeRamp = () => {
+    if (isOfflinePlayback || effectiveCrossfadeDuration <= 0) return;
     if (isCrossfadeRampingRef.current) return;
     isCrossfadeRampingRef.current = true;
 
     const outgoingDeck = activeDeckRef.current;
     const incomingDeck = 1 - activeDeckRef.current;
 
-    const durationMs = crossfadeDuration * 1000;
+    const durationMs = effectiveCrossfadeDuration * 1000;
     const startVol = isMuted ? 0 : masterVolume;
     const steps = Math.max(25, Math.floor(durationMs / 30));
     const stepTime = durationMs / steps;
@@ -284,6 +309,7 @@ export function usePlayerCore({
 
 
   const preloadNextSong = (incomingSong) => {
+    if (isOfflinePlayback || effectiveCrossfadeDuration <= 0) return;
     if (!incomingSong || isPreloadingNextRef.current || hasPreloadedNextRef.current) return;
     
     isPreloadingNextRef.current = true;
@@ -314,17 +340,18 @@ export function usePlayerCore({
         console.log('[CROSSFADE] Safety timeout: preload did not finish in time, aborting preload');
         cancelCrossfade();
       }
-    }, (crossfadeDuration + 5) * 1000);
+    }, (effectiveCrossfadeDuration + 5) * 1000);
   };
 
   const checkAutoCrossfade = (time, dur) => {
+    if (isOfflinePlayback || effectiveCrossfadeDuration <= 0) return;
     // If track is just starting or duration is invalid, ignore to prevent false triggers
-    if (!time || !dur || time < crossfadeDuration + 2 || time < 5) return;
+    if (!time || !dur || time < effectiveCrossfadeDuration + 2 || time < 5) return;
 
     const isLoopingCurrentTrack = repeatMode === 1 || (repeatMode === 2 && playCount < 1);
 
     if (
-      crossfadeDuration > 0 &&
+      effectiveCrossfadeDuration > 0 &&
       dur > 10 &&
       nextSong &&
       !isLoopingCurrentTrack &&
@@ -332,16 +359,16 @@ export function usePlayerCore({
     ) {
       const remaining = dur - time;
       
-      // Phase 1: Preload the next song exactly crossfadeDuration + 5 seconds before end
-      const preloadTime = crossfadeDuration + 5;
-      if (remaining <= preloadTime && remaining > crossfadeDuration && !isPreloadingNextRef.current && !hasPreloadedNextRef.current) {
+      // Phase 1: Preload the next song exactly effectiveCrossfadeDuration + 5 seconds before end
+      const preloadTime = effectiveCrossfadeDuration + 5;
+      if (remaining <= preloadTime && remaining > effectiveCrossfadeDuration && !isPreloadingNextRef.current && !hasPreloadedNextRef.current) {
         console.log(`[CROSSFADE-DEBUG] 🔄 Preloading next song at time=${time.toFixed(1)}, remaining=${remaining.toFixed(1)}s (preload window)`);
         preloadNextSong(nextSong);
       }
 
-      // Phase 2: Start the crossfade ramp at exactly crossfadeDuration seconds before end
-      if (remaining <= crossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfadingRef.current) {
-        console.log(`[CROSSFADE-DEBUG] 🔔 crossfade ramp triggered: remaining=${remaining.toFixed(1)}s <= ${crossfadeDuration}s`);
+      // Phase 2: Start the crossfade ramp at exactly effectiveCrossfadeDuration seconds before end
+      if (remaining <= effectiveCrossfadeDuration && remaining > 0 && !hasTriggeredEndCrossfadeRef.current && !isCrossfadingRef.current) {
+        console.log(`[CROSSFADE-DEBUG] 🔔 crossfade ramp triggered: remaining=${remaining.toFixed(1)}s <= ${effectiveCrossfadeDuration}s`);
         hasTriggeredEndCrossfadeRef.current = true;
         setIsCrossfading(true);
         isCrossfadingRef.current = true;
@@ -506,13 +533,15 @@ export function usePlayerCore({
             setDuration(dur || 0);
 
             // Check auto-crossfade trigger
-            checkAutoCrossfade(time || 0, dur || 0);
+            if (!isOfflinePlayback) {
+              checkAutoCrossfade(time || 0, dur || 0);
+            }
           } catch (e) {}
         }
       }, 100);
     }
     return () => clearInterval(interval);
-  }, [isPlaying, isDragging, currentSong, streamUrl, crossfadeDuration, onTimeUpdate, nextSong, hasNext, repeatMode, activeDeck]);
+  }, [isPlaying, isDragging, currentSong, streamUrl, crossfadeDuration, effectiveCrossfadeDuration, isOfflinePlayback, onTimeUpdate, nextSong, hasNext, repeatMode, activeDeck]);
 
   // Media Session API Integration for SMTC
   useEffect(() => {
@@ -683,9 +712,9 @@ export function usePlayerCore({
     else deck1PlayerRef.current = event.target;
 
     if (deckIndex === activeDeckRef.current) {
-      if (crossfadeDuration > 0 && isTransitioningSongRef.current) {
+      if (effectiveCrossfadeDuration > 0 && isTransitioningSongRef.current) {
         applyDeckVolume(deckIndex, 0);
-        fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+        fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
       } else if (!activeFadeIntervalRef.current) {
         event.target.setVolume(isMuted ? 0 : masterVolume);
       }
@@ -712,9 +741,9 @@ export function usePlayerCore({
         setIsPlaying(true);
         setIsBuffering(false);
         if (onPlayStateChange) onPlayStateChange(true);
-        if (crossfadeDuration > 0 && isTransitioningSongRef.current) {
+        if (effectiveCrossfadeDuration > 0 && isTransitioningSongRef.current) {
           isTransitioningSongRef.current = false;
-          fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+          fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
         } else if (!activeFadeIntervalRef.current && !isCrossfadingRef.current) {
           try { event.target.setVolume(isMuted ? 0 : masterVolume); } catch (e) {}
         }
@@ -808,12 +837,12 @@ export function usePlayerCore({
         if (audioEl) { 
           audioEl.currentTime = startSecs; 
           audioEl.play(); 
-          if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+          if (effectiveCrossfadeDuration > 0) fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
         }
       } else if (activePlayer) {
         activePlayer.seekTo(startSecs, true);
         activePlayer.playVideo();
-        if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+        if (effectiveCrossfadeDuration > 0) fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
       }
     } else if (repeatMode === 2) {
       if (playCount < 1) {
@@ -828,12 +857,12 @@ export function usePlayerCore({
           if (audioEl) { 
             audioEl.currentTime = startSecs; 
             audioEl.play(); 
-            if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+            if (effectiveCrossfadeDuration > 0) fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
           }
         } else if (activePlayer) {
           activePlayer.seekTo(startSecs, true);
           activePlayer.playVideo();
-          if (crossfadeDuration > 0) fadeIn(Math.min(crossfadeDuration * 1000, 1500));
+          if (effectiveCrossfadeDuration > 0) fadeIn(Math.min(effectiveCrossfadeDuration * 1000, 1500));
         }
       } else {
         setIsPlaying(false);
@@ -896,7 +925,7 @@ export function usePlayerCore({
     applyActiveVolume(isMuted ? 0 : masterVolume);
 
     const targetTime = Number(e.target.value);
-    if (targetTime < duration - crossfadeDuration) {
+    if (targetTime < duration - effectiveCrossfadeDuration) {
       hasTriggeredEndCrossfadeRef.current = false;
     }
     if (currentSong && (currentSong.is_local || streamUrl)) {
@@ -941,6 +970,8 @@ export function usePlayerCore({
     masterVolume,
     isMuted,
     crossfadeDuration, setCrossfadeDuration,
+    effectiveCrossfadeDuration,
+    isOfflinePlayback,
     toggleCrossfade,
     hasTriggeredEndCrossfadeRef,
     isTransitioningSongRef,

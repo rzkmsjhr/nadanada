@@ -191,6 +191,15 @@ export default function SettingsModal({
             <span>5s</span>
             <span>6s</span>
           </div>
+
+          <div style={{
+            fontSize: '0.72rem',
+            color: 'var(--text-muted)',
+            marginTop: '8px',
+            opacity: 0.8
+          }}>
+            Crossfade applies to online playback. Automatically turned off for downloaded &amp; offline tracks.
+          </div>
         </div>
 
         {/* Mini Player Transparency Section */}

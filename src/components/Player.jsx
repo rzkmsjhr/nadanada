@@ -14,7 +14,8 @@ const Player = React.forwardRef(function Player({
   crossfadeDuration, setCrossfadeDuration,
   videoOverlayMode, setVideoOverlayMode,
   lyricsData, lyricsSyncOffset, setLyricsSyncOffset, isFetchingLyrics, lyricsError, onRetryLyrics,
-  chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords
+  chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords,
+  downloadedIds
 }, ref) {
   
   const core = usePlayerCore({
@@ -30,7 +31,8 @@ const Player = React.forwardRef(function Player({
     repeatMode,
     onSongEnded,
     crossfadeDuration,
-    setCrossfadeDuration
+    setCrossfadeDuration,
+    downloadedIds
   });
 
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
@@ -394,7 +396,9 @@ const Player = React.forwardRef(function Player({
                     if (core.activeDeck === 0 && !core.isDragging) {
                       core.setCurrentTime(e.target.currentTime);
                       if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
-                      core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      if (!core.isOfflinePlayback) {
+                        core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      }
                     }
                   }}
                   onLoadedMetadata={(e) => {
@@ -449,7 +453,9 @@ const Player = React.forwardRef(function Player({
                     if (core.activeDeck === 1 && !core.isDragging) {
                       core.setCurrentTime(e.target.currentTime);
                       if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
-                      core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      if (!core.isOfflinePlayback) {
+                        core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      }
                     }
                   }}
                   onLoadedMetadata={(e) => {
