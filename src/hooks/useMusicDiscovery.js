@@ -63,6 +63,47 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   return false;
 };
 
+export const doesCandidateMatchTitle = (candidate, expectedTitle) => {
+  if (!expectedTitle || !candidate) return false;
+
+  const cleanExpected = cleanTitleForArtistMatch(expectedTitle).trim();
+  const cleanCand = cleanTitleForArtistMatch(candidate.title || '').trim();
+
+  const normExpected = normalizeText(cleanExpected);
+  const normCand = normalizeText(cleanCand);
+
+  // 1. Direct match with clean expected title (e.g. "縁の糸")
+  if (cleanExpected && (candidate.title || '').includes(cleanExpected)) {
+    return true;
+  }
+  if (normExpected && normCand && (normCand.includes(normExpected) || normExpected.includes(normCand))) {
+    return true;
+  }
+
+  // 2. Check parenthetical reading / alternate title if present (e.g. "えにし")
+  const parensMatch = expectedTitle.match(/\(([^)]+)\)|\[([^\]]+)\]/);
+  if (parensMatch) {
+    const inside = (parensMatch[1] || parensMatch[2] || '').trim();
+    if (inside.length >= 2) {
+      const normInside = normalizeText(inside);
+      if (normInside && (normCand.includes(normInside) || (candidate.title || '').includes(inside))) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Check word overlap for multi-word titles
+  const expectedWords = normExpected.split(/\s+/).filter(w => w.length > 0);
+  if (expectedWords.length >= 1) {
+    const matched = expectedWords.filter(w => normCand.includes(w)).length;
+    if (matched >= Math.ceil(expectedWords.length * 0.6)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const getCachedVideo = query => {
   try {
     const raw = localStorage.getItem('nadanada-yt-cache');
@@ -506,13 +547,16 @@ export function useMusicDiscovery({
 
                 const artistWords = track.artist ? [...new Set(normalizeText(track.artist).split(/\s+/).filter(w => w.length > 1))] : [];
 
-                // Check if any candidate in results genuinely matches the requested artist
-                const hasArtistMatch = artistWords.length === 0 || results.some(r => doesCandidateMatchArtist(r, artistWords, track.artist));
+                // Check if any candidate in results genuinely matches BOTH requested title and artist
+                const hasFullMatch = results.some(r => 
+                  doesCandidateMatchTitle(r, track.title) && 
+                  doesCandidateMatchArtist(r, artistWords, track.artist)
+                );
 
-                // If NO candidate matches the requested artist (e.g. Mariya Takeuchi - Plastic Love where
-                // only covers by other artists exist as songs, but the original exists as a video),
-                // query video results as well so the original artist is picked!
-                if (!hasArtistMatch) {
+                // If NO candidate matches both title and artist (e.g. Mariya Takeuchi - Plastic Love or Enishi no Ito
+                // where the official track only exists as a video on YouTube),
+                // query video results as well so the original track is picked!
+                if (!hasFullMatch) {
                   try {
                     const videoResults = await api.searchYouTube(track.query, 'video');
                     if (videoResults && videoResults.length > 0) {
@@ -549,25 +593,29 @@ export function useMusicDiscovery({
                           }
                       }
 
-                      // Check if candidate matches the target artist
+                      // Check if candidate matches the target artist and title
                       const artistMatched = doesCandidateMatchArtist(r, artistWords, track.artist);
+                      const titleMatched = doesCandidateMatchTitle(r, track.title);
 
-                      // Artist match is paramount: wrong artist receives large penalty (+500)
-                      // so a Video by the correct artist easily beats a Song by the wrong artist!
+                      // Penalties for mismatches:
+                      // - Wrong artist: +500 (covers or wrong artists)
+                      // - Wrong title: +500 (completely different song by the same artist!)
                       const artistPenalty = artistMatched ? 0 : 500;
+                      const titlePenalty = titleMatched ? 0 : 500;
 
-                      // Among candidates with the same artist match status:
+                      // Among candidates of the SAME song and artist:
                       // Song gets bonus (-30) over video (+10)
                       const isSong = r.item_type === 'song';
                       const typeScore = isSong ? -30 : 10;
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
                       const rankPenalty = index * 3;
-                      const score = artistPenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
+                      const score = artistPenalty + titlePenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
                       
                       return {
                           ...r,
                           artistMatched,
+                          titleMatched,
                           durationDiff,
                           score,
                           hasBadWord

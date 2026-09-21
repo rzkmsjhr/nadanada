@@ -392,19 +392,19 @@ fn clean_title_for_matching(title: &str) -> String {
 
 /// Computes a relevance score for a search candidate.
 /// Lower is better.
-/// - Songs are prioritized over videos (-25 bonus).
-/// - But if a song has the wrong artist (channel matches none of the artist terms in query),
-///   the correct artist's video will have a much lower score and take priority.
+/// - Songs are prioritized over videos (-25 bonus) ONLY when comparing the same song.
+/// - If a candidate's title does not match any query terms (different song), it receives a heavy penalty (+350).
+/// - If a candidate's channel does not match any artist terms (wrong artist), it receives a heavy penalty (+250).
 fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
     let clean_title = clean_title_for_matching(&v.title);
     let channel_lower = v.channel.to_lowercase();
 
-    let mut _matched_title_words = 0;
+    let mut matched_title_words = 0;
     let mut matched_channel_words = 0;
 
     for &w in query_words {
         if clean_title.contains(w) {
-            _matched_title_words += 1;
+            matched_title_words += 1;
         }
         if channel_lower.contains(w) {
             matched_channel_words += 1;
@@ -421,6 +421,13 @@ fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
     // Missing query words penalty (60 points per missing word)
     let missing = query_words.len().saturating_sub(total_matched);
     score += (missing as i32) * 60;
+
+    // Title mismatch penalty:
+    // If the candidate's clean title matches NONE of the query terms, it is a completely
+    // DIFFERENT SONG by the same artist! A different song must NEVER beat the song requested.
+    if query_words.len() >= 2 && matched_title_words == 0 {
+        score += 350;
+    }
 
     // Artist mismatch penalty:
     // If the query contains 3+ words (typically Title + Artist) and the candidate's
@@ -448,7 +455,7 @@ fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
         }
     }
 
-    // Song bonus: if the artist matches or query is short, Song takes priority (-25) over Video (0)
+    // Song bonus: if the candidate matches title and artist, Song takes priority (-25) over Video (0)
     if v.item_type.as_deref() == Some("song") {
         score -= 25;
     }
@@ -463,38 +470,43 @@ pub async fn search_youtube(
 ) -> Result<Vec<Video>, String> {
     let st = search_type.as_deref();
 
+    // Clean query of embedded furigana/parentheses for matching
+    // e.g. "縁(えにし)の糸 Mariya Takeuchi" -> "縁の糸 mariya takeuchi"
+    let clean_query = clean_title_for_matching(&query);
+
     // 1. Primary: Search YouTube Music ("song", "album", or "video" typed)
     match search_youtube_music(&query, st).await {
         Ok(mut results) if !results.is_empty() => {
             if st.is_none() || st == Some("song") {
-                let query_clean = query.to_lowercase();
-                let query_words: Vec<&str> = query_clean
+                let query_words: Vec<&str> = clean_query
                     .split_whitespace()
-                    .filter(|w| w.len() > 1)
+                    .filter(|w| !w.is_empty())
                     .collect();
 
                 if query_words.len() >= 2 {
-                    // Check if any song strongly matches both title and channel/artist.
+                    // Check if any song strongly matches BOTH title and channel/artist.
                     // A strong match requires:
                     // 1) All query words matched across clean title or channel
-                    // 2) If query has 3+ words, channel must match at least one query word
+                    // 2) Clean title must match at least one query word (to ensure it's not a different song!)
+                    // 3) If query has 3+ words, channel must match at least one query word
                     let has_strong_match = results.iter().any(|v| {
                         let clean_title = clean_title_for_matching(&v.title);
                         let channel = v.channel.to_lowercase();
                         let all_matched = query_words
                             .iter()
                             .all(|&w| clean_title.contains(w) || channel.contains(w));
+                        let title_matched = query_words.iter().any(|&w| clean_title.contains(w));
                         let channel_matched = if query_words.len() >= 3 {
                             query_words.iter().any(|&w| channel.contains(w))
                         } else {
                             true
                         };
-                        all_matched && channel_matched
+                        all_matched && title_matched && channel_matched
                     });
 
                     if !has_strong_match {
-                        // Song results only returned wrong-artist covers or incomplete matches.
-                        // Fetch videos so the original artist's video can be ranked!
+                        // Song results only returned wrong-artist covers, different songs by same artist, or incomplete matches.
+                        // Fetch videos so the original track's video can be ranked!
                         if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
                             for vid in video_results {
                                 if !results.iter().any(|r| r.id == vid.id) {
@@ -505,8 +517,8 @@ pub async fn search_youtube(
                     }
 
                     // Sort candidates using score_search_candidate:
-                    // Songs are preferred (-25) when artist matches.
-                    // But if a song has the wrong artist (channel mismatch), the real artist's video wins!
+                    // Songs are preferred (-25) when artist and title match.
+                    // But if a song has the wrong artist or wrong title, the real track's video wins!
                     results.sort_by_key(|v| score_search_candidate(v, &query_words));
                 }
             }
@@ -823,10 +835,16 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
                 let artist = track.get("subtitle").and_then(|a| a.as_str()).unwrap_or("");
                 let duration_ms = track.get("duration").and_then(|d| d.as_u64()).unwrap_or(0);
                 if !title.is_empty() {
+                    let clean_title = clean_title_for_matching(title);
+                    let search_title = if clean_title.trim().is_empty() {
+                        title
+                    } else {
+                        clean_title.trim()
+                    };
                     queries.push(SpotifyTrack {
                         title: title.to_string(),
                         artist: artist.to_string(),
-                        query: format!("{} {}", title, artist).trim().to_string(),
+                        query: format!("{} {}", search_title, artist).trim().to_string(),
                         duration_ms,
                     });
                 }
@@ -1334,20 +1352,32 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            // Plastic Love by Mariya Takeuchi only exists as video on YTM; covers exist as songs
-            let results = search_youtube("Plastic Love Mariya Takeuchi".to_string(), Some("song".to_string()))
+            // 1. Enishi no Ito by Mariya Takeuchi (parenthetical furigana in query)
+            let results_enishi = search_youtube("縁(えにし)の糸 Mariya Takeuchi".to_string(), Some("song".to_string()))
                 .await
                 .expect("Search should succeed");
-            for (i, v) in results.iter().enumerate().take(5) {
-                println!("Result #{}: title={:?}, channel={:?}, item_type={:?}", i, v.title, v.channel, v.item_type);
+            assert!(!results_enishi.is_empty(), "Enishi search should return results");
+            for (i, v) in results_enishi.iter().enumerate().take(5) {
+                println!("Enishi Result #{}: title={:?}, channel={:?}, duration={:?}, item_type={:?}", i, v.title, v.channel, v.duration, v.item_type);
             }
-            assert!(!results.is_empty(), "Should return results");
-            let top = &results[0];
-            let top_channel_lower = top.channel.to_lowercase();
+            let top_enishi = &results_enishi[0];
             assert!(
-                top_channel_lower.contains("mariya") || top_channel_lower.contains("takeuchi"),
+                top_enishi.title.contains("縁の糸") || top_enishi.title.contains("Enishi"),
+                "Top result must be 縁の糸, not a completely different song! Got: {}",
+                top_enishi.title
+            );
+
+            // 2. Plastic Love by Mariya Takeuchi (official video should beat wrong-artist covers)
+            let results_plastic = search_youtube("Plastic Love Mariya Takeuchi".to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            assert!(!results_plastic.is_empty(), "Plastic Love search should return results");
+            let top_plastic = &results_plastic[0];
+            let top_plastic_channel = top_plastic.channel.to_lowercase();
+            assert!(
+                top_plastic_channel.contains("mariya") || top_plastic_channel.contains("takeuchi"),
                 "Top result should be Mariya Takeuchi, not a cover! Got channel: {}",
-                top.channel
+                top_plastic.channel
             );
         });
     }
