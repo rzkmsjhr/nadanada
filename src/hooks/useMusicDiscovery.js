@@ -18,6 +18,7 @@ export const cleanTitleForArtistMatch = (title) => {
     .replace(/\[[^\]]*\]/g, ' ')
     .replace(/（[^）]*）/g, ' ')
     .replace(/【[^】]*】/g, ' ')
+    .replace(/[,!?;:~\\/]/g, ' ')
     .trim();
 };
 
@@ -48,7 +49,19 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   const cleanTitle = cleanTitleForArtistMatch(candidate.title);
   const parts = cleanTitle.split(/\s*[-–—:]\s*/);
   if (parts.length >= 2) {
-    const firstPartNorm = normalizeText(parts[0]);
+    const firstPart = parts[0];
+    // Check if the prefix is "OtherArtist ft. TargetArtist" (e.g. "2Pac ft. Mariya Takeuchi")
+    // In that case, the lead artist is OtherArtist, NOT the target artist!
+    const ftMatch = firstPart.match(/^(.*?)\s+(?:ft\.?|feat\.?|featuring)\s+(.*)$/i);
+    if (ftMatch) {
+      const leadArtistNorm = normalizeText(ftMatch[1]);
+      const leadMatches = artistWords.filter(w => leadArtistNorm.includes(w)).length;
+      if (leadMatches < Math.ceil(artistWords.length * 0.6)) {
+        return false;
+      }
+    }
+
+    const firstPartNorm = normalizeText(firstPart);
     const matchedInFirst = artistWords.filter(w => firstPartNorm.includes(w)).length;
     if (matchedInFirst >= Math.ceil(artistWords.length * 0.6)) {
       return true;
@@ -575,7 +588,11 @@ export function useMusicDiscovery({
                   const spotifyDur = track.duration_ms / 1000;
                   const queryWords = [...new Set(normalizeText(track.query).split(/\s+/).filter(w => w.length > 1))];
                   
-                  const badWords = ['karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 'remix', 'slowed', 'reverb', 'bass boosted'];
+                  const badWords = [
+                    'karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 
+                    'remix', 'slowed', 'reverb', 'bass boosted',
+                    'mashup', 'mash-up', 'mash up', 'bootleg', 'flip', 'sped up', 'speed up', 'nightcore'
+                  ];
                   
                   let validResults = results.map((r, index) => {
                       const ytCleanText = normalizeText(cleanTitleForArtistMatch(r.title) + " " + (r.channel || ''));
@@ -597,9 +614,24 @@ export function useMusicDiscovery({
                       const artistMatched = doesCandidateMatchArtist(r, artistWords, track.artist);
                       const titleMatched = doesCandidateMatchTitle(r, track.title);
 
+                      // Check if title is a mashup/feat where lead artist is someone else (e.g. "2Pac ft. Mariya Takeuchi")
+                      const rawLower = (r.title || '').toLowerCase();
+                      let ftLeadPenalty = 0;
+                      const hyphenIdx = rawLower.indexOf(' - ');
+                      if (hyphenIdx !== -1) {
+                        const prefix = rawLower.slice(0, hyphenIdx);
+                        if (prefix.includes(' ft. ') || prefix.includes(' ft ') || prefix.includes(' feat. ') || prefix.includes(' feat ')) {
+                          const ftSplit = prefix.split(' ft')[0].split(' feat')[0];
+                          if (!artistWords.some(w => ftSplit.includes(w))) {
+                            ftLeadPenalty = 500;
+                          }
+                        }
+                      }
+
                       // Penalties for mismatches:
                       // - Wrong artist: +500 (covers or wrong artists)
                       // - Wrong title: +500 (completely different song by the same artist!)
+                      // - Lead artist mismatch: +500 (other artist featuring target artist)
                       const artistPenalty = artistMatched ? 0 : 500;
                       const titlePenalty = titleMatched ? 0 : 500;
 
@@ -610,7 +642,7 @@ export function useMusicDiscovery({
                       
                       const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
                       const rankPenalty = index * 3;
-                      const score = artistPenalty + titlePenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
+                      const score = artistPenalty + titlePenalty + ftLeadPenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
                       
                       return {
                           ...r,

@@ -369,6 +369,7 @@ async fn scrape_regular_youtube_search(
 }
 
 /// Helper to clean title of parenthetical notes like (Mariya Takeuchi 1984), [Cover], etc.
+/// Also replaces punctuation that binds words together (like "no,oh" or "yes!") with spaces.
 fn clean_title_for_matching(title: &str) -> String {
     let mut clean = String::new();
     let mut depth = 0;
@@ -382,7 +383,11 @@ fn clean_title_for_matching(title: &str) -> String {
             }
             _ => {
                 if depth == 0 {
-                    clean.push(c);
+                    if c == ',' || c == '!' || c == '?' || c == ';' || c == ':' || c == '~' || c == '/' || c == '\\' {
+                        clean.push(' ');
+                    } else {
+                        clean.push(c);
+                    }
                 }
             }
         }
@@ -395,9 +400,11 @@ fn clean_title_for_matching(title: &str) -> String {
 /// - Songs are prioritized over videos (-25 bonus) ONLY when comparing the same song.
 /// - If a candidate's title does not match any query terms (different song), it receives a heavy penalty (+350).
 /// - If a candidate's channel does not match any artist terms (wrong artist), it receives a heavy penalty (+250).
+/// - Mashups, bootlegs, and "OtherArtist ft. TargetArtist" receive heavy penalties (+200 to +300).
 fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
     let clean_title = clean_title_for_matching(&v.title);
     let channel_lower = v.channel.to_lowercase();
+    let lower_raw_title = v.title.to_lowercase();
 
     let mut matched_title_words = 0;
     let mut matched_channel_words = 0;
@@ -429,29 +436,57 @@ fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
         score += 350;
     }
 
-    // Artist mismatch penalty:
-    // If the query contains 3+ words (typically Title + Artist) and the candidate's
-    // channel does not match ANY of the query words:
-    if query_words.len() >= 3 && matched_channel_words == 0 {
-        let is_label_channel = channel_lower.contains("records")
-            || channel_lower.contains("music")
-            || channel_lower.contains("vevo")
-            || channel_lower.contains("official")
-            || channel_lower.contains("topic");
-
-        if !is_label_channel {
-            // Distinct artist channel that does not match the requested artist (e.g. Flower.far, Friday Night Plans)
-            score += 250;
+    // Check if title has "OtherArtist ft. TargetArtist" format (e.g. "2Pac ft. Mariya Takeuchi")
+    // In that case, the main artist is 2Pac, not Mariya Takeuchi!
+    let is_ft_lead_mismatch = if let Some(hyphen_idx) = lower_raw_title.find(" - ") {
+        let prefix = &lower_raw_title[..hyphen_idx];
+        if prefix.contains(" ft. ") || prefix.contains(" ft ") || prefix.contains(" feat. ") || prefix.contains(" feat ") {
+            let ft_split = prefix.split(" ft").next().or_else(|| prefix.split(" feat").next()).unwrap_or("");
+            !query_words.iter().any(|&w| ft_split.contains(w))
         } else {
-            score += 80;
+            false
+        }
+    } else {
+        false
+    };
+
+    if is_ft_lead_mismatch {
+        score += 350;
+    }
+
+    // Artist mismatch penalty:
+    // If query has 3+ words and neither channel nor title prefix matches the artist:
+    if query_words.len() >= 3 && matched_channel_words == 0 {
+        let title_has_artist = if let Some(hyphen_idx) = lower_raw_title.find(" - ") {
+            let prefix = &lower_raw_title[..hyphen_idx];
+            query_words.iter().filter(|&w| prefix.contains(w)).count() >= 2
+        } else {
+            false
+        };
+
+        if !title_has_artist {
+            let is_label_channel = channel_lower.contains("records")
+                || channel_lower.contains("music")
+                || channel_lower.contains("vevo")
+                || channel_lower.contains("official")
+                || channel_lower.contains("topic");
+
+            if !is_label_channel {
+                score += 250;
+            } else {
+                score += 80;
+            }
         }
     }
 
-    // Penalize cover/karaoke/instrumental indicators if not requested in query
-    let lower_raw_title = v.title.to_lowercase();
-    for bad in &["karaoke", "cover", "instrumental", "tribute", "parody"] {
+    // Penalize mashups, remixes, bootlegs, sped up, slowed, karaoke if not requested in query
+    for bad in &[
+        "mashup", "mash-up", "mash up", "bootleg", "remix", 
+        "slowed", "reverb", "sped up", "speed up", "nightcore",
+        "karaoke", "instrumental", "tribute", "parody"
+    ] {
         if lower_raw_title.contains(bad) && !query_words.iter().any(|&w| w == *bad) {
-            score += 150;
+            score += 200;
         }
     }
 
@@ -1352,14 +1387,29 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            // 1. Enishi no Ito by Mariya Takeuchi (parenthetical furigana in query)
+            // 1. OH NO,OH YES! by Mariya Takeuchi (must reject 2Pac mashup and Tokimeki cover)
+            let results_ohno = search_youtube("OH NO,OH YES! Mariya Takeuchi".to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            assert!(!results_ohno.is_empty(), "OH NO,OH YES search should return results");
+            let top_ohno = &results_ohno[0];
+            println!("Top OH NO result: title={:?}, channel={:?}", top_ohno.title, top_ohno.channel);
+            assert!(
+                top_ohno.title.to_lowercase().contains("mariya takeuchi - oh no") || top_ohno.channel.to_lowercase().contains("mariya takeuchi"),
+                "Top result must be Mariya Takeuchi's Oh No Oh Yes, not a 2Pac mashup! Got: title={} channel={}",
+                top_ohno.title, top_ohno.channel
+            );
+            assert!(
+                !top_ohno.title.to_lowercase().contains("2pac"),
+                "Must not pick 2Pac mashup! Got: {}",
+                top_ohno.title
+            );
+
+            // 2. Enishi no Ito by Mariya Takeuchi (parenthetical furigana in query)
             let results_enishi = search_youtube("縁(えにし)の糸 Mariya Takeuchi".to_string(), Some("song".to_string()))
                 .await
                 .expect("Search should succeed");
             assert!(!results_enishi.is_empty(), "Enishi search should return results");
-            for (i, v) in results_enishi.iter().enumerate().take(5) {
-                println!("Enishi Result #{}: title={:?}, channel={:?}, duration={:?}, item_type={:?}", i, v.title, v.channel, v.duration, v.item_type);
-            }
             let top_enishi = &results_enishi[0];
             assert!(
                 top_enishi.title.contains("縁の糸") || top_enishi.title.contains("Enishi"),
@@ -1367,7 +1417,7 @@ mod tests {
                 top_enishi.title
             );
 
-            // 2. Plastic Love by Mariya Takeuchi (official video should beat wrong-artist covers)
+            // 3. Plastic Love by Mariya Takeuchi (official video should beat wrong-artist covers)
             let results_plastic = search_youtube("Plastic Love Mariya Takeuchi".to_string(), Some("song".to_string()))
                 .await
                 .expect("Search should succeed");
