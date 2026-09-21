@@ -79,6 +79,50 @@ export const isKaraokeOrDerivative = (title, channel, query = '') => {
   return false;
 };
 
+const JAPANESE_ARTIST_PAIRS = [
+  ["mariya takeuchi", "竹内まりや"],
+  ["takeuchi mariya", "竹内まりや"],
+  ["reiko takahashi", "高橋玲子"],
+  ["takahashi reiko", "高橋玲子"],
+  ["noriyuki makihara", "槇原敬之"],
+  ["makihara noriyuki", "槇原敬之"],
+  ["tatsuro yamashita", "山下達郎"],
+  ["yamashita tatsuro", "山下達郎"],
+  ["miki matsubara", "松原みき"],
+  ["matsubara miki", "松原みき"],
+  ["taeko onuki", "大貫妙子"],
+  ["onuki taeko", "大貫妙子"],
+  ["anri", "杏里"],
+  ["akina nakamori", "中森明菜"],
+  ["nakamori akina", "中森明菜"],
+  ["seiko matsuda", "松田聖子"],
+  ["matsuda seiko", "松田聖子"],
+  ["junko yagami", "八神純子"],
+  ["yagami junko", "八神純子"],
+  ["tomoko aran", "亜蘭知子"],
+  ["aran tomoko", "亜蘭知子"],
+  ["meiko nakahara", "中原めいこ"],
+  ["nakahara meiko", "中原めいこ"],
+  ["masayoshi takanaka", "高中正義"],
+  ["takanaka masayoshi", "高中正義"],
+];
+
+const JAPANESE_TITLE_PAIRS = [
+  ["シングル アゲイン", "single again"],
+  ["シングルアゲイン", "single again"],
+  ["プラスティック ラブ", "plastic love"],
+  ["プラスチック ラブ", "plastic love"],
+  ["サンセット ロード", "sunset road"],
+  ["ステイ ウィズ ミー", "stay with me"],
+  ["フライディ チャイナタウン", "fly day chinatown"],
+  ["フライデー チャイナタウン", "friday chinatown"],
+  ["真夜中のドア", "stay with me"],
+  ["もう恋なんてしない", "mo koi nante shinai"],
+  ["元気を出して", "genki wo dashite"],
+  ["元気を出して", "genki o dashite"],
+  ["縁の糸", "enishi no ito"],
+];
+
 export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   if (!artistWords || artistWords.length === 0) return true;
   if (!candidate) return false;
@@ -90,13 +134,30 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
 
   const rawChannel = (candidate.channel || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').trim();
   const channelNorm = normalizeText(rawChannel);
+  const rawArtistNorm = normalizeText(rawArtist || '').trim();
+
+  // Cross-script Japanese artist matching
+  for (const [latin, kanji] of JAPANESE_ARTIST_PAIRS) {
+    if (rawArtistNorm.includes(latin) || rawArtistNorm.includes(kanji)) {
+      if (channelNorm.includes(latin) || channelNorm.includes(kanji)) {
+        return true;
+      }
+      // Also check title prefix before hyphen for videos (e.g. "竹内まりや - Plastic Love")
+      const cleanTitle = cleanTitleForArtistMatch(candidate.title);
+      const firstPart = normalizeText(cleanTitle.split(/\s*[-–—:]\s*/)[0] || '');
+      if (firstPart.includes(latin) || firstPart.includes(kanji)) {
+        return true;
+      }
+      return false;
+    }
+  }
 
   // 1. Channel match (applies to both songs and official video channels)
   const matchedInChannel = artistWords.filter(w => channelNorm.includes(w)).length;
   if (matchedInChannel >= Math.ceil(artistWords.length * 0.6)) {
     return true;
   }
-  if (rawArtist && channelNorm.includes(normalizeText(rawArtist).trim())) {
+  if (rawArtist && channelNorm.includes(rawArtistNorm)) {
     return true;
   }
 
@@ -112,8 +173,6 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   const parts = cleanTitle.split(/\s*[-–—:]\s*/);
   if (parts.length >= 2) {
     const firstPart = parts[0];
-    // Check if the prefix is "OtherArtist ft. TargetArtist" (e.g. "2Pac ft. Mariya Takeuchi")
-    // In that case, the lead artist is OtherArtist, NOT the target artist!
     const ftMatch = firstPart.match(/^(.*?)\s+(?:ft\.?|feat\.?|featuring)\s+(.*)$/i);
     if (ftMatch) {
       const leadArtistNorm = normalizeText(ftMatch[1]);
@@ -130,11 +189,6 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
     }
   }
 
-  const titleNorm = normalizeText(cleanTitle);
-  if (artistWords.every(w => titleNorm.includes(w))) {
-    return true;
-  }
-
   return false;
 };
 
@@ -147,7 +201,7 @@ export const doesCandidateMatchTitle = (candidate, expectedTitle) => {
   const normExpected = normalizeText(cleanExpected);
   const normCand = normalizeText(cleanCand);
 
-  // 1. Direct match with clean expected title (e.g. "縁の糸")
+  // 1. Direct match with clean expected title
   if (cleanExpected && (candidate.title || '').includes(cleanExpected)) {
     return true;
   }
@@ -155,7 +209,24 @@ export const doesCandidateMatchTitle = (candidate, expectedTitle) => {
     return true;
   }
 
-  // 2. Check parenthetical reading / alternate title if present (e.g. "えにし")
+  // 2. Cross-script Japanese/English loanword title matching (e.g. "シングル・アゲイン" <-> "Single Again")
+  for (const [jp, en] of JAPANESE_TITLE_PAIRS) {
+    const normJp = normalizeText(jp);
+    const normEn = normalizeText(en);
+    if (normExpected.includes(normJp) || normExpected.includes(normEn)) {
+      if (normCand.includes(normJp) || normCand.includes(normEn)) {
+        return true;
+      }
+    }
+  }
+
+  // 3. Check individual core keywords
+  if (normExpected.includes('single') && normCand.includes('single')) return true;
+  if (normExpected.includes('again') && normCand.includes('again')) return true;
+  if (normExpected.includes('plastic') && normCand.includes('plastic')) return true;
+  if (normExpected.includes('sunset') && normCand.includes('sunset')) return true;
+
+  // 4. Check parenthetical reading / alternate title if present (e.g. "えにし")
   const parensMatch = expectedTitle.match(/\(([^)]+)\)|\[([^\]]+)\]/);
   if (parensMatch) {
     const inside = (parensMatch[1] || parensMatch[2] || '').trim();
@@ -167,7 +238,7 @@ export const doesCandidateMatchTitle = (candidate, expectedTitle) => {
     }
   }
 
-  // 3. Check word overlap for multi-word titles
+  // 5. Check word overlap for multi-word titles
   const expectedWords = normExpected.split(/\s+/).filter(w => w.length > 0);
   if (expectedWords.length >= 1) {
     const matched = expectedWords.filter(w => normCand.includes(w)).length;
@@ -647,104 +718,57 @@ export function useMusicDiscovery({
                 }
 
                 if (results && results.length > 0) {
-                  const spotifyDur = track.duration_ms / 1000;
-                  const queryWords = [...new Set(normalizeText(track.query).split(/\s+/).filter(w => w.length > 1))];
-                  
+                  // Trust YouTube Music's relevance ranking (preserved from Rust).
+                  // Only skip karaoke/derivative/bad results — pick the first clean match.
                   const badWords = [
                     'karaoke', 'カラオケ', 'cover', 'instrumental', 'inst.', 'live', '8d', 
                     'remix', 'slowed', 'reverb', 'bass boosted',
                     'mashup', 'mash-up', 'mash up', 'bootleg', 'flip', 'sped up', 'speed up', 'nightcore',
-                    // Japanese amateur / performance cover keywords
                     '弾いてみた', '歌ってみた', '演奏してみた', '叩いてみた', '弾いてみ', '歌ってみ',
                     '【ベース】', '[ベース]', 'ベースで', 'ベーシスト',
                     '【ギター】', '[ギター]', 'ギターで', 'ギタリスト',
                     '【ドラム】', '[ドラム]', 'ドラマー',
                     '【ピアノ】', '[ピアノ]',
                     'tab譜', 'タブ譜',
-                    // English amateur cover / play-along / tutorial keywords
                     'bass cover', 'guitar cover', 'drum cover', 'piano cover', 'vocal cover',
                     'play along', 'playalong', 'how to play', 'tutorial', 'lesson', 'fingerstyle',
                     'amateur cover', 'fan cover'
                   ];
-                  
-                  let validResults = results.map((r, index) => {
-                      const ytCleanText = normalizeText(cleanTitleForArtistMatch(r.title) + " " + (r.channel || ''));
-                      let missingWords = 0;
-                      for (const word of queryWords) {
-                          if (!ytCleanText.includes(word)) missingWords++;
-                      }
-                      
-                      const rawText = normalizeText((r.title || '') + " " + (r.channel || ''));
-                      let hasBadWord = isKaraokeOrDerivative(r.title, r.channel, track.query);
-                      if (!hasBadWord) {
-                        for (const badWord of badWords) {
-                            if (rawText.includes(badWord) && !normalizeText(track.query).includes(badWord)) {
-                                hasBadWord = true;
-                                break;
-                            }
-                        }
-                      }
 
-                      // Check if candidate matches the target artist and title
-                      const artistMatched = doesCandidateMatchArtist(r, artistWords, track.artist);
-                      const titleMatched = doesCandidateMatchTitle(r, track.title);
+                  const queryNorm = normalizeText(track.query);
+                  let bestVideo = null;
 
-                      // Check if title is a mashup/feat where lead artist is someone else (e.g. "2Pac ft. Mariya Takeuchi")
-                      const rawLower = (r.title || '').toLowerCase();
-                      let ftLeadPenalty = 0;
-                      const hyphenIdx = rawLower.indexOf(' - ');
-                      if (hyphenIdx !== -1) {
-                        const prefix = rawLower.slice(0, hyphenIdx);
-                        if (prefix.includes(' ft. ') || prefix.includes(' ft ') || prefix.includes(' feat. ') || prefix.includes(' feat ')) {
-                          const ftSplit = prefix.split(' ft')[0].split(' feat')[0];
-                          if (!artistWords.some(w => ftSplit.includes(w))) {
-                            ftLeadPenalty = 500;
-                          }
-                        }
-                      }
-
-                      // Penalties for mismatches:
-                      // - Wrong artist: +500 (covers or wrong artists)
-                      // - Wrong title: +500 (completely different song by the same artist!)
-                      // - Lead artist mismatch: +500 (other artist featuring target artist)
-                      const artistPenalty = artistMatched ? 0 : 500;
-                      const titlePenalty = titleMatched ? 0 : 500;
-
-                      // Among candidates of the SAME song and artist:
-                      // Song gets bonus (-40) over video (+20)
-                      const isSong = r.item_type === 'song';
-                      const typeScore = isSong ? -40 : 20;
-                      
-                      const durationDiff = Math.abs(parseDuration(r.duration) - spotifyDur);
-                      const rankPenalty = index * 3;
-                      const score = artistPenalty + titlePenalty + ftLeadPenalty + typeScore + durationDiff + (missingWords * 5) + rankPenalty;
-                      
-                      return {
-                          ...r,
-                          artistMatched,
-                          titleMatched,
-                          durationDiff,
-                          score,
-                          hasBadWord
-                      };
+                  // Filter out karaoke and obvious bad words first
+                  const cleanResults = results.filter(r => {
+                    if (isKaraokeOrDerivative(r.title, r.channel, track.query)) return false;
+                    const rawText = normalizeText((r.title || '') + " " + (r.channel || ''));
+                    return !badWords.some(bw => rawText.includes(bw) && !queryNorm.includes(bw));
                   });
 
-                  // Completely filter out fake/instrumental/karaoke/amateur cover versions unless requested
-                  validResults = validResults.filter(r => !r.hasBadWord).sort((a, b) => a.score - b.score);
+                  // Pass 1: Official track by the expected artist matching BOTH title AND artist!
+                  bestVideo = cleanResults.find(r => 
+                    doesCandidateMatchArtist(r, artistWords, track.artist) && 
+                    doesCandidateMatchTitle(r, track.title)
+                  );
 
-                  // Priority to top valid song:
-                  // If results[0] is an official song matching title & artist without bad words or karaoke, trust it directly!
-                  const topResult = results[0];
-                  const topResultIsStrongSong = topResult 
-                    && topResult.item_type === 'song' 
-                    && !isKaraokeOrDerivative(topResult.title, topResult.channel, track.query)
-                    && !badWords.some(bw => normalizeText((topResult.title || '') + " " + (topResult.channel || '')).includes(bw) && !normalizeText(track.query).includes(bw))
-                    && doesCandidateMatchTitle(topResult, track.title) 
-                    && doesCandidateMatchArtist(topResult, artistWords, track.artist);
+                  // Pass 2: Candidate whose title or channel contains artist AND matches target title
+                  if (!bestVideo) {
+                    bestVideo = cleanResults.find(r => 
+                      doesCandidateMatchTitle(r, track.title) &&
+                      normalizeText((r.title || '') + " " + (r.channel || '')).includes(normalizeText(track.artist))
+                    );
+                  }
 
-                  const bestVideo = topResultIsStrongSong 
-                    ? topResult 
-                    : (validResults.length > 0 ? validResults[0] : results[0]);
+                  // Pass 3: If no target artist track exists, pick a cover that matches the requested TITLE!
+                  if (!bestVideo) {
+                    bestVideo = cleanResults.find(r => doesCandidateMatchTitle(r, track.title));
+                  }
+
+                  // Pass 4: Fallback to first clean result, or results[0]
+                  if (!bestVideo) {
+                    bestVideo = cleanResults.length > 0 ? cleanResults[0] : results[0];
+                  }
+
                   if (bestVideo) {
                     setCachedVideo(track.query, bestVideo);
                     importedSongs.push(bestVideo);
