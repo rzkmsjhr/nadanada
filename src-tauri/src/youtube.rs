@@ -404,14 +404,80 @@ fn has_cjk(s: &str) -> bool {
     })
 }
 
+/// Identifies karaoke, vocal-less backing tracks, key shifts, play-along covers, and tutorials.
+fn is_karaoke_or_derivative(title: &str, channel: &str, query: &str) -> bool {
+    let lower_title = title.to_lowercase();
+    let lower_channel = channel.to_lowercase();
+    let lower_query = query.to_lowercase();
+
+    if lower_query.contains("karaoke") || lower_query.contains("カラオケ") || lower_query.contains("instrumental") {
+        return false;
+    }
+
+    // Known karaoke / backing track producer channels
+    if lower_channel.contains("歌っちゃ王") 
+        || lower_channel.contains("karafun")
+        || lower_channel.contains("sing king")
+        || lower_channel.contains("生音風カラオケ")
+        || lower_channel.contains("カラオケ") 
+    {
+        return true;
+    }
+
+    let bad_phrases = [
+        "歌っちゃ王", "原曲歌手", "原曲キー", "キー上げ", "キー下げ",
+        "ガイドメロ", "ガイドなし", "ガイド音", "ガイドボーカル",
+        "カラオケ", "karaoke",
+        "off vocal", "offvocal", "off-vocal", "without vocal", "no vocal",
+        "backing track", "minus one",
+        "弾いてみた", "歌ってみた", "演奏してみた", "叩いてみた", "弾いてみ", "歌ってみ",
+        "【ベース】", "[ベース]", "ベースで", "ベーシスト",
+        "【ギター】", "[ギター]", "ギターで", "ギタリスト",
+        "【ドラム】", "[ドラム]", "ドラマー",
+        "【ピアノ】", "[ピアノ]",
+        "tab譜", "タブ譜",
+        "bass cover", "guitar cover", "drum cover", "piano cover", "vocal cover",
+        "play along", "playalong", "tutorial", "how to play", "lesson", "fingerstyle",
+        "amateur cover", "fan cover",
+        "mashup", "mash-up", "mash up", "bootleg", "remix", 
+        "slowed", "reverb", "sped up", "speed up", "nightcore",
+        "instrumental", "tribute", "parody"
+    ];
+
+    for bad in &bad_phrases {
+        if (lower_title.contains(bad) || lower_channel.contains(bad)) && !lower_query.contains(bad) {
+            return true;
+        }
+    }
+
+    // Key shift notation: +4Key, -2Key, +1 key, key+3, etc.
+    let title_bytes = lower_title.as_bytes();
+    for (i, &b) in title_bytes.iter().enumerate() {
+        if b == b'+' || b == b'-' {
+            let rest = &lower_title[i+1..];
+            let trimmed = rest.trim_start();
+            if let Some(digit_len) = trimmed.find(|c: char| !c.is_ascii_digit()) {
+                if digit_len > 0 && digit_len <= 2 {
+                    let after_digits = trimmed[digit_len..].trim_start();
+                    if after_digits.starts_with("key") || after_digits.starts_with("キー") {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
+}
+
 /// Computes a relevance score for a search candidate.
 /// Lower is better.
 /// - Songs are prioritized over videos (-30 bonus) ONLY when comparing the same song.
 /// - If a candidate's title does not match any query terms (different song), it receives a heavy penalty (+350).
 /// - If a candidate's channel does not match any artist terms (wrong artist), it receives a heavy penalty (+250).
 /// - Mashups, bootlegs, and "OtherArtist ft. TargetArtist" receive heavy penalties (+200 to +350).
-/// - Amateur covers, play-along videos, tabs, tutorials (e.g. 弾いてみた, ベース) receive heavy penalties (+450).
-fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
+/// - Karaoke, backing tracks, and amateur covers receive heavy penalties (+600).
+fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i32 {
     let clean_title = clean_title_for_matching(&v.title);
     let channel_lower = v.channel.to_lowercase();
     let lower_raw_title = v.title.to_lowercase();
@@ -429,13 +495,14 @@ fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
     }
 
     let is_song = v.item_type.as_deref() == Some("song");
-    let query_has_cjk = query_words.iter().any(|&w| has_cjk(w));
     let channel_has_cjk = has_cjk(&channel_lower);
 
-    // If query has CJK (e.g. "高橋玲子") and channel is Latin ("reiko takahashi") or vice-versa,
-    // and candidate is a Song returned by YTM for this query matching the title,
-    // YouTube Music already resolved the artist entity across scripts.
-    let script_mismatch_artist_song = is_song && matched_title_words >= 1 && (query_has_cjk != channel_has_cjk);
+    // Only consider cross-script mapping if an UNMATCHED query word has CJK and channel is Latin
+    // (e.g. title matched "サンセット・ロード", and unmatched artist word is "高橋玲子" while channel is "Reiko Takahashi")
+    let has_unmatched_cjk_artist_word = query_words.iter().any(|&w| {
+        !clean_title.contains(w) && !channel_lower.contains(w) && has_cjk(w) && !channel_has_cjk
+    });
+    let script_mismatch_artist_song = is_song && matched_title_words >= 1 && has_unmatched_cjk_artist_word;
 
     let total_matched = query_words
         .iter()
@@ -503,27 +570,9 @@ fn score_search_candidate(v: &Video, query_words: &[&str]) -> i32 {
         }
     }
 
-    // Penalize amateur covers, play-along, tabs, tutorials, mashups, etc.
-    let amateur_or_derivative = [
-        "弾いてみた", "歌ってみた", "演奏してみた", "叩いてみた", "弾いてみ", "歌ってみ",
-        "【ベース】", "[ベース]", "ベースで", "ベーシスト",
-        "【ギター】", "[ギター]", "ギターで", "ギタリスト",
-        "【ドラム】", "[ドラム]", "ドラマー",
-        "【ピアノ】", "[ピアノ]",
-        "tab譜", "タブ譜",
-        "bass cover", "guitar cover", "drum cover", "piano cover", "vocal cover",
-        "play along", "playalong", "tutorial", "how to play", "lesson", "fingerstyle",
-        "amateur cover", "fan cover",
-        "mashup", "mash-up", "mash up", "bootleg", "remix", 
-        "slowed", "reverb", "sped up", "speed up", "nightcore",
-        "karaoke", "カラオケ", "instrumental", "tribute", "parody"
-    ];
-
-    for bad in &amateur_or_derivative {
-        if (lower_raw_title.contains(bad) || channel_lower.contains(bad)) && !query_words.iter().any(|&w| w.contains(bad)) {
-            score += 450;
-            break;
-        }
+    // Penalize karaoke, backing tracks, amateur covers, key shifts, etc.
+    if is_karaoke_or_derivative(&v.title, &v.channel, raw_query) {
+        score += 600;
     }
 
     // Song bonus: if the candidate matches title and artist, Song takes priority (-30) over Video (0)
@@ -557,12 +606,14 @@ pub async fn search_youtube(
                 if query_words.len() >= 2 {
                     // Check if any song strongly matches BOTH title and channel/artist.
                     // A strong match requires:
-                    // 1) Candidate is a song
+                    // 1) Candidate is a song and NOT karaoke / derivative
                     // 2) Clean title matches at least one query word
-                    // 3) Artist is matched either directly or via CJK/Latin script mismatch
-                    let query_has_cjk = query_words.iter().any(|&w| has_cjk(w));
+                    // 3) Artist is matched either directly or via unmatched CJK/Latin script mismatch
                     let has_strong_match = results.iter().any(|v| {
                         if v.item_type.as_deref() != Some("song") {
+                            return false;
+                        }
+                        if is_karaoke_or_derivative(&v.title, &v.channel, &query) {
                             return false;
                         }
                         let clean_title = clean_title_for_matching(&v.title);
@@ -574,12 +625,16 @@ pub async fn search_youtube(
                             return false;
                         }
 
+                        let has_unmatched_cjk = query_words.iter().any(|&w| {
+                            !clean_title.contains(w) && !channel.contains(w) && has_cjk(w) && !channel_has_cjk
+                        });
+
                         let channel_matched = if query_words.len() >= 3 {
                             query_words.iter().any(|&w| channel.contains(w))
-                                || (query_has_cjk != channel_has_cjk)
+                                || has_unmatched_cjk
                         } else {
                             query_words.iter().any(|&w| channel.contains(w))
-                                || (query_has_cjk != channel_has_cjk)
+                                || has_unmatched_cjk
                         };
 
                         let all_matched = query_words.iter().all(|&w| {
@@ -592,7 +647,7 @@ pub async fn search_youtube(
                     });
 
                     if !has_strong_match {
-                        // Song results only returned wrong-artist covers, different songs by same artist, or incomplete matches.
+                        // Song results only returned wrong-artist covers, different songs by same artist, karaoke, or incomplete matches.
                         // Fetch videos so the original track's video can be ranked!
                         if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
                             for vid in video_results {
@@ -606,7 +661,7 @@ pub async fn search_youtube(
                     // Sort candidates using score_search_candidate:
                     // Songs are preferred (-30) when artist and title match.
                     // But if a song has the wrong artist or wrong title, the real track's video wins!
-                    results.sort_by_key(|v| score_search_candidate(v, &query_words));
+                    results.sort_by_key(|v| score_search_candidate(v, &query_words, &query));
                 }
             }
             return Ok(results);
@@ -1500,17 +1555,22 @@ mod tests {
                 top_kanji.title, top_kanji.channel
             );
 
-            // 5. Sunset Road by Reiko Takahashi (Romaji query)
-            let results_romaji = search_youtube("サンセット・ロード Reiko Takahashi".to_string(), Some("song".to_string()))
+            // 5. Genki o Dashite by Mariya Takeuchi (must reject Utacchaoh karaoke and pick Mariya Takeuchi)
+            let results_genki = search_youtube("元気を出して Mariya Takeuchi".to_string(), Some("song".to_string()))
                 .await
                 .expect("Search should succeed");
-            assert!(!results_romaji.is_empty(), "Sunset search should return results");
-            let top_romaji = &results_romaji[0];
-            assert_eq!(top_romaji.item_type.as_deref(), Some("song"), "Top result must be a song");
+            assert!(!results_genki.is_empty(), "Genki search should return results");
+            let top_genki = &results_genki[0];
+            println!("Top Genki result: title={:?}, channel={:?}", top_genki.title, top_genki.channel);
             assert!(
-                top_romaji.title.contains("サンセット・ロード") && top_romaji.channel.to_lowercase().contains("reiko takahashi"),
-                "Top result must be Reiko Takahashi's official Sunset Road song! Got: title={} channel={}",
-                top_romaji.title, top_romaji.channel
+                top_genki.title.contains("元気を出して") && top_genki.channel.to_lowercase().contains("mariya takeuchi"),
+                "Top result must be Mariya Takeuchi's Genki o Dashite! Got: title={} channel={}",
+                top_genki.title, top_genki.channel
+            );
+            assert!(
+                !top_genki.title.contains("歌っちゃ王") && !top_genki.channel.contains("歌っちゃ王") && !top_genki.title.contains("Key"),
+                "Must never pick karaoke! Got: title={} channel={}",
+                top_genki.title, top_genki.channel
             );
         });
     }

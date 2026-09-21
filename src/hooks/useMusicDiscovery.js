@@ -22,9 +22,71 @@ export const cleanTitleForArtistMatch = (title) => {
     .trim();
 };
 
+export const isKaraokeOrDerivative = (title, channel, query = '') => {
+  const normTitle = (title || '').toLowerCase();
+  const normChannel = (channel || '').toLowerCase();
+  const fullText = normTitle + ' ' + normChannel;
+  const queryNorm = (query || '').toLowerCase();
+
+  // If query explicitly requested karaoke/instrumental, allow it
+  if (queryNorm.includes('karaoke') || queryNorm.includes('カラオケ') || queryNorm.includes('instrumental')) {
+    return false;
+  }
+
+  // 1. Karaoke channels & artists
+  if (
+    normChannel.includes('歌っちゃ王') || 
+    normChannel.includes('karafun') || 
+    normChannel.includes('sing king') || 
+    normChannel.includes('生音風カラオケ') ||
+    normChannel.includes('カラオケ')
+  ) {
+    return true;
+  }
+
+  // 2. Japanese & English karaoke / cover / play-along terms
+  const badPhrases = [
+    '歌っちゃ王', '原曲歌手', '原曲キー', 'キー上げ', 'キー下げ',
+    'ガイドメロ', 'ガイドなし', 'ガイド音', 'ガイドボーカル',
+    'カラオケ', 'karaoke',
+    'off vocal', 'offvocal', 'off-vocal', 'without vocal', 'no vocal',
+    'backing track', 'minus one',
+    '弾いてみた', '歌ってみた', '演奏してみた', '叩いてみた', '弾いてみ', '歌ってみ',
+    '【ベース】', '[ベース]', 'ベースで', 'ベーシスト',
+    '【ギター】', '[ギター]', 'ギターで', 'ギタリスト',
+    '【ドラム】', '[ドラム]', 'ドラマー',
+    '【ピアノ】', '[ピアノ]',
+    'tab譜', 'タブ譜',
+    'bass cover', 'guitar cover', 'drum cover', 'piano cover', 'vocal cover',
+    'play along', 'playalong', 'tutorial', 'how to play', 'fingerstyle',
+    'amateur cover', 'fan cover',
+    'mashup', 'mash-up', 'mash up', 'bootleg', 'remix',
+    'slowed', 'reverb', 'sped up', 'speed up', 'nightcore',
+    'instrumental', 'inst.', 'tribute', 'parody'
+  ];
+
+  for (const bad of badPhrases) {
+    if (fullText.includes(bad)) {
+      return true;
+    }
+  }
+
+  // 3. Key shift notation: e.g. "+4Key", "-2 key", "key+3", "Key-1", "+4キー"
+  if (/[+-]\s*\d+\s*(?:key|キー)/i.test(normTitle) || /(?:key|キー)\s*[+-]\s*\d+/i.test(normTitle)) {
+    return true;
+  }
+
+  return false;
+};
+
 export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   if (!artistWords || artistWords.length === 0) return true;
   if (!candidate) return false;
+
+  // Never match karaoke or derivative tracks as the original artist
+  if (isKaraokeOrDerivative(candidate.title, candidate.channel)) {
+    return false;
+  }
 
   const rawChannel = (candidate.channel || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').trim();
   const channelNorm = normalizeText(rawChannel);
@@ -38,21 +100,9 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
     return true;
   }
 
-  // Check CJK vs Latin script difference (e.g. "高橋玲子" vs "Reiko Takahashi")
-  const hasCjk = (str) => /[\u3040-\u30ff\u4e00-\u9faf\uac00-\ud7af]/.test(str);
-  const artistHasCjk = hasCjk(rawArtist || '') || artistWords.some(w => hasCjk(w));
-  const channelHasCjk = hasCjk(rawChannel);
-
-  // If candidate is a song returned by YouTube Music search for this artist,
-  // and one is CJK while the other is Latin, YouTube Music mapped the artist entity across scripts.
-  if (candidate.item_type === 'song' && (artistHasCjk !== channelHasCjk)) {
-    return true;
-  }
-
   // 2. For songs: in YouTube Music, the artist is ALWAYS the channel.
-  // If channel didn't match and both are same script (e.g. Flower.far vs Mariya Takeuchi),
-  // this song is a cover / different artist.
-  // Notes in title (e.g. "(Mariya Takeuchi 1984)" or "(Cover)") are NOT the performer!
+  // If channel didn't match, this song is a cover / different artist / karaoke producer.
+  // Notes in title (e.g. "(Mariya Takeuchi 1984)" or "(原曲歌手:竹内まりや)") are NOT the performer!
   if (candidate.item_type === 'song') {
     return false;
   }
@@ -625,12 +675,14 @@ export function useMusicDiscovery({
                       }
                       
                       const rawText = normalizeText((r.title || '') + " " + (r.channel || ''));
-                      let hasBadWord = false;
-                      for (const badWord of badWords) {
-                          if (rawText.includes(badWord) && !normalizeText(track.query).includes(badWord)) {
-                              hasBadWord = true;
-                              break;
-                          }
+                      let hasBadWord = isKaraokeOrDerivative(r.title, r.channel, track.query);
+                      if (!hasBadWord) {
+                        for (const badWord of badWords) {
+                            if (rawText.includes(badWord) && !normalizeText(track.query).includes(badWord)) {
+                                hasBadWord = true;
+                                break;
+                            }
+                        }
                       }
 
                       // Check if candidate matches the target artist and title
@@ -681,10 +733,11 @@ export function useMusicDiscovery({
                   validResults = validResults.filter(r => !r.hasBadWord).sort((a, b) => a.score - b.score);
 
                   // Priority to top valid song:
-                  // If results[0] is an official song matching title & artist without bad words, trust it directly!
+                  // If results[0] is an official song matching title & artist without bad words or karaoke, trust it directly!
                   const topResult = results[0];
                   const topResultIsStrongSong = topResult 
                     && topResult.item_type === 'song' 
+                    && !isKaraokeOrDerivative(topResult.title, topResult.channel, track.query)
                     && !badWords.some(bw => normalizeText((topResult.title || '') + " " + (topResult.channel || '')).includes(bw) && !normalizeText(track.query).includes(bw))
                     && doesCandidateMatchTitle(topResult, track.title) 
                     && doesCandidateMatchArtist(topResult, artistWords, track.artist);
