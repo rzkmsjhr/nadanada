@@ -368,8 +368,28 @@ async fn scrape_regular_youtube_search(
     Err("ytInitialData not found".to_string())
 }
 
+/// Helper to parse duration string (e.g. "3:33", "1:46:12") into seconds
+fn parse_duration_secs(dur: &str) -> u64 {
+    let parts: Vec<&str> = dur.trim().split(':').collect();
+    match parts.len() {
+        3 => {
+            let h: u64 = parts[0].parse().unwrap_or(0);
+            let m: u64 = parts[1].parse().unwrap_or(0);
+            let s: u64 = parts[2].parse().unwrap_or(0);
+            h * 3600 + m * 60 + s
+        }
+        2 => {
+            let m: u64 = parts[0].parse().unwrap_or(0);
+            let s: u64 = parts[1].parse().unwrap_or(0);
+            m * 60 + s
+        }
+        1 => parts[0].parse().unwrap_or(0),
+        _ => 0,
+    }
+}
+
 /// Helper to clean title of parenthetical notes like (Mariya Takeuchi 1984), [Cover], etc.
-/// Also replaces punctuation that binds words together (like "no,oh" or "yes!") with spaces.
+/// Also replaces punctuation that binds words together (like "no,oh", "yes!", or "artist-title") with spaces.
 fn clean_title_for_matching(title: &str) -> String {
     let mut clean = String::new();
     let mut depth = 0;
@@ -383,10 +403,10 @@ fn clean_title_for_matching(title: &str) -> String {
             }
             _ => {
                 if depth == 0 {
-                    if c == ',' || c == '!' || c == '?' || c == ';' || c == ':' || c == '~' || c == '/' || c == '\\' {
-                        clean.push(' ');
-                    } else {
+                    if c.is_alphanumeric() {
                         clean.push(c);
+                    } else {
+                        clean.push(' ');
                     }
                 }
             }
@@ -511,18 +531,14 @@ fn title_matches_term(clean_title: &str, term: &str) -> bool {
 
 /// Cross-script Japanese/Latin artist matching (e.g. Mariya Takeuchi <-> 竹内まりや)
 /// Only checks channel and title prefix (e.g. "Artist - Song"), NEVER parenthetical notes like (Mariya Takeuchi 1984)
+/// Robust artist matching against query
+/// Checks cross-script pairs, channel words against query, query parts against channel, and video title prefix
 fn artist_matches_query(channel: &str, title: &str, raw_query: &str) -> bool {
     let lower_ch = channel.to_lowercase();
     let lower_title = title.to_lowercase();
     let lower_query = raw_query.to_lowercase();
 
-    // Check if title has "Artist - Title" prefix
-    let title_prefix = lower_title.split_once(" - ")
-        .or_else(|| lower_title.split_once(" ~ "))
-        .or_else(|| lower_title.split_once(": "))
-        .map(|(p, _)| p.trim())
-        .unwrap_or("");
-
+    // 1. Cross-script Japanese/Latin pairs
     let pairs = [
         ("mariya takeuchi", "竹内まりや"),
         ("takeuchi mariya", "竹内まりや"),
@@ -553,20 +569,54 @@ fn artist_matches_query(channel: &str, title: &str, raw_query: &str) -> bool {
 
     for &(latin, kanji) in &pairs {
         if lower_query.contains(latin) || lower_query.contains(kanji) {
-            // Target artist IS this pair!
             return lower_ch.contains(latin) || lower_ch.contains(kanji)
-                || title_prefix.contains(latin) || title_prefix.contains(kanji);
+                || lower_title.starts_with(latin) || lower_title.starts_with(kanji);
         }
     }
 
-    // General case: check if channel or title prefix matches any trailing words of query
-    let words: Vec<&str> = lower_query.split_whitespace().collect();
-    if words.len() >= 2 {
-        let last_word = words[words.len() - 1];
-        let second_last = words[words.len() - 2];
-        if (last_word.len() > 2 && (lower_ch.contains(last_word) || title_prefix.contains(last_word)))
-            || (second_last.len() > 2 && (lower_ch.contains(second_last) || title_prefix.contains(second_last)))
-        {
+    // Clean channel name: strip "- topic", "vevo", "official", "channel"
+    let clean_ch = lower_ch
+        .replace("- topic", "")
+        .replace("vevo", "")
+        .replace("official", "")
+        .replace("channel", "")
+        .trim()
+        .to_string();
+
+    // 2. If query has "Part1 - Part2" format (e.g. "Tulus - Teh Hijau" or "Teh Hijau - Tulus")
+    if let Some((p1, p2)) = lower_query.split_once(" - ")
+        .or_else(|| lower_query.split_once(" ~ "))
+        .or_else(|| lower_query.split_once(" – "))
+        .or_else(|| lower_query.split_once(" — "))
+    {
+        let p1_clean = p1.trim();
+        let p2_clean = p2.trim();
+        if !p1_clean.is_empty() && (clean_ch == p1_clean || clean_ch.contains(p1_clean) || p1_clean.contains(&clean_ch)) {
+            return true;
+        }
+        if !p2_clean.is_empty() && (clean_ch == p2_clean || clean_ch.contains(p2_clean) || p2_clean.contains(&clean_ch)) {
+            return true;
+        }
+    }
+
+    // 3. Significant word matching in channel:
+    // If any significant word in channel (len >= 3, not stopword) is present in query:
+    let ch_words: Vec<&str> = clean_ch
+        .split_whitespace()
+        .filter(|w| w.len() >= 3 && !is_title_stopword(w))
+        .collect();
+    if !ch_words.is_empty() && ch_words.iter().any(|&cw| lower_query.contains(cw)) {
+        return true;
+    }
+
+    // 4. For videos: If video title starts with "Artist - Title" and artist words are in query
+    if let Some((prefix, _)) = lower_title.split_once(" - ") {
+        let prefix_clean = prefix.trim();
+        let prefix_words: Vec<&str> = prefix_clean
+            .split_whitespace()
+            .filter(|w| w.len() >= 3 && !is_title_stopword(w))
+            .collect();
+        if !prefix_words.is_empty() && prefix_words.iter().all(|&pw| lower_query.contains(pw)) {
             return true;
         }
     }
@@ -583,7 +633,7 @@ fn has_cjk(s: &str) -> bool {
     })
 }
 
-/// Identifies karaoke, vocal-less backing tracks, key shifts, play-along covers, and tutorials.
+/// Identifies karaoke, vocal-less backing tracks, key shifts, play-along covers, tutorials, and DJ megamixes.
 fn is_karaoke_or_derivative(title: &str, channel: &str, query: &str) -> bool {
     let lower_title = title.to_lowercase();
     let lower_channel = channel.to_lowercase();
@@ -618,9 +668,17 @@ fn is_karaoke_or_derivative(title: &str, channel: &str, query: &str) -> bool {
         "bass cover", "guitar cover", "drum cover", "piano cover", "vocal cover",
         "play along", "playalong", "tutorial", "how to play", "lesson", "fingerstyle",
         "amateur cover", "fan cover",
-        "mashup", "mash-up", "mash up", "bootleg", "remix", 
+        "mashup", "mash-up", "mash up", "bootleg",
         "slowed", "reverb", "sped up", "speed up", "nightcore",
-        "instrumental", "tribute", "parody"
+        "instrumental", "tribute", "parody",
+        // Additional covers & amateur performance
+        "cover by", "covered by", "(cover)", "[cover]", " cover",
+        // DJ / Remix / Koplo / Hipdut
+        "dj ", "dj.", "dj-", "dj_", "remix", "rmx", "koplo", "hipdut", "jedag jedug", "funkot",
+        "tiktok", "tik tok",
+        // Lyrics channels / Megamixes / Music box
+        "lirik", "lyric video", "lyrics video", "lirik lagu", "music box", "オルゴール", "orgel",
+        "originally performed by", "original performer", "megamix", "kompilasi"
     ];
 
     for bad in &bad_phrases {
@@ -655,11 +713,12 @@ fn is_title_stopword(w: &str) -> bool {
 
 /// Computes a relevance score for a search candidate.
 /// Lower is better.
-/// - Songs are prioritized over videos (-30 bonus) ONLY when comparing the same song AND artist!
-/// - If a candidate's title does not match any query terms (different song), it receives a heavy penalty (+450).
-/// - If a candidate's channel does not match any artist terms (wrong artist), it receives a penalty (+300).
+/// - Songs are prioritized over videos (-150 bonus) ONLY when comparing the same song AND artist!
+/// - If a candidate's title does not match any query terms (different song), it receives a heavy penalty (+500).
+/// - If a candidate's channel does not match any artist terms (wrong artist), it receives a penalty (+500).
 /// - Mashups, bootlegs, and "OtherArtist ft. TargetArtist" receive heavy penalties (+400).
-/// - Karaoke, backing tracks, and amateur covers receive heavy penalties (+800).
+/// - Durations > 10 minutes receive massive penalties (+1500) for song queries.
+/// - Karaoke, backing tracks, amateur covers, and DJ compilations receive heavy penalties (+1000).
 fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i32 {
     let clean_title = clean_title_for_matching(&v.title);
     let channel_lower = v.channel.to_lowercase();
@@ -698,16 +757,13 @@ fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i
     score += (missing as i32) * 40;
 
     // Title mismatch penalty:
-    // If the candidate's title does not match the core query terms, it is a completely
-    // DIFFERENT SONG! It must receive a massive penalty (+450) so it never beats the requested track.
     if !title_matched {
-        score += 450;
+        score += 500;
     }
 
     // Artist mismatch penalty:
-    // If candidate does NOT match the artist at all (wrong artist cover): +300
     if !artist_matched {
-        score += 300;
+        score += 500;
     }
 
     // Check if title has "OtherArtist ft. TargetArtist" format (e.g. "2Pac ft. Mariya Takeuchi")
@@ -727,15 +783,24 @@ fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i
         score += 400;
     }
 
-    // Penalize karaoke, backing tracks, amateur covers, key shifts, etc.
-    if is_karaoke_or_derivative(&v.title, &v.channel, raw_query) {
-        score += 800;
+    // Duration penalty: single tracks must not exceed 10 minutes (600s)
+    let secs = parse_duration_secs(&v.duration);
+    if secs > 600 {
+        score += 1500;
     }
 
-    // Song bonus: ONLY when the candidate matches BOTH title AND artist!
-    // A song bonus must NEVER be given to a different song by the same artist!
+    // Penalize karaoke, backing tracks, amateur covers, DJ compilations, etc.
+    if is_karaoke_or_derivative(&v.title, &v.channel, raw_query) {
+        score += 1000;
+    }
+
+    // Official Song bonus:
+    // If candidate is an official song matching title & artist, grant strong bonus (-150)
+    // If candidate is a video, penalize +50 relative to official songs
     if is_song && title_matched && artist_matched {
-        score -= 30;
+        score -= 150;
+    } else if !is_song {
+        score += 50;
     }
 
     score
@@ -765,13 +830,17 @@ pub async fn search_youtube(
                     // Check if any song strongly matches BOTH title and channel/artist.
                     // A strong match requires:
                     // 1) Candidate is a song and NOT karaoke / derivative
-                    // 2) Clean title matches at least one query word
-                    // 3) Artist is matched either directly or via unmatched CJK/Latin script mismatch
+                    // 2) Duration is <= 10 minutes (600s)
+                    // 3) Clean title matches at least one query word
+                    // 4) Artist is matched either directly or via cross-script matching
                     let has_strong_match = results.iter().any(|v| {
                         if v.item_type.as_deref() != Some("song") {
                             return false;
                         }
                         if is_karaoke_or_derivative(&v.title, &v.channel, &query) {
+                            return false;
+                        }
+                        if parse_duration_secs(&v.duration) > 600 {
                             return false;
                         }
                         let clean_title = clean_title_for_matching(&v.title);
@@ -791,6 +860,8 @@ pub async fn search_youtube(
                         title_matched && channel_matched
                     });
 
+                    // ONLY fall back to video search if NO strong song match exists
+                    // (e.g. Mariya Takeuchi's Single Again / Oh No Oh Yes which are only on video)
                     if !has_strong_match {
                         if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
                             for vid in video_results {
@@ -1414,8 +1485,16 @@ pub async fn get_kworb_chart(region: String) -> Result<Vec<KworbTrack>, String> 
         let decoded = Regex::new(r"\s+").unwrap().replace_all(&decoded, " ").trim().to_string();
 
         if !decoded.is_empty() {
+            let (artist, title) = if let Some((a, t)) = decoded.split_once(" - ") {
+                (a.trim().to_string(), t.trim().to_string())
+            } else {
+                ("".to_string(), decoded.clone())
+            };
+
             tracks.push(KworbTrack {
                 rank,
+                artist,
+                title,
                 query: decoded,
             });
             rank += 1;
@@ -1791,6 +1870,45 @@ mod tests {
                 "Import must pick もう恋なんてしない! Got: title={} channel={}",
                 picked_mou.title, picked_mou.channel
             );
+
+            // 8. Tulus - Teh Hijau (Trending Indonesia #1)
+            let query_tulus = "Tulus - Teh Hijau";
+            let results_tulus = search_youtube(query_tulus.to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            let clean_tulus = clean_title_for_matching(query_tulus);
+            let q_tulus_words: Vec<&str> = clean_tulus.split_whitespace().collect();
+            println!("TULUS results top 5 (query words: {:?}):", q_tulus_words);
+            for (i, r) in results_tulus.iter().take(5).enumerate() {
+                let score = score_search_candidate(r, &q_tulus_words, query_tulus);
+                let is_bad = is_karaoke_or_derivative(&r.title, &r.channel, query_tulus);
+                println!("  [{}] score={} is_bad={} title={:?}, channel={:?}, type={:?}, dur={:?}", 
+                    i, score, is_bad, r.title, r.channel, r.item_type, r.duration);
+            }
+
+            assert_eq!(results_tulus[0].title, "Teh Hijau");
+            assert_eq!(results_tulus[0].channel, "Tulus");
+            assert_eq!(results_tulus[0].item_type.as_deref(), Some("song"));
+            assert!(!results_tulus[0].title.contains("DJ"));
+
+            // 9. Raim Laode - iqro' (Trending Indonesia #4)
+            let query_raim = "Raim Laode - iqro'";
+            let results_raim = search_youtube(query_raim.to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            let clean_raim = clean_title_for_matching(query_raim);
+            let q_raim_words: Vec<&str> = clean_raim.split_whitespace().collect();
+            println!("RAIM results top 5 (query words: {:?}):", q_raim_words);
+            for (i, r) in results_raim.iter().take(5).enumerate() {
+                let score = score_search_candidate(r, &q_raim_words, query_raim);
+                let is_bad = is_karaoke_or_derivative(&r.title, &r.channel, query_raim);
+                println!("  [{}] score={} is_bad={} title={:?}, channel={:?}, type={:?}, dur={:?}", 
+                    i, score, is_bad, r.title, r.channel, r.item_type, r.duration);
+            }
+            assert!(results_raim[0].title.to_lowercase().contains("iqro"));
+            assert_eq!(results_raim[0].channel, "Raim Laode");
+            assert_eq!(results_raim[0].item_type.as_deref(), Some("song"));
+            assert!(!results_raim[0].title.to_lowercase().contains("cover"));
         });
     }
 }

@@ -60,9 +60,17 @@ export const isKaraokeOrDerivative = (title, channel, query = '') => {
     'bass cover', 'guitar cover', 'drum cover', 'piano cover', 'vocal cover',
     'play along', 'playalong', 'tutorial', 'how to play', 'fingerstyle',
     'amateur cover', 'fan cover',
-    'mashup', 'mash-up', 'mash up', 'bootleg', 'remix',
+    'mashup', 'mash-up', 'mash up', 'bootleg',
     'slowed', 'reverb', 'sped up', 'speed up', 'nightcore',
-    'instrumental', 'inst.', 'tribute', 'parody'
+    'instrumental', 'inst.', 'tribute', 'parody',
+    // Covers & amateur performance
+    'cover by', 'covered by', '(cover)', '[cover]', ' cover',
+    // DJ / Remix / Koplo / Hipdut
+    'dj ', 'dj.', 'dj-', 'dj_', 'remix', 'rmx', 'koplo', 'hipdut', 'jedag jedug', 'funkot',
+    'tiktok', 'tik tok',
+    // Lyrics channels / Megamixes / Music box
+    'lirik', 'lyric video', 'lyrics video', 'lirik lagu', 'music box', 'オルゴール', 'orgel',
+    'originally performed by', 'original performer', 'megamix', 'kompilasi'
   ];
 
   for (const bad of badPhrases) {
@@ -256,7 +264,23 @@ const getCachedVideo = query => {
     if (!raw) return null;
     const cache = JSON.parse(raw);
     const normalizedKey = query.toLowerCase().trim();
-    return cache[normalizedKey] || null;
+    const candidate = cache[normalizedKey];
+    if (!candidate) return null;
+
+    // Validate cached item: purge if it is karaoke/derivative, DJ remix, or > 10 minutes
+    if (isKaraokeOrDerivative(candidate.title, candidate.channel, query)) {
+      delete cache[normalizedKey];
+      localStorage.setItem('nadanada-yt-cache', JSON.stringify(cache));
+      return null;
+    }
+    const durSec = parseDuration(candidate.duration);
+    if (durSec > 600) {
+      delete cache[normalizedKey];
+      localStorage.setItem('nadanada-yt-cache', JSON.stringify(cache));
+      return null;
+    }
+
+    return candidate;
   } catch (e) {
     return null;
   }
@@ -586,13 +610,54 @@ export function useMusicDiscovery({
               try {
                 const searchResults = await api.searchYouTube(track.query, 'song');
                 if (searchResults && searchResults.length > 0) {
-                  const bestMatch = searchResults[0];
-                  setCachedVideo(track.query, bestMatch);
-                  return {
-                    ...bestMatch,
-                    queueId: (timestamp + track.rank).toString() + Math.random().toString(36).substr(2, 9),
-                    rank: track.rank
-                  };
+                  const targetArtist = track.artist || (track.query.includes(' - ') ? track.query.split(' - ')[0].trim() : '');
+                  const targetTitle = track.title || (track.query.includes(' - ') ? track.query.split(' - ')[1].trim() : track.query.trim());
+                  const artistWords = targetArtist ? [...new Set(normalizeText(targetArtist).split(/\s+/).filter(w => w.length > 1))] : [];
+
+                  // Filter out karaoke, derivatives, and tracks > 10 minutes (600s)
+                  const cleanResults = searchResults.filter(r => {
+                    if (isKaraokeOrDerivative(r.title, r.channel, track.query)) return false;
+                    const durSec = parseDuration(r.duration);
+                    if (durSec > 600) return false;
+                    return true;
+                  });
+
+                  let bestVideo = null;
+
+                  // Pass 1: Official track matching BOTH target artist AND target title
+                  if (targetArtist && targetTitle) {
+                    bestVideo = cleanResults.find(r => 
+                      doesCandidateMatchArtist(r, artistWords, targetArtist) && 
+                      doesCandidateMatchTitle(r, targetTitle)
+                    );
+                  }
+
+                  // Pass 2: Candidate with artist in channel/title matching target title
+                  if (!bestVideo && targetArtist && targetTitle) {
+                    bestVideo = cleanResults.find(r => 
+                      doesCandidateMatchTitle(r, targetTitle) &&
+                      normalizeText((r.title || '') + " " + (r.channel || '')).includes(normalizeText(targetArtist))
+                    );
+                  }
+
+                  // Pass 3: Candidate matching target title
+                  if (!bestVideo && targetTitle) {
+                    bestVideo = cleanResults.find(r => doesCandidateMatchTitle(r, targetTitle));
+                  }
+
+                  // Pass 4: Fallback to first clean result, or searchResults[0]
+                  if (!bestVideo) {
+                    bestVideo = cleanResults.length > 0 ? cleanResults[0] : searchResults[0];
+                  }
+
+                  if (bestVideo) {
+                    setCachedVideo(track.query, bestVideo);
+                    return {
+                      ...bestVideo,
+                      queueId: (timestamp + track.rank).toString() + Math.random().toString(36).substr(2, 9),
+                      rank: track.rank
+                    };
+                  }
                 }
               } catch (e) {
                 console.error(`Failed to search YouTube for Kworb rank ${track.rank}:`, track.query, e);

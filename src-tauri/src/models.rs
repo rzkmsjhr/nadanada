@@ -32,9 +32,11 @@ pub struct SpotifyTrack {
     pub duration_ms: u64,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, Debug)]
 pub struct KworbTrack {
     pub rank: usize,
+    pub artist: String,
+    pub title: String,
     pub query: String,
 }
 
