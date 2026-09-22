@@ -5,7 +5,12 @@ import { LogicalSize, PhysicalSize } from '@tauri-apps/api/dpi';
 import { api } from '../services/api';
 
 export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavior = 'prompt') {
-  const [theme, setTheme] = useState(() => localStorage.getItem('nadanada-theme') || 'nox-noir');
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('nadanada-theme');
+    if (saved === 'obsidian-root' || saved === 'emerald-abyss' || saved === 'amber-dusk' || saved === 'retro-jukebox') return 'snickers-dark';
+    if (saved === 'midnight-static') return 'golden-hour';
+    return saved || 'nox-noir';
+  });
   const [isMaximized, setIsMaximized] = useState(false);
   const [isVideoHidden, setIsVideoHidden] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -186,9 +191,18 @@ export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavio
   }, [setShowClosePrompt, appWindow]);
 
   const toggleTheme = () => {
-    const themes = ['lavender-steel', 'mahogany-dusk', 'tidal-sage', 'sangria-deep', 'midnight-static', 'obsidian-root', 'nox-noir', 'crimson-night'];
+    const themes = [
+      'crimson-night',
+      'nox-noir',
+      'snickers-dark',
+      'golden-hour',
+      'lavender-steel',
+      'mahogany-dusk',
+      'tidal-sage',
+      'sangria-deep'
+    ];
     const currentThemeIndex = themes.indexOf(theme);
-    const nextIndex = (currentThemeIndex + 1) % themes.length;
+    const nextIndex = currentThemeIndex === -1 ? 0 : (currentThemeIndex + 1) % themes.length;
     setTheme(themes[nextIndex]);
   };
 

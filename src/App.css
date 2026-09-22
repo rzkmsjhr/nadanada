@@ -47,40 +47,45 @@
   --glass-shadow: 0 8px 32px 0 rgba(122, 18, 41, 0.1);
 }
 
+[data-theme="golden-hour"],
 [data-theme="midnight-static"] {
-  --bg-color: #CF98AF; /* Dusty Orchid */
-  --modal-bg: rgba(207, 152, 175, 0.85);
-  --panel-bg: rgba(27, 28, 32, 0.05); /* Midnight Static glass */
-  --panel-border: rgba(27, 28, 32, 0.15);
-  --text-main: #1B1C20; /* Midnight Static */
-  --text-muted: rgba(27, 28, 32, 0.7);
-  --accent-color: #144EA0; /* Regal Anchor */
-  --accent-hover: #103d7d;
-  --glass-shadow: 0 8px 32px 0 rgba(20, 78, 160, 0.15);
+  --bg-color: #1C1126; /* GTA 6 Dusk Sunset Violet */
+  --modal-bg: rgba(28, 17, 38, 0.94);
+  --panel-bg: rgba(255, 122, 89, 0.05); /* Warm Sunset Glass */
+  --panel-border: rgba(255, 122, 89, 0.22);
+  --text-main: #FFFFFF; /* Crisp White Text */
+  --text-muted: #FFC4B2; /* Warm Peach Secondary Text */
+  --accent-color: #FF7A59; /* Sun-drenched Coral / Peach Gold */
+  --accent-hover: #E66242;
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 0 0 16px 0 rgba(255, 122, 89, 0.15);
 }
 
+[data-theme="snickers-dark"],
+[data-theme="retro-jukebox"],
+[data-theme="amber-dusk"],
+[data-theme="emerald-abyss"],
 [data-theme="obsidian-root"] {
-  --bg-color: #FCFF1A; /* Electric Sun */
-  --modal-bg: rgba(252, 255, 26, 0.85);
-  --panel-bg: rgba(12, 14, 9, 0.03); /* Obsidian Root glass */
-  --panel-border: rgba(12, 14, 9, 0.1);
-  --text-main: #0C0E09; /* Obsidian Root */
-  --text-muted: rgba(12, 14, 9, 0.6);
-  --accent-color: #FF2070; /* Hyper Neon */
-  --accent-hover: #d1175a;
-  --glass-shadow: 0 8px 32px 0 rgba(255, 32, 112, 0.2);
+  --bg-color: #18092B; /* Snickers Midnight Purple Wrapper */
+  --modal-bg: rgba(24, 9, 43, 0.94);
+  --panel-bg: rgba(255, 255, 255, 0.04);
+  --panel-border: rgba(255, 255, 255, 0.14);
+  --text-main: #FFFFFF; /* Crisp White Text */
+  --text-muted: rgba(255, 255, 255, 0.65); /* Soft White Secondary Text */
+  --accent-color: #3B72FF; /* Snickers Bold Royal Blue Accent */
+  --accent-hover: #2563EB;
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6), 0 0 16px 0 rgba(59, 114, 255, 0.15);
 }
 
 [data-theme="nox-noir"] {
-  --bg-color: #CFCFCF; /* Steel Mist */
-  --modal-bg: rgba(207, 207, 207, 0.85);
-  --panel-bg: rgba(20, 20, 20, 0.05); /* Nox Noir glass */
-  --panel-border: rgba(20, 20, 20, 0.15);
-  --text-main: #141414; /* Nox Noir */
-  --text-muted: rgba(20, 20, 20, 0.7);
-  --accent-color: #7E49B3; /* Royal Amethyst */
-  --accent-hover: #6a3a99;
-  --glass-shadow: 0 8px 32px 0 rgba(126, 73, 179, 0.2);
+  --bg-color: #121316; /* Deep Carbon / True Dark */
+  --modal-bg: rgba(18, 19, 22, 0.9);
+  --panel-bg: rgba(255, 255, 255, 0.04); /* Frosted Glass */
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --text-main: #f3f4f6; /* Off-white */
+  --text-muted: rgba(243, 244, 246, 0.65);
+  --accent-color: #8B5CF6; /* Royal Amethyst Violet */
+  --accent-hover: #7c3aed;
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
 }
 
 [data-theme="crimson-night"] {

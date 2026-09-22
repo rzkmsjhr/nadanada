@@ -3,14 +3,14 @@ import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2,
 import { api } from '../services/api';
 
 const THEMES = [
+  { id: 'crimson-night', name: 'Crimson Night', bg: '#080d16', accent: '#BF092F' },
+  { id: 'nox-noir', name: 'Nox Noir', bg: '#121316', accent: '#8B5CF6' },
+  { id: 'snickers-dark', name: 'Snickers Dark', bg: '#18092B', accent: '#3B72FF' },
+  { id: 'golden-hour', name: 'Golden Hour', bg: '#1C1126', accent: '#FF7A59' },
   { id: 'lavender-steel', name: 'Lavender Steel', bg: '#FFDBED', accent: '#E34877' },
   { id: 'mahogany-dusk', name: 'Mahogany Dusk', bg: '#CAE7F7', accent: '#F94C00' },
   { id: 'tidal-sage', name: 'Tidal Sage', bg: '#E6D4BE', accent: '#3A74A6' },
-  { id: 'sangria-deep', name: 'Sangria Deep', bg: '#E4EAE8', accent: '#479C73' },
-  { id: 'midnight-static', name: 'Midnight Static', bg: '#CF98AF', accent: '#144EA0' },
-  { id: 'obsidian-root', name: 'Obsidian Root', bg: '#FCFF1A', accent: '#FF2070' },
-  { id: 'nox-noir', name: 'Nox Noir', bg: '#CFCFCF', accent: '#7E49B3' },
-  { id: 'crimson-night', name: 'Crimson Night', bg: '#080d16', accent: '#BF092F' }
+  { id: 'sangria-deep', name: 'Sangria Deep', bg: '#E4EAE8', accent: '#479C73' }
 ];
 
 export default function SettingsModal({
