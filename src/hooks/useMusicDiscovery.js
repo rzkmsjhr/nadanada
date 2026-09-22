@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../services/api';
+import { api } from '../services/api.js';
 
 export const parseDuration = (durationStr) => {
   if (!durationStr) return 0;
@@ -169,6 +169,30 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
     return true;
   }
 
+  // Multi-artist collaboration matching:
+  // When rawArtist is a collaboration like "Breakbot, Irfane" or "A & B" or "A feat. B",
+  // candidate matches if channel matches ANY of the individual artists!
+  const individualArtists = (rawArtist || '')
+    .split(/[,&/]|(?:\s+ft\.?\s+|\s+feat\.?\s+|\s+featuring\s+|\s+x\s+|\s+with\s+)/i)
+    .map(a => a.trim())
+    .filter(Boolean);
+
+  for (const indArtist of individualArtists) {
+    const indNorm = normalizeText(indArtist).trim();
+    if (indNorm.length >= 2) {
+      if (channelNorm === indNorm || channelNorm.includes(indNorm)) {
+        return true;
+      }
+      if (indNorm.includes(channelNorm) && channelNorm.length >= 3) {
+        return true;
+      }
+      const indWords = indNorm.split(/\s+/).filter(w => w.length > 2);
+      if (indWords.length > 0 && indWords.every(w => channelNorm.includes(w))) {
+        return true;
+      }
+    }
+  }
+
   // 2. For songs: in YouTube Music, the artist is ALWAYS the channel.
   // If channel didn't match, this song is a cover / different artist / karaoke producer.
   // Notes in title (e.g. "(Mariya Takeuchi 1984)" or "(原曲歌手:竹内まりや)") are NOT the performer!
@@ -181,6 +205,16 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
   const parts = cleanTitle.split(/\s*[-–—:]\s*/);
   if (parts.length >= 2) {
     const firstPart = parts[0];
+    const firstPartNorm = normalizeText(firstPart).trim();
+
+    // Check individual artists in video title prefix
+    for (const indArtist of individualArtists) {
+      const indNorm = normalizeText(indArtist).trim();
+      if (indNorm.length >= 2 && (firstPartNorm.includes(indNorm) || (firstPartNorm.length >= 3 && indNorm.includes(firstPartNorm)))) {
+        return true;
+      }
+    }
+
     const ftMatch = firstPart.match(/^(.*?)\s+(?:ft\.?|feat\.?|featuring)\s+(.*)$/i);
     if (ftMatch) {
       const leadArtistNorm = normalizeText(ftMatch[1]);
@@ -190,7 +224,6 @@ export const doesCandidateMatchArtist = (candidate, artistWords, rawArtist) => {
       }
     }
 
-    const firstPartNorm = normalizeText(firstPart);
     const matchedInFirst = artistWords.filter(w => firstPartNorm.includes(w)).length;
     if (matchedInFirst >= Math.ceil(artistWords.length * 0.6)) {
       return true;
@@ -613,6 +646,9 @@ export function useMusicDiscovery({
                   const targetArtist = track.artist || (track.query.includes(' - ') ? track.query.split(' - ')[0].trim() : '');
                   const targetTitle = track.title || (track.query.includes(' - ') ? track.query.split(' - ')[1].trim() : track.query.trim());
                   const artistWords = targetArtist ? [...new Set(normalizeText(targetArtist).split(/\s+/).filter(w => w.length > 1))] : [];
+                  const individualArtists = targetArtist
+                    ? targetArtist.split(/[,&/]|(?:\s+ft\.?\s+|\s+feat\.?\s+|\s+featuring\s+|\s+x\s+|\s+with\s+)/i).map(a => a.trim()).filter(Boolean)
+                    : [];
 
                   // Filter out karaoke, derivatives, and tracks > 10 minutes (600s)
                   const cleanResults = searchResults.filter(r => {
@@ -634,19 +670,30 @@ export function useMusicDiscovery({
 
                   // Pass 2: Candidate with artist in channel/title matching target title
                   if (!bestVideo && targetArtist && targetTitle) {
-                    bestVideo = cleanResults.find(r => 
-                      doesCandidateMatchTitle(r, targetTitle) &&
-                      normalizeText((r.title || '') + " " + (r.channel || '')).includes(normalizeText(targetArtist))
-                    );
+                    bestVideo = cleanResults.find(r => {
+                      if (!doesCandidateMatchTitle(r, targetTitle)) return false;
+                      const candNorm = normalizeText((r.title || '') + " " + (r.channel || ''));
+                      return individualArtists.some(ind => {
+                        const indNorm = normalizeText(ind).trim();
+                        return indNorm.length >= 3 && candNorm.includes(indNorm);
+                      });
+                    });
                   }
 
-                  // Pass 3: Candidate matching target title
+                  // Pass 3: Candidate matching target title AND having artist connection
                   if (!bestVideo && targetTitle) {
-                    bestVideo = cleanResults.find(r => doesCandidateMatchTitle(r, targetTitle));
+                    bestVideo = cleanResults.find(r => {
+                      if (!doesCandidateMatchTitle(r, targetTitle)) return false;
+                      if (targetArtist && artistWords.length > 0) {
+                        const candNorm = normalizeText((r.title || '') + " " + (r.channel || ''));
+                        return artistWords.some(w => w.length >= 3 && candNorm.includes(w));
+                      }
+                      return true;
+                    });
                   }
 
-                  // Pass 4: Fallback to first clean result, or searchResults[0]
-                  if (!bestVideo) {
+                  // Pass 4: Fallback only if no target artist was provided
+                  if (!bestVideo && !targetArtist) {
                     bestVideo = cleanResults.length > 0 ? cleanResults[0] : searchResults[0];
                   }
 
@@ -757,6 +804,9 @@ export function useMusicDiscovery({
                 if (!results) results = [];
 
                 const artistWords = track.artist ? [...new Set(normalizeText(track.artist).split(/\s+/).filter(w => w.length > 1))] : [];
+                const individualArtists = track.artist
+                  ? track.artist.split(/[,&/]|(?:\s+ft\.?\s+|\s+feat\.?\s+|\s+featuring\s+|\s+x\s+|\s+with\s+)/i).map(a => a.trim()).filter(Boolean)
+                  : [];
 
                 // Check if any candidate in results genuinely matches BOTH requested title and artist
                 const hasFullMatch = results.some(r => 
@@ -816,21 +866,32 @@ export function useMusicDiscovery({
                     doesCandidateMatchTitle(r, track.title)
                   );
 
-                  // Pass 2: Candidate whose title or channel contains artist AND matches target title
-                  if (!bestVideo) {
-                    bestVideo = cleanResults.find(r => 
-                      doesCandidateMatchTitle(r, track.title) &&
-                      normalizeText((r.title || '') + " " + (r.channel || '')).includes(normalizeText(track.artist))
-                    );
+                  // Pass 2: Candidate whose title or channel contains any of the target artists AND matches target title
+                  if (!bestVideo && track.artist) {
+                    bestVideo = cleanResults.find(r => {
+                      if (!doesCandidateMatchTitle(r, track.title)) return false;
+                      const candNorm = normalizeText((r.title || '') + " " + (r.channel || ''));
+                      return individualArtists.some(ind => {
+                        const indNorm = normalizeText(ind).trim();
+                        return indNorm.length >= 3 && candNorm.includes(indNorm);
+                      });
+                    });
                   }
 
-                  // Pass 3: If no target artist track exists, pick a cover that matches the requested TITLE!
+                  // Pass 3: Candidate matching target title AND having artist connection (never pick an unrelated artist)
                   if (!bestVideo) {
-                    bestVideo = cleanResults.find(r => doesCandidateMatchTitle(r, track.title));
+                    bestVideo = cleanResults.find(r => {
+                      if (!doesCandidateMatchTitle(r, track.title)) return false;
+                      if (track.artist && artistWords.length > 0) {
+                        const candNorm = normalizeText((r.title || '') + " " + (r.channel || ''));
+                        return artistWords.some(w => w.length >= 3 && candNorm.includes(w));
+                      }
+                      return true;
+                    });
                   }
 
-                  // Pass 4: Fallback to first clean result, or results[0]
-                  if (!bestVideo) {
+                  // Pass 4: Fallback only if no artist was specified
+                  if (!bestVideo && !track.artist) {
                     bestVideo = cleanResults.length > 0 ? cleanResults[0] : results[0];
                   }
 

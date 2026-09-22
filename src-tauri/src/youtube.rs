@@ -583,6 +583,11 @@ fn artist_matches_query(channel: &str, title: &str, raw_query: &str) -> bool {
         .trim()
         .to_string();
 
+    let ch_words: Vec<&str> = clean_ch
+        .split_whitespace()
+        .filter(|w| w.len() >= 3 && !is_title_stopword(w))
+        .collect();
+
     // 2. If query has "Part1 - Part2" format (e.g. "Tulus - Teh Hijau" or "Teh Hijau - Tulus")
     if let Some((p1, p2)) = lower_query.split_once(" - ")
         .or_else(|| lower_query.split_once(" ~ "))
@@ -599,13 +604,12 @@ fn artist_matches_query(channel: &str, title: &str, raw_query: &str) -> bool {
         }
     }
 
-    // 3. Significant word matching in channel:
-    // If any significant word in channel (len >= 3, not stopword) is present in query:
-    let ch_words: Vec<&str> = clean_ch
+    let query_clean = clean_title_for_matching(raw_query);
+    let q_words: Vec<&str> = query_clean
         .split_whitespace()
         .filter(|w| w.len() >= 3 && !is_title_stopword(w))
         .collect();
-    if !ch_words.is_empty() && ch_words.iter().any(|&cw| lower_query.contains(cw)) {
+    if !ch_words.is_empty() && ch_words.iter().any(|&cw| q_words.contains(&cw)) {
         return true;
     }
 
@@ -728,20 +732,32 @@ fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i
     let mut matched_significant_title_words = 0;
     let mut matched_channel_words = 0;
 
+    let ch_words: Vec<&str> = channel_lower
+        .split_whitespace()
+        .filter(|cw| cw.len() >= 3 && !is_title_stopword(cw))
+        .collect();
+
     for &w in query_words {
-        if title_matches_term(&clean_title, w) {
+        let in_clean = title_matches_term(&clean_title, w);
+        let in_raw = lower_raw_title.contains(w);
+        if in_clean || in_raw {
             matched_title_words += 1;
             if !is_title_stopword(w) && w.chars().count() >= 3 {
                 matched_significant_title_words += 1;
             }
         }
-        if channel_lower.contains(w) {
-            matched_channel_words += 1;
+        // Match channel only against significant words (len >= 3, not stopword)
+        // Never allow 1 or 2 letter words (like 'i' or 'm' from "I'm") to match a channel!
+        if !is_title_stopword(w) && w.chars().count() >= 3 {
+            if ch_words.iter().any(|&cw| cw == w || cw.contains(w) || w.contains(cw)) {
+                matched_channel_words += 1;
+            }
         }
     }
 
     let is_song = v.item_type.as_deref() == Some("song");
-    let artist_matched = matched_channel_words > 0 || artist_matches_query(&v.channel, &v.title, raw_query);
+    let artist_matched = artist_matches_query(&v.channel, &v.title, raw_query)
+        || matched_channel_words > 0;
 
     let has_query_significant = query_words.iter().any(|&w| !is_title_stopword(w) && w.chars().count() >= 3);
     let title_matched = if has_query_significant {
@@ -1909,6 +1925,24 @@ mod tests {
             assert_eq!(results_raim[0].channel, "Raim Laode");
             assert_eq!(results_raim[0].item_type.as_deref(), Some("song"));
             assert!(!results_raim[0].title.to_lowercase().contains("cover"));
+
+            // 10. Breakbot, Irfane - Baby I'm Yours
+            let query_breakbot = "Baby I'm Yours Breakbot, Irfane";
+            let results_breakbot = search_youtube(query_breakbot.to_string(), Some("song".to_string()))
+                .await
+                .expect("Search should succeed");
+            let clean_breakbot = clean_title_for_matching(query_breakbot);
+            let q_breakbot_words: Vec<&str> = clean_breakbot.split_whitespace().collect();
+            println!("BREAKBOT results top 5 (query words: {:?}):", q_breakbot_words);
+            for (i, r) in results_breakbot.iter().take(5).enumerate() {
+                let score = score_search_candidate(r, &q_breakbot_words, query_breakbot);
+                let is_bad = is_karaoke_or_derivative(&r.title, &r.channel, query_breakbot);
+                println!("  [{}] score={} is_bad={} title={:?}, channel={:?}, type={:?}, dur={:?}", 
+                    i, score, is_bad, r.title, r.channel, r.item_type, r.duration);
+            }
+            assert_eq!(results_breakbot[0].channel, "Breakbot");
+            assert!(results_breakbot[0].title.contains("Baby I'm Yours"));
+            assert_eq!(results_breakbot[0].item_type.as_deref(), Some("song"));
         });
     }
 }
