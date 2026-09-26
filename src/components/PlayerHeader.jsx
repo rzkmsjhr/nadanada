@@ -33,6 +33,7 @@ export default function PlayerHeader({
   onOpenSettings,
   videoOverlayMode,
   setVideoOverlayMode,
+  fontScale,
   lyricsFontScale,
   chordsFontScale
 }) {
@@ -170,7 +171,8 @@ export default function PlayerHeader({
                     data={chordsData} 
                     syncOffset={syncOffset} 
                     transpose={transposeOffset} 
-                    chordsFontScale={chordsFontScale}
+                    chordsFontScale={fontScale ?? chordsFontScale ?? 100}
+                    fontScale={fontScale ?? chordsFontScale ?? 100}
                     isLoading={isFetchingChords} 
                     error={chordsError} 
                     onRetry={() => {
@@ -300,7 +302,8 @@ export default function PlayerHeader({
                 syncOffset={lyricsSyncOffset}
                 onSyncChange={setLyricsSyncOffset}
                 onSwitchToOverlay={() => setVideoOverlayMode?.('lyrics')}
-                lyricsFontScale={lyricsFontScale}
+                lyricsFontScale={fontScale ?? lyricsFontScale ?? 100}
+                fontScale={fontScale ?? lyricsFontScale ?? 100}
                 isLoading={isFetchingLyrics}
                 error={lyricsError}
                 onRetry={onRetryLyrics}

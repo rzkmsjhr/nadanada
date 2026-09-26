@@ -13,18 +13,34 @@ const THEMES = [
   { id: 'sangria-deep', name: 'Sangria Deep', bg: '#E4EAE8', accent: '#479C73' }
 ];
 
+const OPACITY_OPTIONS = [10, 30, 50, 70, 100];
+const FONT_SIZE_OPTIONS = [70, 85, 100, 110, 125, 150];
+
+function getClosestIndex(arr, val, defaultIdx = 0) {
+  const direct = arr.indexOf(val);
+  if (direct !== -1) return direct;
+  let closest = defaultIdx;
+  let minDiff = Infinity;
+  arr.forEach((opt, idx) => {
+    const diff = Math.abs(opt - val);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = idx;
+    }
+  });
+  return closest;
+}
+
 export default function SettingsModal({
   onClose,
   theme,
   setTheme,
   crossfadeDuration,
   setCrossfadeDuration,
-  miniPlayerOpacity = 20,
+  miniPlayerOpacity = 30,
   setMiniPlayerOpacity,
-  lyricsFontScale = 100,
-  setLyricsFontScale,
-  chordsFontScale = 100,
-  setChordsFontScale,
+  fontScale = 100,
+  setFontScale,
   closeBehavior = 'prompt',
   setCloseBehavior
 }) {
@@ -236,146 +252,114 @@ export default function SettingsModal({
             </span>
           </div>
 
-          <input
-            type="range"
-            min="10"
-            max="100"
-            step="10"
-            value={miniPlayerOpacity}
-            onChange={(e) => {
-              if (setMiniPlayerOpacity) setMiniPlayerOpacity(Number(e.target.value));
-            }}
-            className="seek-bar"
-            style={{
-              width: '100%',
-              accentColor: 'var(--accent-color)',
-              background: `linear-gradient(to right, var(--accent-color) ${((miniPlayerOpacity - 10) / 90) * 100}%, var(--panel-border) ${((miniPlayerOpacity - 10) / 90) * 100}%)`,
-              cursor: 'pointer'
-            }}
-          />
+          {(() => {
+            const currentIdx = getClosestIndex(OPACITY_OPTIONS, miniPlayerOpacity, 1);
+            return (
+              <>
+                <input
+                  type="range"
+                  min="0"
+                  max={OPACITY_OPTIONS.length - 1}
+                  step="1"
+                  value={currentIdx}
+                  onChange={(e) => {
+                    const idx = Number(e.target.value);
+                    if (setMiniPlayerOpacity) setMiniPlayerOpacity(OPACITY_OPTIONS[idx]);
+                  }}
+                  className="seek-bar"
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--accent-color)',
+                    background: `linear-gradient(to right, var(--accent-color) ${(currentIdx / (OPACITY_OPTIONS.length - 1)) * 100}%, var(--panel-border) ${(currentIdx / (OPACITY_OPTIONS.length - 1)) * 100}%)`,
+                    cursor: 'pointer'
+                  }}
+                />
 
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            fontSize: '0.7rem',
-            color: 'var(--text-muted)',
-            marginTop: '6px',
-            userSelect: 'none'
-          }}>
-            <span>10%</span>
-            <span>30%</span>
-            <span>50%</span>
-            <span>70%</span>
-            <span>100%</span>
-          </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  marginTop: '6px',
+                  userSelect: 'none'
+                }}>
+                  {OPACITY_OPTIONS.map(val => (
+                    <span key={val}>{val}%</span>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
         </div>
 
-        {/* Lyrics & Chords Font Size Section */}
+        {/* Lyrics & Chords Font Size Section (Merged) */}
         <div>
           <div style={{
             display: 'flex',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            gap: '8px',
-            fontSize: '0.8rem',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.75px',
-            color: 'var(--text-muted)',
-            marginBottom: '12px'
+            marginBottom: '10px'
           }}>
-            <Type size={16} />
-            <span>Lyrics &amp; Chords Font Size</span>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.75px',
+              color: 'var(--text-muted)'
+            }}>
+              <Type size={16} />
+              <span>Lyrics &amp; Chords Font Size</span>
+            </div>
+            <span style={{
+              fontSize: '0.85rem',
+              fontWeight: 700,
+              color: 'var(--accent-color)'
+            }}>
+              {fontScale}%{fontScale === 100 ? ' (Default)' : ''}
+            </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Lyrics Font Size */}
-            <div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '6px'
-              }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 500 }}>Lyrics Size</span>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color)' }}>
-                  {lyricsFontScale}%{lyricsFontScale === 100 ? ' (Default)' : ''}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="70"
-                max="150"
-                step="5"
-                value={lyricsFontScale}
-                onChange={(e) => {
-                  if (setLyricsFontScale) setLyricsFontScale(Number(e.target.value));
-                }}
-                className="seek-bar"
-                style={{
-                  width: '100%',
-                  accentColor: 'var(--accent-color)',
-                  background: `linear-gradient(to right, var(--accent-color) ${((lyricsFontScale - 70) / 80) * 100}%, var(--panel-border) ${((lyricsFontScale - 70) / 80) * 100}%)`,
-                  cursor: 'pointer'
-                }}
-              />
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '0.7rem',
-                color: 'var(--text-muted)',
-                marginTop: '4px',
-                userSelect: 'none'
-              }}>
-                <span>70%</span>
-                <span>100%</span>
-                <span>150%</span>
-              </div>
-            </div>
+          {(() => {
+            const currentIdx = getClosestIndex(FONT_SIZE_OPTIONS, fontScale, 2);
+            return (
+              <>
+                <input
+                  type="range"
+                  min="0"
+                  max={FONT_SIZE_OPTIONS.length - 1}
+                  step="1"
+                  value={currentIdx}
+                  onChange={(e) => {
+                    const idx = Number(e.target.value);
+                    if (setFontScale) setFontScale(FONT_SIZE_OPTIONS[idx]);
+                  }}
+                  className="seek-bar"
+                  style={{
+                    width: '100%',
+                    accentColor: 'var(--accent-color)',
+                    background: `linear-gradient(to right, var(--accent-color) ${(currentIdx / (FONT_SIZE_OPTIONS.length - 1)) * 100}%, var(--panel-border) ${(currentIdx / (FONT_SIZE_OPTIONS.length - 1)) * 100}%)`,
+                    cursor: 'pointer'
+                  }}
+                />
 
-            {/* Chords Font Size */}
-            <div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '6px'
-              }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 500 }}>Chords Size</span>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color)' }}>
-                  {chordsFontScale}%{chordsFontScale === 100 ? ' (Default)' : ''}
-                </span>
-              </div>
-              <input
-                type="range"
-                min="70"
-                max="150"
-                step="5"
-                value={chordsFontScale}
-                onChange={(e) => {
-                  if (setChordsFontScale) setChordsFontScale(Number(e.target.value));
-                }}
-                className="seek-bar"
-                style={{
-                  width: '100%',
-                  accentColor: 'var(--accent-color)',
-                  background: `linear-gradient(to right, var(--accent-color) ${((chordsFontScale - 70) / 80) * 100}%, var(--panel-border) ${((chordsFontScale - 70) / 80) * 100}%)`,
-                  cursor: 'pointer'
-                }}
-              />
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '0.7rem',
-                color: 'var(--text-muted)',
-                marginTop: '4px',
-                userSelect: 'none'
-              }}>
-                <span>70%</span>
-                <span>100%</span>
-                <span>150%</span>
-              </div>
-            </div>
-          </div>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '0.7rem',
+                  color: 'var(--text-muted)',
+                  marginTop: '6px',
+                  userSelect: 'none'
+                }}>
+                  {FONT_SIZE_OPTIONS.map(val => (
+                    <span key={val}>{val}%</span>
+                  ))}
+                </div>
+              </>
+            );
+          })()}
 
           <div style={{
             fontSize: '0.72rem',

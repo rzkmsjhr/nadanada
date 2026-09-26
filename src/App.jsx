@@ -142,8 +142,8 @@ function App() {
 
   const [miniPlayerOpacity, setMiniPlayerOpacity] = useState(() => {
     const saved = localStorage.getItem('nadanada-mini-player-opacity');
-    const parsed = saved !== null ? parseInt(saved, 10) : 20;
-    return isNaN(parsed) ? 20 : Math.max(10, Math.min(100, Math.round(parsed / 10) * 10));
+    const parsed = saved !== null ? parseInt(saved, 10) : 30;
+    return isNaN(parsed) ? 30 : Math.max(10, Math.min(100, Math.round(parsed / 10) * 10));
   });
 
   useEffect(() => {
@@ -151,27 +151,22 @@ function App() {
     document.documentElement.style.setProperty('--mini-player-opacity', (miniPlayerOpacity / 100).toString());
   }, [miniPlayerOpacity]);
 
-  const [lyricsFontScale, setLyricsFontScale] = useState(() => {
-    const saved = localStorage.getItem('nadanada-lyrics-font-scale');
+  const [fontScale, setFontScale] = useState(() => {
+    const saved = localStorage.getItem('nadanada-font-scale')
+      || localStorage.getItem('nadanada-lyrics-font-scale')
+      || localStorage.getItem('nadanada-chords-font-scale');
     const parsed = saved !== null ? parseInt(saved, 10) : 100;
     return isNaN(parsed) ? 100 : Math.max(70, Math.min(150, parsed));
   });
 
   useEffect(() => {
-    localStorage.setItem('nadanada-lyrics-font-scale', lyricsFontScale.toString());
-    document.documentElement.style.setProperty('--lyrics-scale', (lyricsFontScale / 100).toString());
-  }, [lyricsFontScale]);
-
-  const [chordsFontScale, setChordsFontScale] = useState(() => {
-    const saved = localStorage.getItem('nadanada-chords-font-scale');
-    const parsed = saved !== null ? parseInt(saved, 10) : 100;
-    return isNaN(parsed) ? 100 : Math.max(70, Math.min(150, parsed));
-  });
-
-  useEffect(() => {
-    localStorage.setItem('nadanada-chords-font-scale', chordsFontScale.toString());
-    document.documentElement.style.setProperty('--chords-scale', (chordsFontScale / 100).toString());
-  }, [chordsFontScale]);
+    localStorage.setItem('nadanada-font-scale', fontScale.toString());
+    localStorage.setItem('nadanada-lyrics-font-scale', fontScale.toString());
+    localStorage.setItem('nadanada-chords-font-scale', fontScale.toString());
+    document.documentElement.style.setProperty('--font-scale', (fontScale / 100).toString());
+    document.documentElement.style.setProperty('--lyrics-scale', (fontScale / 100).toString());
+    document.documentElement.style.setProperty('--chords-scale', (fontScale / 100).toString());
+  }, [fontScale]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
@@ -466,8 +461,7 @@ function App() {
     theme, setTheme,
     crossfadeDuration, setCrossfadeDuration,
     miniPlayerOpacity, setMiniPlayerOpacity,
-    lyricsFontScale, setLyricsFontScale,
-    chordsFontScale, setChordsFontScale,
+    fontScale, setFontScale,
     closeBehavior, setCloseBehavior
   };
 
@@ -575,8 +569,7 @@ function App() {
                 onOpenSettings={() => setShowSettings(true)}
                 videoOverlayMode={videoOverlayMode}
                 setVideoOverlayMode={setVideoOverlayMode}
-                lyricsFontScale={lyricsFontScale}
-                chordsFontScale={chordsFontScale}
+                fontScale={fontScale}
               />
             </div>
           </div>
@@ -639,8 +632,7 @@ function App() {
               downloadedIds={downloadedIds}
               videoOverlayMode={videoOverlayMode}
               setVideoOverlayMode={setVideoOverlayMode}
-              lyricsFontScale={lyricsFontScale}
-              chordsFontScale={chordsFontScale}
+              fontScale={fontScale}
               lyricsData={lyricsData}
               lyricsSyncOffset={lyricsSyncOffset}
               setLyricsSyncOffset={setLyricsSyncOffset}

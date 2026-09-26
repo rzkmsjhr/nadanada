@@ -36,7 +36,7 @@ export function transposeChord(chord, semitones) {
   return chord.split('/').map(transposeSingle).join('/');
 }
 
-const ChordDisplay = ({ data, syncOffset, transpose, chordsFontScale = 100, isLoading, error, onRetry }) => {
+const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale = 100, isLoading, error, onRetry }) => {
   const [time, setTime] = React.useState(0);
 
   React.useEffect(() => {
@@ -73,7 +73,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, chordsFontScale = 100, isLo
   const startIndex = Math.max(0, activeIndex);
   const visibleChords = chords.slice(startIndex, startIndex + 6);
 
-  const factor = (chordsFontScale || 100) / 100;
+  const factor = (fontScale ?? chordsFontScale ?? 100) / 100;
   const f = (val) => Number((val * factor).toFixed(2));
 
   return (

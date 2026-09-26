@@ -48,10 +48,8 @@ export default function AppModals() {
     setCrossfadeDuration,
     miniPlayerOpacity,
     setMiniPlayerOpacity,
-    lyricsFontScale,
-    setLyricsFontScale,
-    chordsFontScale,
-    setChordsFontScale,
+    fontScale,
+    setFontScale,
     closeBehavior,
     setCloseBehavior
   } = useAppContext();
@@ -70,10 +68,8 @@ export default function AppModals() {
           setCrossfadeDuration={setCrossfadeDuration}
           miniPlayerOpacity={miniPlayerOpacity}
           setMiniPlayerOpacity={setMiniPlayerOpacity}
-          lyricsFontScale={lyricsFontScale}
-          setLyricsFontScale={setLyricsFontScale}
-          chordsFontScale={chordsFontScale}
-          setChordsFontScale={setChordsFontScale}
+          fontScale={fontScale}
+          setFontScale={setFontScale}
           closeBehavior={closeBehavior}
           setCloseBehavior={setCloseBehavior}
         />

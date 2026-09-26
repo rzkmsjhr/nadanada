@@ -47,11 +47,19 @@ export function useKeyboardShortcuts({
           break;
         case 'ArrowRight':
           e.preventDefault();
-          handleNextRef.current?.();
+          playerRef.current?.seekBy?.(5);
           break;
         case 'ArrowLeft':
           e.preventDefault();
+          playerRef.current?.seekBy?.(-5);
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
           handlePreviousRef.current?.();
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleNextRef.current?.();
           break;
         case 'm':
         case 'M':

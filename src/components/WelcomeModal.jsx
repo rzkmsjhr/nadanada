@@ -63,7 +63,8 @@ export default function WelcomeModal({ onClose }) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                 <div><kbd style={kbdStyle}>Space</kbd> Play/Pause</div>
                 <div><kbd style={kbdStyle}>S</kbd> Search</div>
-                <div><kbd style={kbdStyle}>←</kbd> <kbd style={kbdStyle}>→</kbd> Prev/Next</div>
+                <div><kbd style={kbdStyle}>←</kbd> <kbd style={kbdStyle}>→</kbd> Seek ±5s</div>
+                <div><kbd style={kbdStyle}>↑</kbd> <kbd style={kbdStyle}>↓</kbd> Prev/Next</div>
                 <div><kbd style={kbdStyle}>F</kbd> Fullscreen</div>
                 <div><kbd style={kbdStyle}>M</kbd> Mute</div>
                 <div><kbd style={kbdStyle}>Esc</kbd> Exit Fullscreen</div>

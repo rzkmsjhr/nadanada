@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import ProxyYouTube from './ProxyYouTube';
 import PlayerControls from './PlayerControls';
-import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Maximize2, Minimize2, Mic2, ListMusic } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
@@ -15,6 +15,7 @@ const Player = React.forwardRef(function Player({
   videoOverlayMode, setVideoOverlayMode,
   lyricsData, lyricsSyncOffset, setLyricsSyncOffset, isFetchingLyrics, lyricsError, onRetryLyrics,
   chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords,
+  fontScale,
   lyricsFontScale, chordsFontScale,
   downloadedIds
 }, ref) {
@@ -38,6 +39,13 @@ const Player = React.forwardRef(function Player({
 
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
   const fullscreenTimerRef = useRef(null);
+  const lastMousePosRef = useRef({ x: -1, y: -1 });
+
+  const isDraggingRef = useRef(core.isDragging);
+  isDraggingRef.current = core.isDragging;
+
+  const isCaptionMenuOpenRef = useRef(core.isCaptionMenuOpen);
+  isCaptionMenuOpenRef.current = core.isCaptionMenuOpen;
 
   const resetFullscreenTimer = useCallback(() => {
     setShowFullscreenControls(true);
@@ -45,23 +53,60 @@ const Player = React.forwardRef(function Player({
       clearTimeout(fullscreenTimerRef.current);
     }
     fullscreenTimerRef.current = setTimeout(() => {
-      if (!core.isDragging && !core.isCaptionMenuOpen) {
+      if (!isDraggingRef.current && !isCaptionMenuOpenRef.current) {
         setShowFullscreenControls(false);
       }
     }, 2500);
-  }, [core.isDragging, core.isCaptionMenuOpen]);
+  }, []);
 
   useEffect(() => {
-    if (isFullscreen) {
-      resetFullscreenTimer();
-    } else {
+    if (!isFullscreen) {
       setShowFullscreenControls(true);
-      if (fullscreenTimerRef.current) clearTimeout(fullscreenTimerRef.current);
+      if (fullscreenTimerRef.current) {
+        clearTimeout(fullscreenTimerRef.current);
+      }
+      return;
     }
+
+    // When entering fullscreen, reset tracking coordinates and start countdown
+    lastMousePosRef.current = { x: -1, y: -1 };
+    resetFullscreenTimer();
+
+    const onWindowMouseMove = (e) => {
+      // Discard synthetic mousemove events dispatched by browser on DOM mutations, cursor:none, or hit-test recalculations
+      if (
+        lastMousePosRef.current.x === e.clientX &&
+        lastMousePosRef.current.y === e.clientY
+      ) {
+        return;
+      }
+      lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+      resetFullscreenTimer();
+    };
+
+    const onWindowActivity = () => {
+      resetFullscreenTimer();
+    };
+
+    window.addEventListener('mousemove', onWindowMouseMove, { passive: true });
+    window.addEventListener('mousedown', onWindowActivity, { passive: true });
+    window.addEventListener('keydown', onWindowActivity, { passive: true });
+
     return () => {
-      if (fullscreenTimerRef.current) clearTimeout(fullscreenTimerRef.current);
+      window.removeEventListener('mousemove', onWindowMouseMove);
+      window.removeEventListener('mousedown', onWindowActivity);
+      window.removeEventListener('keydown', onWindowActivity);
+      if (fullscreenTimerRef.current) {
+        clearTimeout(fullscreenTimerRef.current);
+      }
     };
   }, [isFullscreen, resetFullscreenTimer]);
+
+  useEffect(() => {
+    if (isFullscreen && !core.isDragging && !core.isCaptionMenuOpen) {
+      resetFullscreenTimer();
+    }
+  }, [isFullscreen, core.isDragging, core.isCaptionMenuOpen, resetFullscreenTimer]);
 
   useImperativeHandle(ref, () => ({
     togglePlay: core.togglePlay,
@@ -70,8 +115,18 @@ const Player = React.forwardRef(function Player({
     fadeIn: core.fadeIn,
     getCurrentTime: () => core.currentTime,
     crossfadeDuration: core.crossfadeDuration,
-    toggleCrossfade: core.toggleCrossfade
+    toggleCrossfade: core.toggleCrossfade,
+    seekTo: core.seekTo,
+    seekBy: core.seekBy
   }), [core]);
+
+  const isCurrentLyrics = !currentSong?.id || (lyricsData?._songId === currentSong?.id);
+  const isLyricsLoading = isFetchingLyrics || (Boolean(currentSong?.id) && lyricsData?._songId !== currentSong?.id);
+  const lyricsLines = isCurrentLyrics ? (lyricsData?.lines || []) : [];
+
+  const isCurrentChords = !currentSong?.id || (chordsData?._songId === currentSong?.id);
+  const isChordsLoading = isFetchingChords || (Boolean(currentSong?.id) && chordsData?._songId !== currentSong?.id);
+  const chordsList = isCurrentChords ? (chordsData?.chords || []) : [];
 
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
 
@@ -90,8 +145,6 @@ const Player = React.forwardRef(function Player({
 
   return (
     <div 
-      onMouseMove={isFullscreen ? resetFullscreenTimer : undefined}
-      onMouseEnter={isFullscreen ? resetFullscreenTimer : undefined}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -670,8 +723,10 @@ const Player = React.forwardRef(function Player({
               isFullscreen={isFullscreen}
               isMaximized={isMaximized}
               isMiniPlayer={isMiniPlayer}
-              lyricsFontScale={lyricsFontScale}
-              chordsFontScale={chordsFontScale}
+              fontScale={fontScale}
+              lyricsFontScale={fontScale ?? lyricsFontScale}
+              chordsFontScale={fontScale ?? chordsFontScale}
+              showFullscreenControls={showFullscreenControls}
               currentSong={currentSong}
               lyricsData={lyricsData}
               lyricsSyncOffset={lyricsSyncOffset}
@@ -755,6 +810,210 @@ const Player = React.forwardRef(function Player({
             flexDirection: 'column',
             gap: '14px'
           }}>
+            {/* Fullscreen Lyrics Sync Calibration Capsule (Above Seekbar) */}
+            {videoOverlayMode === 'lyrics' && lyricsLines.length > 0 && !isLyricsLoading && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-4px' }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    borderRadius: '8px',
+                    padding: '4px 10px',
+                    fontSize: '0.8rem',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resetFullscreenTimer();
+                  }}
+                >
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>Sync:</span>
+                    <button
+                      onClick={() => {
+                        setLyricsSyncOffset?.(s => Math.max(-30, Number((s - 0.25).toFixed(2))));
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem',
+                        lineHeight: 1
+                      }}
+                      title="Delay Lyrics by 0.25s"
+                    >
+                      -
+                    </button>
+                    <span style={{ minWidth: '34px', textAlign: 'center', fontWeight: 'bold', color: '#fff' }}>
+                      {lyricsSyncOffset > 0 ? '+' : ''}{lyricsSyncOffset}s
+                    </span>
+                    <button
+                      onClick={() => {
+                        setLyricsSyncOffset?.(s => Math.min(30, Number((s + 0.25).toFixed(2))));
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem',
+                        lineHeight: 1
+                      }}
+                      title="Advance Lyrics by 0.25s"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {lyricsSyncOffset !== 0 && (
+                    <button
+                      onClick={() => {
+                        setLyricsSyncOffset?.(0);
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'rgba(255,255,255,0.7)',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        textDecoration: 'underline',
+                        padding: '0 2px'
+                      }}
+                      title="Reset sync offset to 0s"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Fullscreen Chords Sync & Key Calibration Capsule (Above Seekbar) */}
+            {videoOverlayMode === 'chords' && chordsList.length > 0 && !isChordsLoading && (
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '-4px' }}>
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    background: 'rgba(0, 0, 0, 0.8)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    borderRadius: '8px',
+                    padding: '4px 12px',
+                    fontSize: '0.8rem',
+                    color: '#ffffff',
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.6)'
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    resetFullscreenTimer();
+                  }}
+                >
+                  {/* Sync Controls */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>Sync:</span>
+                    <button
+                      onClick={() => {
+                        setSyncOffset?.(s => Math.max(-30, Number((s - 0.25).toFixed(2))));
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem'
+                      }}
+                      title="Delay Chords"
+                    >
+                      -
+                    </button>
+                    <span style={{ minWidth: '32px', textAlign: 'center', fontWeight: 'bold' }}>
+                      {syncOffset > 0 ? '+' : ''}{syncOffset}s
+                    </span>
+                    <button
+                      onClick={() => {
+                        setSyncOffset?.(s => Math.min(30, Number((s + 0.25).toFixed(2))));
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem'
+                      }}
+                      title="Advance Chords"
+                    >
+                      +
+                    </button>
+                  </div>
+
+                  {/* Key Controls */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '10px' }}>
+                    <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>Key:</span>
+                    <button
+                      onClick={() => {
+                        setTransposeOffset?.(s => (s - 1) % 12);
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem'
+                      }}
+                      title="Transpose Down"
+                    >
+                      -
+                    </button>
+                    <span style={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold' }}>
+                      {transposeOffset > 0 ? '+' : ''}{transposeOffset}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setTransposeOffset?.(s => (s + 1) % 12);
+                        resetFullscreenTimer();
+                      }}
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.1)',
+                        border: '1px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: '4px',
+                        color: 'inherit',
+                        cursor: 'pointer',
+                        padding: '1px 6px',
+                        fontSize: '0.85rem'
+                      }}
+                      title="Transpose Up"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Seekbar */}
             <div className="seek-bar-container" style={{ color: '#fff', fontSize: '0.85rem' }}>
               <span>{core.formatTime(core.currentTime)}</span>
@@ -893,6 +1152,40 @@ const Player = React.forwardRef(function Player({
                     )}
                   </div>
                 )}
+
+                {/* Lyrics Overlay Toggle in Fullscreen */}
+                <button
+                  className="btn btn-icon"
+                  onClick={() => {
+                    setVideoOverlayMode?.(videoOverlayMode === 'lyrics' ? null : 'lyrics');
+                    resetFullscreenTimer();
+                  }}
+                  style={{
+                    background: videoOverlayMode === 'lyrics' ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#fff',
+                    padding: '8px'
+                  }}
+                  title={videoOverlayMode === 'lyrics' ? "Hide Lyrics" : "Show Lyrics"}
+                >
+                  <Mic2 size={20} />
+                </button>
+
+                {/* Chords Overlay Toggle in Fullscreen */}
+                <button
+                  className="btn btn-icon"
+                  onClick={() => {
+                    setVideoOverlayMode?.(videoOverlayMode === 'chords' ? null : 'chords');
+                    resetFullscreenTimer();
+                  }}
+                  style={{
+                    background: videoOverlayMode === 'chords' ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#fff',
+                    padding: '8px'
+                  }}
+                  title={videoOverlayMode === 'chords' ? "Hide Chords" : "Show Chords"}
+                >
+                  <ListMusic size={20} />
+                </button>
 
                 {/* Exit Fullscreen button */}
                 <button

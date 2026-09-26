@@ -23,7 +23,7 @@ export function usePlayerCore({
   const deck0PlayerRef = useRef(null);
   const deck1PlayerRef = useRef(null);
 
-  const [deck0Song, setDeck0Song] = useState(null);
+  const [deck0Song, setDeck0Song] = useState(currentSong || null);
   const [deck1Song, setDeck1Song] = useState(null);
   const [deck0Opacity, setDeck0Opacity] = useState(1);
   const [deck1Opacity, setDeck1Opacity] = useState(0);
@@ -442,7 +442,10 @@ export function usePlayerCore({
     // If the song ID is unchanged, it is the SAME track already loaded and playing!
     // Do NOT reload or restart it when playlist items are reordered!
     if (songId && prevSongIdRef.current === songId) {
-      return;
+      const activeHasSong = (activeDeckRef.current === 0 ? deck0Song?.id : deck1Song?.id) === songId;
+      if (activeHasSong) {
+        return;
+      }
     }
 
     // Otherwise, this is a genuine new song selection or manual skip
@@ -891,8 +894,12 @@ export function usePlayerCore({
     applyActiveVolume(isMuted ? 0 : masterVolume);
   };
 
-  const handleSeekMouseUp = (e) => {
-    setIsDragging(false);
+  const seekTo = (targetTime) => {
+    if (!currentSong) return;
+    const maxDur = duration > 0 ? duration : Infinity;
+    const clampedTime = Math.max(0, Math.min(maxDur, targetTime));
+    setCurrentTime(clampedTime);
+    if (onTimeUpdate) onTimeUpdate(clampedTime);
     isTransitioningSongRef.current = false;
     cancelCrossfade();
     if (activeFadeIntervalRef.current) {
@@ -901,27 +908,51 @@ export function usePlayerCore({
     }
     applyActiveVolume(isMuted ? 0 : masterVolume);
 
-    const targetTime = Number(e.target.value);
-    if (targetTime < duration - effectiveCrossfadeDuration) {
+    if (clampedTime < duration - effectiveCrossfadeDuration) {
       hasTriggeredEndCrossfadeRef.current = false;
     }
-    if (currentSong && (currentSong?.is_local || streamUrl)) {
+
+    if (currentSong?.is_local || streamUrl) {
       const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) {
-        audioEl.currentTime = targetTime;
+        audioEl.currentTime = clampedTime;
       }
       return;
     }
-    
+
     const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
     if (activePlayer) {
       if (needsSeekFixRef.current) {
-        activePlayer.loadVideoById(currentSong.id, targetTime);
+        activePlayer.loadVideoById(currentSong.id, clampedTime);
         needsSeekFixRef.current = false;
       } else {
-        activePlayer.seekTo(targetTime, true);
+        activePlayer.seekTo(clampedTime, true);
       }
     }
+  };
+
+  const seekBy = (deltaSeconds) => {
+    let baseTime = currentTime;
+    if (currentSong && (currentSong?.is_local || streamUrl)) {
+      const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
+      if (audioEl && Number.isFinite(audioEl.currentTime)) {
+        baseTime = audioEl.currentTime;
+      }
+    } else {
+      const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
+      if (activePlayer && typeof activePlayer.getCurrentTime === 'function') {
+        try {
+          const pt = activePlayer.getCurrentTime();
+          if (Number.isFinite(pt)) baseTime = pt;
+        } catch (_) {}
+      }
+    }
+    seekTo(baseTime + deltaSeconds);
+  };
+
+  const handleSeekMouseUp = (e) => {
+    setIsDragging(false);
+    seekTo(Number(e.target.value));
   };
 
   const formatTime = (seconds) => {
@@ -983,6 +1014,8 @@ export function usePlayerCore({
     handleSeekChange,
     handleSeekMouseUp,
     handleSeekMouseDown,
+    seekTo,
+    seekBy,
     formatTime
   };
 }

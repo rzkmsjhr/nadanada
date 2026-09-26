@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { transposeChord } from './ChordDisplay';
@@ -10,8 +10,10 @@ export default function VideoOverlay({
   isFullscreen,
   isMaximized,
   isMiniPlayer,
+  fontScale,
   lyricsFontScale = 100,
   chordsFontScale = 100,
+  showFullscreenControls,
   currentSong,
   // Lyrics props
   lyricsData,
@@ -70,6 +72,49 @@ export default function VideoOverlay({
   const activeLine = activeLyricIdx >= 0 ? lyricsLines[activeLyricIdx] : null;
   const nextLine = activeLyricIdx + 1 < lyricsLines.length ? lyricsLines[activeLyricIdx + 1] : null;
 
+  const getActiveFontTier = (text) => {
+    const len = text?.length || 0;
+    if (len <= 20) return 4;
+    if (len <= 35) return 3;
+    if (len <= 55) return 2;
+    return 1;
+  };
+
+  const getNextFontTier = (text) => {
+    const len = text?.length || 0;
+    if (len <= 30) return 2;
+    return 1;
+  };
+
+  const activeText = activeLine?.text || '';
+  const prevActiveTextRef = useRef(activeText);
+  const prevActiveTierRef = useRef(getActiveFontTier(activeText));
+  const isShrinkingRef = useRef(false);
+
+  if (activeText !== prevActiveTextRef.current) {
+    const prevTier = prevActiveTierRef.current;
+    const currTier = getActiveFontTier(activeText);
+    const prevLen = prevActiveTextRef.current.length;
+    // Shrinking occurs when tier drops (smaller font-size) or text length increases or initial mount
+    isShrinkingRef.current = currTier < prevTier || activeText.length > prevLen || prevLen === 0;
+    prevActiveTextRef.current = activeText;
+    prevActiveTierRef.current = currTier;
+  }
+
+  const nextText = nextLine?.text || '';
+  const prevNextTextRef = useRef(nextText);
+  const prevNextTierRef = useRef(getNextFontTier(nextText));
+  const isNextShrinkingRef = useRef(false);
+
+  if (nextText !== prevNextTextRef.current) {
+    const prevTier = prevNextTierRef.current;
+    const currTier = getNextFontTier(nextText);
+    const prevLen = prevNextTextRef.current.length;
+    isNextShrinkingRef.current = currTier < prevTier || nextText.length > prevLen || prevLen === 0;
+    prevNextTextRef.current = nextText;
+    prevNextTierRef.current = currTier;
+  }
+
   // ── Chords Resolution ──
   const chords = isCurrentChords ? (chordsData?.chords || []) : [];
   let activeChordIdx = -1;
@@ -126,18 +171,11 @@ export default function VideoOverlay({
     onClose
   ]);
 
-  // Responsive lyrics font size scaled across 4 modes (Mini Player, Fullscreen, Maximized, Default)
+  // Responsive lyrics font size scaled across modes (Mini Player & Default, Fullscreen, Maximized)
   const getActiveFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (lyricsFontScale || 100) / 100;
+    const factor = (fontScale || lyricsFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
-
-    if (isMiniPlayer) {
-      if (len <= 20) return `clamp(${f(0.85)}rem, ${f(3.8)}vw, ${f(1.25)}rem)`;
-      if (len <= 35) return `clamp(${f(0.75)}rem, ${f(3.2)}vw, ${f(1.10)}rem)`;
-      if (len <= 55) return `clamp(${f(0.68)}rem, ${f(2.6)}vw, ${f(0.95)}rem)`;
-      return `clamp(${f(0.62)}rem, ${f(2.2)}vw, ${f(0.85)}rem)`;
-    }
 
     if (isFullscreen) {
       if (len <= 20) return `clamp(${f(2.20)}rem, ${f(5.5)}vw, ${f(4.50)}rem)`;
@@ -153,7 +191,7 @@ export default function VideoOverlay({
       return `clamp(${f(1.05)}rem, ${f(2.6)}vw, ${f(1.80)}rem)`;
     }
 
-    // Default window mode
+    // Default window mode & Mini Player (scaled identically)
     if (len <= 20) return `clamp(${f(1.45)}rem, ${f(4.2)}vw, ${f(2.60)}rem)`;
     if (len <= 35) return `clamp(${f(1.20)}rem, ${f(3.5)}vw, ${f(2.10)}rem)`;
     if (len <= 55) return `clamp(${f(1.05)}rem, ${f(2.8)}vw, ${f(1.70)}rem)`;
@@ -162,13 +200,8 @@ export default function VideoOverlay({
 
   const getNextFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (lyricsFontScale || 100) / 100;
+    const factor = (fontScale || lyricsFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
-
-    if (isMiniPlayer) {
-      if (len <= 30) return `clamp(${f(0.68)}rem, ${f(2.6)}vw, ${f(0.90)}rem)`;
-      return `clamp(${f(0.60)}rem, ${f(2.0)}vw, ${f(0.80)}rem)`;
-    }
 
     if (isFullscreen) {
       if (len <= 30) return `clamp(${f(1.40)}rem, ${f(3.5)}vw, ${f(2.20)}rem)`;
@@ -180,27 +213,23 @@ export default function VideoOverlay({
       return `clamp(${f(1.05)}rem, ${f(2.5)}vw, ${f(1.50)}rem)`;
     }
 
-    // Default window mode
+    // Default window mode & Mini Player (scaled identically)
     if (len <= 30) return `clamp(${f(1.05)}rem, ${f(2.7)}vw, ${f(1.45)}rem)`;
     return `clamp(${f(0.88)}rem, ${f(2.1)}vw, ${f(1.20)}rem)`;
   };
 
-  // Responsive chord font sizes scaled across 4 modes
+  // Responsive chord font sizes scaled across modes (Mini Player & Default, Fullscreen, Maximized)
   const getActiveChordSize = () => {
-    const factor = (chordsFontScale || 100) / 100;
+    const factor = (fontScale || chordsFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
-    if (isMiniPlayer) return `clamp(${f(1.35)}rem, ${f(4.5)}vw, ${f(2.00)}rem)`;
     if (isFullscreen) return `clamp(${f(3.50)}rem, ${f(8.0)}vw, ${f(6.00)}rem)`;
     if (isMaximized) return `clamp(${f(2.80)}rem, ${f(7.0)}vw, ${f(4.80)}rem)`;
     return `clamp(${f(2.20)}rem, ${f(5.5)}vw, ${f(3.60)}rem)`;
   };
 
   const getPrevChordSize = (dist) => {
-    const factor = (chordsFontScale || 100) / 100;
+    const factor = (fontScale || chordsFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
-    if (isMiniPlayer) {
-      return dist === 1 ? `clamp(${f(0.95)}rem, ${f(2.8)}vw, ${f(1.35)}rem)` : `clamp(${f(0.75)}rem, ${f(2.2)}vw, ${f(1.10)}rem)`;
-    }
     if (isFullscreen) {
       return dist === 1 ? `clamp(${f(2.20)}rem, ${f(5.0)}vw, ${f(3.50)}rem)` : `clamp(${f(1.70)}rem, ${f(3.8)}vw, ${f(2.60)}rem)`;
     }
@@ -211,13 +240,8 @@ export default function VideoOverlay({
   };
 
   const getNextChordSize = (idx) => {
-    const factor = (chordsFontScale || 100) / 100;
+    const factor = (fontScale || chordsFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
-    if (isMiniPlayer) {
-      if (idx === 0) return `clamp(${f(1.05)}rem, ${f(3.0)}vw, ${f(1.45)}rem)`;
-      if (idx === 1) return `clamp(${f(0.85)}rem, ${f(2.4)}vw, ${f(1.20)}rem)`;
-      return `clamp(${f(0.70)}rem, ${f(2.0)}vw, ${f(1.00)}rem)`;
-    }
     if (isFullscreen) {
       if (idx === 0) return `clamp(${f(2.40)}rem, ${f(5.2)}vw, ${f(3.80)}rem)`;
       if (idx === 1) return `clamp(${f(1.90)}rem, ${f(4.2)}vw, ${f(3.00)}rem)`;
@@ -277,8 +301,8 @@ export default function VideoOverlay({
       }}
       data-bg="true"
     >
-      {/* ── Top-Right (X) Return Button (Visible on Hover, Hidden in Mini Player) ── */}
-      {!isMiniPlayer && (
+      {/* ── Top-Right (X) Return Button (Visible on Hover, Hidden in Mini Player and Fullscreen) ── */}
+      {!isMiniPlayer && !isFullscreen && (
         <button
           data-no-drag="true"
           onMouseDown={(e) => e.stopPropagation()}
@@ -377,7 +401,9 @@ export default function VideoOverlay({
                   textWrap: 'balance',
                   width: '100%',
                   fontStyle: activeLine ? 'normal' : 'italic',
-                  transition: 'color 0.2s ease, font-size 0.2s ease',
+                  transition: isShrinkingRef.current
+                    ? 'color 0.2s ease'
+                    : 'color 0.2s ease, font-size 0.28s cubic-bezier(0.25, 1, 0.5, 1)',
                   lineHeight: 1.25,
                   textAlign: 'center'
                 }}
@@ -400,7 +426,10 @@ export default function VideoOverlay({
                     textWrap: 'balance',
                     width: '100%',
                     lineHeight: 1.25,
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    transition: isNextShrinkingRef.current
+                      ? 'color 0.2s ease'
+                      : 'color 0.2s ease, font-size 0.28s cubic-bezier(0.25, 1, 0.5, 1)'
                   }}
                 >
                   {nextLine.text}
@@ -409,8 +438,8 @@ export default function VideoOverlay({
             </div>
           )}
 
-          {/* Bottom Floating Sync Calibration Capsule (Visible on Hover, Hidden in Mini Player) */}
-          {!isMiniPlayer && lyricsLines.length > 0 && !isLyricsLoading && onLyricsSyncChange && (
+          {/* Bottom Floating Sync Calibration Capsule (Visible on Hover, Hidden in Mini Player and Fullscreen where it is in HUD) */}
+          {!isMiniPlayer && !isFullscreen && lyricsLines.length > 0 && !isLyricsLoading && onLyricsSyncChange && (
             <div
               data-no-drag="true"
               onMouseDown={(e) => e.stopPropagation()}
@@ -645,8 +674,8 @@ export default function VideoOverlay({
             </div>
           )}
 
-          {/* Bottom Floating Sync & Key Capsule (Visible on Hover, Hidden in Mini Player) */}
-          {!isMiniPlayer && chords.length > 0 && !isChordsLoading && (
+          {/* Bottom Floating Sync & Key Capsule (Visible on Hover, Hidden in Mini Player and Fullscreen where it is in HUD) */}
+          {!isMiniPlayer && !isFullscreen && chords.length > 0 && !isChordsLoading && (
             <div
               data-no-drag="true"
               onMouseDown={(e) => e.stopPropagation()}

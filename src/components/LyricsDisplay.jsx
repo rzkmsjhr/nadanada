@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { Maximize2 } from 'lucide-react';
 
-const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, lyricsFontScale = 100, isLoading, error, onRetry }) => {
+const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, fontScale, lyricsFontScale = 100, isLoading, error, onRetry }) => {
+  const effectiveFontScale = fontScale ?? lyricsFontScale ?? 100;
   const [time, setTime] = useState(0);
   const containerRef = useRef(null);
   const activeTextRef = useRef(null);
@@ -29,6 +30,52 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
   const activeLine = activeIndex >= 0 ? lines[activeIndex] : null;
   const nextLine = activeIndex + 1 < lines.length ? lines[activeIndex + 1] : null;
 
+  const getActiveTier = (text) => {
+    const len = text?.length || 0;
+    if (len <= 15) return 5;
+    if (len <= 25) return 4;
+    if (len <= 40) return 3;
+    if (len <= 60) return 2;
+    return 1;
+  };
+
+  const getUpcomingTier = (text) => {
+    const len = text?.length || 0;
+    if (len <= 35) return 2;
+    return 1;
+  };
+
+  const activeText = activeLine?.text || '';
+  const prevActiveTextRef = useRef(activeText);
+  const prevActiveTierRef = useRef(getActiveTier(activeText));
+  const isShrinkingRef = useRef(false);
+  const prevActiveScaleRef = useRef(1);
+
+  if (activeText !== prevActiveTextRef.current) {
+    const prevTier = prevActiveTierRef.current;
+    const currTier = getActiveTier(activeText);
+    const prevLen = prevActiveTextRef.current.length;
+    // Shrinking occurs when tier drops (smaller font-size) or text is longer or initial mount
+    isShrinkingRef.current = currTier < prevTier || activeText.length > prevLen || prevLen === 0;
+    prevActiveTextRef.current = activeText;
+    prevActiveTierRef.current = currTier;
+  }
+
+  const nextText = nextLine?.text || '';
+  const prevNextTextRef = useRef(nextText);
+  const prevNextTierRef = useRef(getUpcomingTier(nextText));
+  const isNextShrinkingRef = useRef(false);
+  const prevNextScaleRef = useRef(1);
+
+  if (nextText !== prevNextTextRef.current) {
+    const prevTier = prevNextTierRef.current;
+    const currTier = getUpcomingTier(nextText);
+    const prevLen = prevNextTextRef.current.length;
+    isNextShrinkingRef.current = currTier < prevTier || nextText.length > prevLen || prevLen === 0;
+    prevNextTextRef.current = nextText;
+    prevNextTierRef.current = currTier;
+  }
+
   // Dynamic auto-scale to guarantee text NEVER overflows or shows ellipsis
   const updateScales = useCallback(() => {
     if (!containerRef.current) return;
@@ -37,30 +84,35 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
 
     if (activeTextRef.current) {
       const el = activeTextRef.current;
-      el.style.transform = 'none';
       const w = el.scrollWidth;
-      if (w > parentWidth) {
-        setActiveScale(parentWidth / w);
-      } else {
-        setActiveScale(1);
+      const targetScale = w > parentWidth ? parentWidth / w : 1;
+      const isScaleShrinking = isShrinkingRef.current || (targetScale < (prevActiveScaleRef.current - 0.02));
+      if (isScaleShrinking) {
+        el.style.transition = 'color 0.2s ease';
       }
+      // Immediately set the target scale so the browser never renders an unscaled/oversized frame
+      el.style.transform = `scale(${targetScale})`;
+      prevActiveScaleRef.current = targetScale;
+      setActiveScale(targetScale);
     }
 
     if (nextTextRef.current) {
       const el = nextTextRef.current;
-      el.style.transform = 'none';
       const w = el.scrollWidth;
-      if (w > parentWidth) {
-        setNextScale(parentWidth / w);
-      } else {
-        setNextScale(1);
+      const targetScale = w > parentWidth ? parentWidth / w : 1;
+      const isScaleShrinking = isNextShrinkingRef.current || (targetScale < (prevNextScaleRef.current - 0.02));
+      if (isScaleShrinking) {
+        el.style.transition = 'color 0.2s ease';
       }
+      el.style.transform = `scale(${targetScale})`;
+      prevNextScaleRef.current = targetScale;
+      setNextScale(targetScale);
     }
   }, []);
 
   useLayoutEffect(() => {
     updateScales();
-  }, [activeLine?.text, nextLine?.text, lyricsFontScale, updateScales]);
+  }, [activeLine?.text, nextLine?.text, effectiveFontScale, updateScales]);
 
   useEffect(() => {
     window.addEventListener('resize', updateScales);
@@ -161,7 +213,7 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
   // Responsive font size calculation scaled by user settings
   const get25PercentFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (lyricsFontScale || 100) / 100;
+    const factor = (effectiveFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
     if (len <= 18) return `clamp(${f(1.10)}rem, ${f(2.8)}vw, ${f(1.30)}rem)`;
     if (len <= 30) return `clamp(${f(1.00)}rem, ${f(2.4)}vw, ${f(1.18)}rem)`;
@@ -172,7 +224,7 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
 
   const getUpcomingFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (lyricsFontScale || 100) / 100;
+    const factor = (effectiveFontScale || 100) / 100;
     const f = (val) => Number((val * factor).toFixed(2));
     if (len <= 35) return `clamp(${f(0.82)}rem, ${f(1.8)}vw, ${f(0.94)}rem)`;
     return `clamp(${f(0.74)}rem, ${f(1.5)}vw, ${f(0.84)}rem)`;
@@ -200,7 +252,9 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
           overflow: 'hidden',
           textOverflow: 'clip',
           fontStyle: activeLine ? 'normal' : 'italic',
-          transition: 'color 0.2s ease, font-size 0.2s ease',
+          transition: isShrinkingRef.current
+            ? 'color 0.2s ease'
+            : 'color 0.2s ease, font-size 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
           lineHeight: 1.25,
           display: 'inline-block',
           width: 'max-content',
@@ -227,7 +281,10 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
             display: 'inline-block',
             width: 'max-content',
             transform: `scale(${nextScale})`,
-            transformOrigin: 'left center'
+            transformOrigin: 'left center',
+            transition: isNextShrinkingRef.current
+              ? 'color 0.2s ease'
+              : 'color 0.2s ease, font-size 0.25s cubic-bezier(0.25, 1, 0.5, 1), transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
           }}
         >
           {nextLine.text}
