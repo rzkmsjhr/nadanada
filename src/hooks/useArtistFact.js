@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 
 const WIKI_HEADERS = {
-  'User-Agent': 'NadaNada/0.5.12 (music player app; contact: nadanada@app.local)'
+  'User-Agent': 'NadaNada/0.5.13 (music player app; contact: nadanada@app.local)'
 };
 
 // Safe JSON fetcher from Wikipedia API with AbortSignal support
