@@ -22,13 +22,15 @@ export function useChords(currentSong, isAudioPlaying, api) {
           setIsFetchingChords(true);
           setChordsError(null);
           try {
-            // Append the channel/artist name to the title so Google finds the exact artist's version
-            let searchTitle = currentSong.title;
-            if (currentSong.channel) {
-              const cleanChannel = currentSong.channel.replace(/ - Topic/i, '').trim();
-              searchTitle = `${searchTitle} ${cleanChannel}`;
-            }
-            const res = await api.scrapeChords(currentSong.id, searchTitle);
+            // Clean title of bracketed extras like (2024 Remaster), [Official Audio]
+            let cleanSongTitle = (currentSong.title || '')
+              .replace(/\s*\([^)]*\)/g, '')
+              .replace(/\s*\[[^\]]*\]/g, '')
+              .replace(/\s*\{[^}]*\}/g, '')
+              .trim();
+            const cleanChannel = (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim();
+            const searchTitle = cleanChannel ? `${cleanSongTitle} ${cleanChannel}` : cleanSongTitle;
+            const res = await api.scrapeChords(currentSong.id, searchTitle, currentSong.duration);
             if (isCancelled) return;
             
             const parsed = JSON.parse(res);
@@ -38,14 +40,36 @@ export function useChords(currentSong, isAudioPlaying, api) {
                 const lastChordTime = chordsList[chordsList.length - 1].time_sec;
                 const videoDuration = parseDuration(currentSong.duration);
 
-                // Mismatch if chords extend past the video (meaning Chordify's version has a longer intro/body)
-                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 15;
-                // Mismatch if chords end suspiciously early (e.g. they only cover less than 60% of the video length)
-                const isTooShort = videoDuration > 0 && lastChordTime < videoDuration * 0.6;
-                if (isTooLong || isTooShort) {
-                  setChordsError(`Mismatched song version. Not found on Chordify.`);
+                // Check if Chordify returned the exact same YouTube video ID
+                const chordifyVideoId = parsed.data.chordify_video_id;
+                const isExactVideoMatch = Boolean(chordifyVideoId && chordifyVideoId === currentSong.id);
+
+                const chordifyDurationSec = parseDuration(parsed.data.chordify_duration);
+
+                // Mismatch heuristics (only when not the exact same video)
+                // 1. Chords extend past video end by > 5s (e.g. video version with long intro storytelling/dialogue)
+                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 5;
+
+                // 2. Chords stop way too early (< 50% of song length), meaning transcription cut short
+                const isTooShort = videoDuration > 0 && lastChordTime < videoDuration * 0.5;
+
+                // 3. If Chordify's actual video duration is known, check if it differs by > 5s (e.g. 5:54 audio vs 6:04 music video)
+                // NOTE: We compare chordifyDurationSec to videoDuration, NOT lastChordTime, because many songs have instrument-free outros!
+                const isDurationMismatch = Boolean(
+                  videoDuration > 0 && chordifyDurationSec > 0 && Math.abs(chordifyDurationSec - videoDuration) > 5
+                );
+
+                const isMismatch = !isExactVideoMatch && (isTooLong || isTooShort || isDurationMismatch);
+
+                if (isMismatch) {
+                  setChordsError(`Mismatched song version. Chordify has a different version.`);
                   setChordsData({
-                    _songId: currentSong.id
+                    _songId: currentSong.id,
+                    chordify_video_id: parsed.data.chordify_video_id || null,
+                    chordify_title: parsed.data.chordify_title || null,
+                    chordify_channel: parsed.data.chordify_channel || null,
+                    chordify_thumbnail: parsed.data.chordify_thumbnail || null,
+                    chordify_duration: parsed.data.chordify_duration || null
                   });
                 } else {
                   setChordsData({

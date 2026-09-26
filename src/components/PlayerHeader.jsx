@@ -35,7 +35,8 @@ export default function PlayerHeader({
   setVideoOverlayMode,
   fontScale,
   lyricsFontScale,
-  chordsFontScale
+  chordsFontScale,
+  onAddChordifySong
 }) {
   const isViewActive = (showLyrics || showChords) && !videoOverlayMode;
   const [showDropdown, setShowDropdown] = useState(false);
@@ -178,7 +179,9 @@ export default function PlayerHeader({
                     onRetry={() => {
                       setChordsData(null);
                       setChordsError(null);
-                    }} 
+                    }}
+                    onAddChordifySong={onAddChordifySong}
+                    currentSong={playlist?.[currentIndex]}
                   />
                 </div>
                 {chordsData && !isFetchingChords && !chordsError && (

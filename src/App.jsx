@@ -385,7 +385,7 @@ function App() {
     handleRetry: handleRetryLyrics
   } = useLyrics(currentSong, isAudioPlaying, api);
   const [videoOverlayMode, setVideoOverlayMode] = useState(null); // 'lyrics' | 'chords' | null
-  const artistFact = useArtistFact(currentSong);
+  const artistFact = useArtistFact(currentSong, albumInfo);
   const {
     repeatMode, setRepeatMode,
     isShuffle, setIsShuffle,
@@ -570,6 +570,7 @@ function App() {
                 videoOverlayMode={videoOverlayMode}
                 setVideoOverlayMode={setVideoOverlayMode}
                 fontScale={fontScale}
+                onAddChordifySong={handleAddSong}
               />
             </div>
           </div>

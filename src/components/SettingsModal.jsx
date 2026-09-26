@@ -308,7 +308,8 @@ export default function SettingsModal({
               fontWeight: 700,
               textTransform: 'uppercase',
               letterSpacing: '0.75px',
-              color: 'var(--text-muted)'
+              color: 'var(--text-muted)',
+              whiteSpace: 'nowrap'
             }}>
               <Type size={16} />
               <span>Lyrics &amp; Chords Font Size</span>
@@ -316,9 +317,10 @@ export default function SettingsModal({
             <span style={{
               fontSize: '0.85rem',
               fontWeight: 700,
-              color: 'var(--accent-color)'
+              color: 'var(--accent-color)',
+              whiteSpace: 'nowrap'
             }}>
-              {fontScale}%{fontScale === 100 ? ' (Default)' : ''}
+              {fontScale}%
             </span>
           </div>
 

@@ -174,7 +174,7 @@ export default function VideoOverlay({
   // Responsive lyrics font size scaled across modes (Mini Player & Default, Fullscreen, Maximized)
   const getActiveFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (fontScale || lyricsFontScale || 100) / 100;
+    const factor = ((fontScale || lyricsFontScale || 100) / 100) * 1.25;
     const f = (val) => Number((val * factor).toFixed(2));
 
     if (isFullscreen) {
@@ -200,7 +200,7 @@ export default function VideoOverlay({
 
   const getNextFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (fontScale || lyricsFontScale || 100) / 100;
+    const factor = ((fontScale || lyricsFontScale || 100) / 100) * 1.25;
     const f = (val) => Number((val * factor).toFixed(2));
 
     if (isFullscreen) {

@@ -23,8 +23,7 @@ export const api = {
   addLocalSong: (filePath) => invoke('add_local_song', { filePath }),
   deleteDownloadedSong: (filePath) => invoke('delete_downloaded_song', { filePath }),
   
-  // Utilities
-  scrapeChords: (id, title) => invoke('scrape_chords', { id, title }),
+  scrapeChords: (id, title, duration = null) => invoke('scrape_chords', { id, title, duration }),
   getLyrics: (title, artist, duration = null, videoId = null) => invoke('get_lyrics', { title, artist, duration, videoId }),
   saveLyrics: (videoId, title, artist, syncedLyrics) => invoke('save_lyrics', { videoId, title, artist, syncedLyrics }),
   getStreamUrl: (videoId) => invoke('get_stream_url', { videoId }),

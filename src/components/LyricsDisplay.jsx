@@ -213,7 +213,7 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
   // Responsive font size calculation scaled by user settings
   const get25PercentFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (effectiveFontScale || 100) / 100;
+    const factor = ((effectiveFontScale || 100) / 100) * 1.25;
     const f = (val) => Number((val * factor).toFixed(2));
     if (len <= 18) return `clamp(${f(1.10)}rem, ${f(2.8)}vw, ${f(1.30)}rem)`;
     if (len <= 30) return `clamp(${f(1.00)}rem, ${f(2.4)}vw, ${f(1.18)}rem)`;
@@ -224,7 +224,7 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
 
   const getUpcomingFontSize = (text) => {
     const len = text?.length || 0;
-    const factor = (effectiveFontScale || 100) / 100;
+    const factor = ((effectiveFontScale || 100) / 100) * 1.25;
     const f = (val) => Number((val * factor).toFixed(2));
     if (len <= 35) return `clamp(${f(0.82)}rem, ${f(1.8)}vw, ${f(0.94)}rem)`;
     return `clamp(${f(0.74)}rem, ${f(1.5)}vw, ${f(0.84)}rem)`;
