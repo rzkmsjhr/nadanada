@@ -56,7 +56,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
   if (isLoading) return <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', height: '100%' }}>Scraping chords from Chordify...</div>;
   if (error) {
     const isNotFound = error.toLowerCase().includes("not found");
-    const isMismatch = error.toLowerCase().includes("mismatch") || error.toLowerCase().includes("different version");
+    const isMismatch = error.toLowerCase().includes("mismatch") || error.toLowerCase().includes("different version") || error.toLowerCase().includes("incomplete");
 
     const handleAddMismatchSong = async () => {
       if (isAdded || isAdding || !onAddChordifySong) return;
@@ -97,38 +97,77 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
       }
     };
 
+    if (isMismatch) {
+      const cleanMismatchTitle = (data?.chordify_title || currentSong?.title || '')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*Chords?\s*(?:&|and)?\s*Lyrics?\s*by\s*.*$/i, '')
+        .replace(/\s*Chords?\s*by\s*.*$/i, '')
+        .trim();
+      const channelName = (data?.chordify_channel || '').replace(/\s*-\s*Topic$/i, '').trim();
+
+      return (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'center', 
+          width: '100%', 
+          minWidth: 0, 
+          padding: '2px 0', 
+          gap: '6px' 
+        }}>
+          {/* Row 1: Full Mismatch Message without ellipsis */}
+          <div style={{ 
+            color: 'var(--text-muted)', 
+            fontSize: '0.78rem', 
+            lineHeight: 1.35, 
+            whiteSpace: 'normal', 
+            wordBreak: 'break-word',
+            paddingRight: '18px'
+          }}>
+            <span style={{ fontWeight: 600, color: 'var(--text-main)', marginRight: '5px' }}>
+              Chordify version mismatch:
+            </span>
+            <span>
+              {cleanMismatchTitle || 'Different version'}
+              {channelName ? ` · ${channelName}` : ''}
+              {data?.chordify_duration ? ` (${data.chordify_duration})` : ''}
+            </span>
+          </div>
+
+          {/* Row 2: Relocated Action Button */}
+          {onAddChordifySong && (
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={handleAddMismatchSong}
+                disabled={isAdded || isAdding}
+                style={{
+                  background: isAdded ? 'rgba(34,197,94,0.18)' : 'rgba(139,92,246,0.18)',
+                  border: `1px solid ${isAdded ? 'rgba(34,197,94,0.6)' : 'rgba(139,92,246,0.5)'}`,
+                  color: isAdded ? '#22c55e' : 'var(--accent-color)',
+                  borderRadius: '6px',
+                  padding: '3px 10px',
+                  cursor: (isAdded || isAdding) ? 'default' : 'pointer',
+                  fontSize: '0.73rem',
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.2s ease',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                {isAdded ? '✓ Added' : isAdding ? 'Adding...' : '+ Add to Playlist'}
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
-      <div style={{ color: isMismatch ? 'var(--text-muted)' : '#ef4444', display: 'flex', alignItems: 'center', gap: '10px', height: '100%', fontSize: '0.82rem', minWidth: 0, width: '100%' }}>
-        <span style={{ opacity: 0.9, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={error}>
-          {isMismatch 
-            ? `Chordify version mismatch${data?.chordify_title ? ` (${data.chordify_title})` : ''}` 
-            : error}
-        </span>
-        {isMismatch && onAddChordifySong && (
-          <button
-            onClick={handleAddMismatchSong}
-            disabled={isAdded || isAdding}
-            style={{
-              background: isAdded ? 'rgba(34,197,94,0.18)' : 'rgba(139,92,246,0.18)',
-              border: `1px solid ${isAdded ? 'rgba(34,197,94,0.6)' : 'rgba(139,92,246,0.5)'}`,
-              color: isAdded ? '#22c55e' : 'var(--accent-color)',
-              borderRadius: '6px',
-              padding: '3px 10px',
-              cursor: (isAdded || isAdding) ? 'default' : 'pointer',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-              transition: 'all 0.2s ease',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-          >
-            {isAdded ? '✓ Added' : isAdding ? 'Adding...' : '+ Add to Playlist'}
-          </button>
-        )}
-        {!isNotFound && !isMismatch && (
+      <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '10px', height: '100%', fontSize: '0.82rem', minWidth: 0, width: '100%' }}>
+        <span style={{ opacity: 0.9 }}>{error}</span>
+        {!isNotFound && (
           <button onClick={onRetry} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Retry</button>
         )}
       </div>

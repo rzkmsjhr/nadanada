@@ -167,7 +167,7 @@ export default function PlayerHeader({
 
             {showChords ? (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, justifyContent: 'center' }}>
-                <div style={{ height: '36px', display: 'flex', alignItems: 'center' }}>
+                <div style={{ minHeight: '36px', height: 'auto', display: 'flex', alignItems: 'center' }}>
                   <ChordDisplay 
                     data={chordsData} 
                     syncOffset={syncOffset} 

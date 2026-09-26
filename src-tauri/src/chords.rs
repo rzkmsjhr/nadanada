@@ -309,6 +309,37 @@ pub async fn scrape_chords(
                     let bpmMatch = document.body.textContent.match(/BPM\s*(\d{{2,3}})/i);
                     let currentChordCount = chordElements.length;
                     
+                    let bpm = 120;
+                    if (scrollEl) {{
+                        bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 120;
+                    }} else if (bpmMatch) {{
+                        bpm = parseFloat(bpmMatch[1]) || 120;
+                    }}
+                    let secondsPerBeat = 60.0 / bpm;
+
+                    // Trigger scroll on sheet container and page so lazy/virtualized chord grids render
+                    if (scrollEl) {{
+                        scrollEl.scrollTop = scrollEl.scrollHeight;
+                        scrollEl.dispatchEvent(new Event('scroll'));
+                    }}
+                    window.scrollTo(0, document.body.scrollHeight);
+                    if (currentChordCount > 0) {{
+                        let lastEl = chordElements[currentChordCount - 1];
+                        if (lastEl) lastEl.scrollIntoView({{ block: 'end' }});
+                    }}
+
+                    // Calculate maximum time covered by currently rendered chords
+                    let maxTimeSec = 0;
+                    for (let el of chordElements) {{
+                        if (el.hasAttribute('data-i')) {{
+                            let bi = parseInt(el.getAttribute('data-i'));
+                            let t = bi * secondsPerBeat;
+                            if (t > maxTimeSec) maxTimeSec = t;
+                        }}
+                    }}
+
+                    let expectedDur = {expected_duration_sec};
+
                     // Wait for both chords AND BPM to load and stabilize in DOM
                     if (currentChordCount > 0) {{
                         if (currentChordCount > prevChordCount) {{
@@ -317,8 +348,11 @@ pub async fn scrape_chords(
                             return; // Chords are still streaming/populating in DOM
                         }} else {{
                             stableChordAttempts++;
-                            if (stableChordAttempts < 3 && attempts < 50) {{
-                                return; // Count must stay stable for 1.5 seconds
+                            // If chords haven't reached at least 65% of expected duration, require longer stability (8 checks = 4s)
+                            let isCoverageLow = expectedDur > 60 && maxTimeSec < (expectedDur * 0.65);
+                            let requiredStable = isCoverageLow ? 8 : 3;
+                            if (stableChordAttempts < requiredStable && attempts < 50) {{
+                                return;
                             }}
                         }}
 
@@ -463,13 +497,14 @@ pub async fn scrape_chords(
                         let candDur = chordifyDurSec > 0 ? chordifyDurSec : lastChordTime;
                         let expectedDur = {expected_duration_sec};
                         let durDiff = expectedDur > 0 && candDur > 0 ? Math.abs(candDur - expectedDur) : 0;
+                        let isIncomplete = expectedDur > 60 && lastChordTime < (expectedDur * 0.6);
                         let remCandidatesJson = sessionStorage.getItem('chord_candidates');
                         let remCandidates = remCandidatesJson ? JSON.parse(remCandidatesJson) : [];
 
-                        if (expectedDur > 0 && durDiff > 5 && remCandidates.length > 0) {{
+                        if (expectedDur > 0 && (durDiff > 5 || isIncomplete) && remCandidates.length > 0) {{
                             let nextCandidateUrl = remCandidates.shift();
                             sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates));
-                            console.log('[NadaNada] Duration difference is large (' + durDiff.toFixed(1) + 's). Trying next candidate:', nextCandidateUrl);
+                            console.log('[NadaNada] Candidate issue (' + durDiff.toFixed(1) + 's diff, incomplete: ' + isIncomplete + '). Trying next candidate:', nextCandidateUrl);
                             window.location.replace(nextCandidateUrl);
                             return;
                         }}

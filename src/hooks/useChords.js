@@ -46,12 +46,13 @@ export function useChords(currentSong, isAudioPlaying, api) {
 
                 const chordifyDurationSec = parseDuration(parsed.data.chordify_duration);
 
-                // Mismatch heuristics (only when not the exact same video)
+                // Mismatch heuristics
                 // 1. Chords extend past video end by > 5s (e.g. video version with long intro storytelling/dialogue)
                 const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 5;
 
-                // 2. Chords stop way too early (< 50% of song length), meaning transcription cut short
-                const isTooShort = videoDuration > 0 && lastChordTime < videoDuration * 0.5;
+                // 2. Chords stop way too early (< 60% of song length), meaning transcription cut short / incomplete
+                // Applies even on exact video match so stuck/truncated chords are not silently played
+                const isTooShort = videoDuration > 60 && lastChordTime < videoDuration * 0.6;
 
                 // 3. If Chordify's actual video duration is known, check if it differs by > 5s (e.g. 5:54 audio vs 6:04 music video)
                 // NOTE: We compare chordifyDurationSec to videoDuration, NOT lastChordTime, because many songs have instrument-free outros!
@@ -59,10 +60,13 @@ export function useChords(currentSong, isAudioPlaying, api) {
                   videoDuration > 0 && chordifyDurationSec > 0 && Math.abs(chordifyDurationSec - videoDuration) > 5
                 );
 
-                const isMismatch = !isExactVideoMatch && (isTooLong || isTooShort || isDurationMismatch);
+                const isMismatch = isTooShort || (!isExactVideoMatch && (isTooLong || isDurationMismatch));
 
                 if (isMismatch) {
-                  setChordsError(`Mismatched song version. Chordify has a different version.`);
+                  const errorMsg = isTooShort
+                    ? `Incomplete chord transcription on Chordify (stops at ${Math.floor(lastChordTime / 60)}:${String(Math.floor(lastChordTime % 60)).padStart(2, '0')}).`
+                    : `Mismatched song version. Chordify has a different version.`;
+                  setChordsError(errorMsg);
                   setChordsData({
                     _songId: currentSong.id,
                     chordify_video_id: parsed.data.chordify_video_id || null,
