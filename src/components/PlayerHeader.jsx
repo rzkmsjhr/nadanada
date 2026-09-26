@@ -182,6 +182,7 @@ export default function PlayerHeader({
                     }}
                     onAddChordifySong={onAddChordifySong}
                     currentSong={playlist?.[currentIndex]}
+                    playlist={playlist}
                   />
                 </div>
                 {chordsData && !isFetchingChords && !chordsError && (

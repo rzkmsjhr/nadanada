@@ -37,10 +37,15 @@ export function transposeChord(chord, semitones) {
   return chord.split('/').map(transposeSingle).join('/');
 }
 
-const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale = 100, isLoading, error, onRetry, onAddChordifySong, currentSong }) => {
+const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale = 100, isLoading, error, onRetry, onAddChordifySong, currentSong, playlist }) => {
   const [time, setTime] = useState(0);
   const [justAdded, setJustAdded] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [fallbackAddedVideoId, setFallbackAddedVideoId] = useState(null);
+
+  const targetVideoId = data?.chordify_video_id || fallbackAddedVideoId;
+  const isAlreadyInPlaylist = Boolean(targetVideoId && playlist?.some(s => s.id === targetVideoId));
+  const isAdded = justAdded || isAlreadyInPlaylist;
 
   useEffect(() => {
     const handleTime = (e) => setTime(e.detail + (syncOffset || 0));
@@ -54,7 +59,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
     const isMismatch = error.toLowerCase().includes("mismatch") || error.toLowerCase().includes("different version");
 
     const handleAddMismatchSong = async () => {
-      if (justAdded || isAdding || !onAddChordifySong) return;
+      if (isAdded || isAdding || !onAddChordifySong) return;
       setIsAdding(true);
       try {
         if (data?.chordify_video_id) {
@@ -71,7 +76,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
             duration: data.chordify_duration || ''
           });
           setJustAdded(true);
-          setTimeout(() => setJustAdded(false), 3000);
+          setTimeout(() => setJustAdded(false), 1500);
         } else {
           // Fallback: search YouTube for the official music video / Chordify version
           const title = data?.chordify_title || currentSong?.title || '';
@@ -80,8 +85,9 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
           const searchRes = await api.searchYouTube(query, 'video');
           if (searchRes && searchRes.length > 0) {
             onAddChordifySong(searchRes[0]);
+            setFallbackAddedVideoId(searchRes[0].id);
             setJustAdded(true);
-            setTimeout(() => setJustAdded(false), 3000);
+            setTimeout(() => setJustAdded(false), 1500);
           }
         }
       } catch (err) {
@@ -101,14 +107,14 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
         {isMismatch && onAddChordifySong && (
           <button
             onClick={handleAddMismatchSong}
-            disabled={isAdding}
+            disabled={isAdded || isAdding}
             style={{
-              background: justAdded ? 'rgba(34,197,94,0.18)' : 'rgba(139,92,246,0.18)',
-              border: `1px solid ${justAdded ? 'rgba(34,197,94,0.6)' : 'rgba(139,92,246,0.5)'}`,
-              color: justAdded ? '#22c55e' : 'var(--accent-color)',
+              background: isAdded ? 'rgba(34,197,94,0.18)' : 'rgba(139,92,246,0.18)',
+              border: `1px solid ${isAdded ? 'rgba(34,197,94,0.6)' : 'rgba(139,92,246,0.5)'}`,
+              color: isAdded ? '#22c55e' : 'var(--accent-color)',
               borderRadius: '6px',
               padding: '3px 10px',
-              cursor: (justAdded || isAdding) ? 'default' : 'pointer',
+              cursor: (isAdded || isAdding) ? 'default' : 'pointer',
               fontSize: '0.75rem',
               fontWeight: 600,
               whiteSpace: 'nowrap',
@@ -119,7 +125,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
               gap: '4px'
             }}
           >
-            {justAdded ? '✓ Added' : isAdding ? 'Adding...' : '+ Add to Playlist'}
+            {isAdded ? '✓ Added' : isAdding ? 'Adding...' : '+ Add to Playlist'}
           </button>
         )}
         {!isNotFound && !isMismatch && (
