@@ -60,8 +60,9 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
             <div ref={subtitleRef} className={`song-title ${isHovered && shouldScrollSubtitle ? 'scrolling' : ''}`} style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 400, paddingBottom: 0 }}>
               {(() => {
                 const cleanChannel = song.channel.replace(/\s*-\s*Topic$/i, '');
-                const artist = (albumInfo?.artist) || cleanChannel;
-                const album = albumInfo?.album || '';
+                let artist = (albumInfo?.artist) || cleanChannel;
+                artist = artist.replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
+                let album = (albumInfo?.album || '').replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
                 return (
                   <>
                     <span>{artist}</span>

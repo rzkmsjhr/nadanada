@@ -36,7 +36,7 @@ export function transposeChord(chord, semitones) {
   return chord.split('/').map(transposeSingle).join('/');
 }
 
-const ChordDisplay = ({ data, syncOffset, transpose, isLoading, error, onRetry }) => {
+const ChordDisplay = ({ data, syncOffset, transpose, chordsFontScale = 100, isLoading, error, onRetry }) => {
   const [time, setTime] = React.useState(0);
 
   React.useEffect(() => {
@@ -73,6 +73,9 @@ const ChordDisplay = ({ data, syncOffset, transpose, isLoading, error, onRetry }
   const startIndex = Math.max(0, activeIndex);
   const visibleChords = chords.slice(startIndex, startIndex + 6);
 
+  const factor = (chordsFontScale || 100) / 100;
+  const f = (val) => Number((val * factor).toFixed(2));
+
   return (
     <div style={{ display: 'flex', gap: '16px', alignItems: 'center', height: '100%', overflow: 'hidden', width: '100%', maskImage: 'linear-gradient(to right, black 70%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to right, black 70%, transparent 100%)' }}>
       {visibleChords.map((c, idx) => {
@@ -81,7 +84,7 @@ const ChordDisplay = ({ data, syncOffset, transpose, isLoading, error, onRetry }
         
         return (
           <div key={globalIdx} style={{ 
-            fontSize: isActive ? '2.5rem' : '1.5rem',
+            fontSize: isActive ? `clamp(${f(1.4)}rem, ${f(2.8)}vw, ${f(2.1)}rem)` : `clamp(${f(1.0)}rem, ${f(2.0)}vw, ${f(1.4)}rem)`,
             color: isActive ? 'var(--accent-color)' : 'var(--text-muted)',
             fontWeight: isActive ? 'bold' : 'normal',
             whiteSpace: 'nowrap',

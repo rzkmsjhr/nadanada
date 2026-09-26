@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { Maximize2 } from 'lucide-react';
 
-const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, isLoading, error, onRetry }) => {
+const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, lyricsFontScale = 100, isLoading, error, onRetry }) => {
   const [time, setTime] = useState(0);
   const containerRef = useRef(null);
   const activeTextRef = useRef(null);
@@ -60,7 +60,7 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
 
   useLayoutEffect(() => {
     updateScales();
-  }, [activeLine?.text, nextLine?.text, updateScales]);
+  }, [activeLine?.text, nextLine?.text, lyricsFontScale, updateScales]);
 
   useEffect(() => {
     window.addEventListener('resize', updateScales);
@@ -158,20 +158,24 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
     );
   }
 
-  // Responsive font size calculation restored to +25%
+  // Responsive font size calculation scaled by user settings
   const get25PercentFontSize = (text) => {
     const len = text?.length || 0;
-    if (len <= 18) return 'clamp(1.10rem, 2.8vw, 1.30rem)';
-    if (len <= 30) return 'clamp(1.00rem, 2.4vw, 1.18rem)';
-    if (len <= 45) return 'clamp(0.88rem, 2.0vw, 1.05rem)';
-    if (len <= 60) return 'clamp(0.78rem, 1.7vw, 0.94rem)';
-    return 'clamp(0.70rem, 1.4vw, 0.85rem)';
+    const factor = (lyricsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+    if (len <= 18) return `clamp(${f(1.10)}rem, ${f(2.8)}vw, ${f(1.30)}rem)`;
+    if (len <= 30) return `clamp(${f(1.00)}rem, ${f(2.4)}vw, ${f(1.18)}rem)`;
+    if (len <= 45) return `clamp(${f(0.88)}rem, ${f(2.0)}vw, ${f(1.05)}rem)`;
+    if (len <= 60) return `clamp(${f(0.78)}rem, ${f(1.7)}vw, ${f(0.94)}rem)`;
+    return `clamp(${f(0.70)}rem, ${f(1.4)}vw, ${f(0.85)}rem)`;
   };
 
   const getUpcomingFontSize = (text) => {
     const len = text?.length || 0;
-    if (len <= 35) return 'clamp(0.82rem, 1.8vw, 0.94rem)';
-    return 'clamp(0.74rem, 1.5vw, 0.84rem)';
+    const factor = (lyricsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+    if (len <= 35) return `clamp(${f(0.82)}rem, ${f(1.8)}vw, ${f(0.94)}rem)`;
+    return `clamp(${f(0.74)}rem, ${f(1.5)}vw, ${f(0.84)}rem)`;
   };
 
   return (

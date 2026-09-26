@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow } from 'lucide-react';
+import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow, Type } from 'lucide-react';
 import { api } from '../services/api';
 
 const THEMES = [
@@ -21,6 +21,10 @@ export default function SettingsModal({
   setCrossfadeDuration,
   miniPlayerOpacity = 20,
   setMiniPlayerOpacity,
+  lyricsFontScale = 100,
+  setLyricsFontScale,
+  chordsFontScale = 100,
+  setChordsFontScale,
   closeBehavior = 'prompt',
   setCloseBehavior
 }) {
@@ -263,6 +267,123 @@ export default function SettingsModal({
             <span>50%</span>
             <span>70%</span>
             <span>100%</span>
+          </div>
+        </div>
+
+        {/* Lyrics & Chords Font Size Section */}
+        <div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            fontSize: '0.8rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.75px',
+            color: 'var(--text-muted)',
+            marginBottom: '12px'
+          }}>
+            <Type size={16} />
+            <span>Lyrics &amp; Chords Font Size</span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Lyrics Font Size */}
+            <div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '6px'
+              }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 500 }}>Lyrics Size</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color)' }}>
+                  {lyricsFontScale}%{lyricsFontScale === 100 ? ' (Default)' : ''}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="70"
+                max="150"
+                step="5"
+                value={lyricsFontScale}
+                onChange={(e) => {
+                  if (setLyricsFontScale) setLyricsFontScale(Number(e.target.value));
+                }}
+                className="seek-bar"
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--accent-color)',
+                  background: `linear-gradient(to right, var(--accent-color) ${((lyricsFontScale - 70) / 80) * 100}%, var(--panel-border) ${((lyricsFontScale - 70) / 80) * 100}%)`,
+                  cursor: 'pointer'
+                }}
+              />
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                marginTop: '4px',
+                userSelect: 'none'
+              }}>
+                <span>70%</span>
+                <span>100%</span>
+                <span>150%</span>
+              </div>
+            </div>
+
+            {/* Chords Font Size */}
+            <div>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '6px'
+              }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-main)', fontWeight: 500 }}>Chords Size</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--accent-color)' }}>
+                  {chordsFontScale}%{chordsFontScale === 100 ? ' (Default)' : ''}
+                </span>
+              </div>
+              <input
+                type="range"
+                min="70"
+                max="150"
+                step="5"
+                value={chordsFontScale}
+                onChange={(e) => {
+                  if (setChordsFontScale) setChordsFontScale(Number(e.target.value));
+                }}
+                className="seek-bar"
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--accent-color)',
+                  background: `linear-gradient(to right, var(--accent-color) ${((chordsFontScale - 70) / 80) * 100}%, var(--panel-border) ${((chordsFontScale - 70) / 80) * 100}%)`,
+                  cursor: 'pointer'
+                }}
+              />
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '0.7rem',
+                color: 'var(--text-muted)',
+                marginTop: '4px',
+                userSelect: 'none'
+              }}>
+                <span>70%</span>
+                <span>100%</span>
+                <span>150%</span>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            fontSize: '0.72rem',
+            color: 'var(--text-muted)',
+            marginTop: '8px',
+            opacity: 0.8
+          }}>
+            Scales lyrics and chords across fullscreen, maximized, regular, and mini player modes.
           </div>
         </div>
 

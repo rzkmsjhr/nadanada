@@ -1573,6 +1573,45 @@ pub async fn get_playlist_title(platform: String, playlist_id: String) -> Result
     Err("Unknown platform".to_string())
 }
 
+pub fn decode_process_output(bytes: &[u8]) -> String {
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return s.trim().to_string();
+    }
+    // Fallback: Windows-1252 / ISO-8859-1 decoding for legacy OEM/ANSI stdout
+    bytes.iter().map(|&b| match b {
+        0x00..=0x7F => b as char,
+        0x80 => '€',
+        0x82 => '‚',
+        0x83 => 'ƒ',
+        0x84 => '„',
+        0x85 => '…',
+        0x86 => '†',
+        0x87 => '‡',
+        0x88 => 'ˆ',
+        0x89 => '‰',
+        0x8A => 'Š',
+        0x8B => '‹',
+        0x8C => 'Œ',
+        0x8E => 'Ž',
+        0x91 => '‘',
+        0x92 => '’',
+        0x93 => '“',
+        0x94 => '”',
+        0x95 => '•',
+        0x96 => '–',
+        0x97 => '—',
+        0x98 => '˜',
+        0x99 => '™',
+        0x9A => 'š',
+        0x9B => '›',
+        0x9C => 'œ',
+        0x9E => 'ž',
+        0x9F => 'Ÿ',
+        0xA0..=0xFF => b as char,
+        _ => ' ',
+    }).collect::<String>().trim().to_string()
+}
+
 #[tauri::command]
 pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String> {
     let url = format!("https://www.youtube.com/watch?v={}", video_id);
@@ -1581,11 +1620,16 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
     let exe_path = crate::downloads::get_yt_dlp_path().await?;
     let mut cmd = tokio::process::Command::new(exe_path);
     cmd.stdin(std::process::Stdio::null())
+        .arg("--encoding")
+        .arg("utf-8")
         .arg("--print")
         .arg("%(album)s|||%(artist)s")
         .arg("--no-download")
         .arg("--no-warnings")
         .arg(&url);
+
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
 
     #[cfg(target_os = "windows")]
     {
@@ -1634,7 +1678,7 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
 
     if let Ok(Ok(output)) = output_res {
         if output.status.success() {
-            let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let raw = decode_process_output(&output.stdout);
             let parts: Vec<&str> = raw.splitn(2, "|||").collect();
             if parts.len() == 2 {
                 album = parts[0].trim().to_string();

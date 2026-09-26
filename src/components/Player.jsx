@@ -15,6 +15,7 @@ const Player = React.forwardRef(function Player({
   videoOverlayMode, setVideoOverlayMode,
   lyricsData, lyricsSyncOffset, setLyricsSyncOffset, isFetchingLyrics, lyricsError, onRetryLyrics,
   chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords,
+  lyricsFontScale, chordsFontScale,
   downloadedIds
 }, ref) {
   
@@ -155,7 +156,7 @@ const Player = React.forwardRef(function Player({
           
           <div style={{ position: 'absolute', inset: 0 }}>
             {/* Deck 0 (YouTube) */}
-            {core.deck0Song && !core.deck0Song.is_local && !core.streamUrl && !core.isExtractingStream && (
+            {core.deck0Song && !core.deck0Song?.is_local && !core.streamUrl && !core.isExtractingStream && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -179,29 +180,50 @@ const Player = React.forwardRef(function Player({
                   onStateChange={(e) => core.onDeckStateChange(0, e)}
                   onError={async (e) => {
                     console.error("Deck 0 YouTube Error:", e);
-                    if (core.isCrossfading) {
-                      if (core.activeDeck === 0) {
-                        if (core.finishCrossfade) core.finishCrossfade();
-                        else core.cancelCrossfade();
-                      } else {
-                        core.cancelCrossfade();
-                      }
-                    }
-                    if (!core.streamUrl && !core.isExtractingStream) {
-                      core.setIsExtractingStream(true);
-                      try {
-                        const url = await api.getStreamUrl(core.deck0Song.id);
-                        core.setStreamUrl(url);
-                      } catch (err) {
-                        console.error("Stream extraction fallback failed:", err);
-                        if (hasNext) onNext();
-                        else {
-                          core.setIsPlaying(false);
-                          if (onPlayStateChange) onPlayStateChange(false);
-                          if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                    const rawCode = e?.data ?? e;
+                    const errorCode = Number(rawCode);
+                    // YouTube IFrame API standard embed restriction errors:
+                    // 101 - The owner of the requested video does not allow it to be played in embedded players.
+                    // 150 - Same as 101 (embed blocked by owner / copyright restriction).
+                    const isEmbedBlocked = errorCode === 101 || errorCode === 150;
+
+                    if (isEmbedBlocked) {
+                      console.log(`[Player] Deck 0 video ${core.deck0Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
+                      if (core.isCrossfading) {
+                        if (core.activeDeck === 0) {
+                          if (core.finishCrossfade) core.finishCrossfade();
+                          else core.cancelCrossfade();
+                        } else {
+                          core.cancelCrossfade();
                         }
-                      } finally {
-                        core.setIsExtractingStream(false);
+                      }
+                      if (!core.streamUrl && !core.isExtractingStream && core.deck0Song) {
+                        core.setIsExtractingStream(true);
+                        try {
+                          const url = await api.getStreamUrl(core.deck0Song.id);
+                          core.setStreamUrl(url);
+                        } catch (err) {
+                          console.error("Stream extraction fallback failed:", err);
+                          if (hasNext) onNext();
+                          else {
+                            core.setIsPlaying(false);
+                            if (onPlayStateChange) onPlayStateChange(false);
+                            if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                          }
+                        } finally {
+                          core.setIsExtractingStream(false);
+                        }
+                      }
+                    } else {
+                      console.warn(`[Player] Deck 0 YouTube Error ${errorCode} is not an embed block.`);
+                      if (errorCode === 5) {
+                        // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
+                        // Give it a chance to buffer and play without killing the video.
+                        try { e.target?.playVideo?.(); } catch (_) {}
+                      } else if (errorCode === 100) {
+                        // Video removed or private
+                        if (hasNext) onNext();
+                        else if (onError) onError("Video not found or has been removed.");
                       }
                     }
                   }}
@@ -217,7 +239,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 1 (YouTube) */}
-            {core.deck1Song && !core.deck1Song.is_local && !core.streamUrl && !core.isExtractingStream && (
+            {core.deck1Song && !core.deck1Song?.is_local && !core.streamUrl && !core.isExtractingStream && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -241,29 +263,50 @@ const Player = React.forwardRef(function Player({
                   onStateChange={(e) => core.onDeckStateChange(1, e)}
                   onError={async (e) => {
                     console.error("Deck 1 YouTube Error:", e);
-                    if (core.isCrossfading) {
-                      if (core.activeDeck === 1) {
-                        if (core.finishCrossfade) core.finishCrossfade();
-                        else core.cancelCrossfade();
-                      } else {
-                        core.cancelCrossfade();
-                      }
-                    }
-                    if (!core.streamUrl && !core.isExtractingStream) {
-                      core.setIsExtractingStream(true);
-                      try {
-                        const url = await api.getStreamUrl(core.deck1Song.id);
-                        core.setStreamUrl(url);
-                      } catch (err) {
-                        console.error("Stream extraction fallback failed:", err);
-                        if (hasNext) onNext();
-                        else {
-                          core.setIsPlaying(false);
-                          if (onPlayStateChange) onPlayStateChange(false);
-                          if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                    const rawCode = e?.data ?? e;
+                    const errorCode = Number(rawCode);
+                    // YouTube IFrame API standard embed restriction errors:
+                    // 101 - The owner of the requested video does not allow it to be played in embedded players.
+                    // 150 - Same as 101 (embed blocked by owner / copyright restriction).
+                    const isEmbedBlocked = errorCode === 101 || errorCode === 150;
+
+                    if (isEmbedBlocked) {
+                      console.log(`[Player] Deck 1 video ${core.deck1Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
+                      if (core.isCrossfading) {
+                        if (core.activeDeck === 1) {
+                          if (core.finishCrossfade) core.finishCrossfade();
+                          else core.cancelCrossfade();
+                        } else {
+                          core.cancelCrossfade();
                         }
-                      } finally {
-                        core.setIsExtractingStream(false);
+                      }
+                      if (!core.streamUrl && !core.isExtractingStream && core.deck1Song) {
+                        core.setIsExtractingStream(true);
+                        try {
+                          const url = await api.getStreamUrl(core.deck1Song.id);
+                          core.setStreamUrl(url);
+                        } catch (err) {
+                          console.error("Stream extraction fallback failed:", err);
+                          if (hasNext) onNext();
+                          else {
+                            core.setIsPlaying(false);
+                            if (onPlayStateChange) onPlayStateChange(false);
+                            if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                          }
+                        } finally {
+                          core.setIsExtractingStream(false);
+                        }
+                      }
+                    } else {
+                      console.warn(`[Player] Deck 1 YouTube Error ${errorCode} is not an embed block.`);
+                      if (errorCode === 5) {
+                        // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
+                        // Give it a chance to buffer and play without killing the video.
+                        try { e.target?.playVideo?.(); } catch (_) {}
+                      } else if (errorCode === 100) {
+                        // Video removed or private
+                        if (hasNext) onNext();
+                        else if (onError) onError("Video not found or has been removed.");
                       }
                     }
                   }}
@@ -366,15 +409,15 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 0 (Local / Stream Audio) */}
-            {core.deck0Song && (core.deck0Song.is_local || core.streamUrl) && (
+            {core.deck0Song && (core.deck0Song?.is_local || core.streamUrl) && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
                 </div>
-                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
                   id="deck-0-audio"
-                  src={core.deck0Song.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl}
+                  src={core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl}
                   autoPlay
                   onPlay={() => {
                     if (core.activeDeck === 0) {
@@ -423,15 +466,15 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 1 (Local / Stream Audio) */}
-            {core.deck1Song && (core.deck1Song.is_local || core.streamUrl) && (
+            {core.deck1Song && (core.deck1Song?.is_local || core.streamUrl) && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                 <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                    ♪
                 </div>
-                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
                 <audio
                   id="deck-1-audio"
-                  src={core.deck1Song.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl}
+                  src={core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl}
                   autoPlay
                   onPlay={() => {
                     if (core.activeDeck === 1) {
@@ -625,7 +668,10 @@ const Player = React.forwardRef(function Player({
               onClose={() => setVideoOverlayMode?.(null)}
               onTogglePlay={core.togglePlay}
               isFullscreen={isFullscreen}
+              isMaximized={isMaximized}
               isMiniPlayer={isMiniPlayer}
+              lyricsFontScale={lyricsFontScale}
+              chordsFontScale={chordsFontScale}
               currentSong={currentSong}
               lyricsData={lyricsData}
               lyricsSyncOffset={lyricsSyncOffset}

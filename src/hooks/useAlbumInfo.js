@@ -5,7 +5,15 @@ export function useAlbumInfo(playlist, currentIndex) {
   const [albumCache, setAlbumCache] = useState(() => {
     try {
       const stored = localStorage.getItem('nadanada_album_cache');
-      return stored ? JSON.parse(stored) : {};
+      if (!stored) return {};
+      const parsed = JSON.parse(stored);
+      const clean = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v && typeof v === 'object' && !v.artist?.includes('\uFFFD') && !v.album?.includes('\uFFFD')) {
+          clean[k] = v;
+        }
+      }
+      return clean;
     } catch (e) {
       return {};
     }
@@ -23,24 +31,51 @@ export function useAlbumInfo(playlist, currentIndex) {
 
   const inFlightRef = useRef(new Set());
 
+  const hasValidCache = (id) => {
+    const item = albumCache[id];
+    return Boolean(item && !item.artist?.includes('\uFFFD') && !item.album?.includes('\uFFFD'));
+  };
+
   useEffect(() => {
     if (!playlist || playlist.length === 0) return;
 
     // Prioritize current song, then upcoming songs, then previous songs
     const missing = [];
-    const current = playlist[currentIndex];
-    
-    if (current && !current.is_local && !albumCache[current.id]) {
-      missing.push(current.id);
-    }
-    for (let i = currentIndex + 1; i < playlist.length; i++) {
-      if (!playlist[i].is_local && !albumCache[playlist[i].id]) missing.push(playlist[i].id);
-    }
-    for (let i = 0; i < currentIndex; i++) {
-      if (!playlist[i].is_local && !albumCache[playlist[i].id]) missing.push(playlist[i].id);
+    const len = playlist.length;
+
+    // Check current song if index is valid
+    if (currentIndex >= 0 && currentIndex < len) {
+      const current = playlist[currentIndex];
+      if (current && !current.is_local && current.id && !hasValidCache(current.id)) {
+        missing.push(current.id);
+      }
+
+      // Upcoming songs (currentIndex + 1 to len - 1)
+      for (let i = currentIndex + 1; i < len; i++) {
+        const item = playlist[i];
+        if (item && !item.is_local && item.id && !hasValidCache(item.id)) {
+          missing.push(item.id);
+        }
+      }
+
+      // Previous songs (0 to currentIndex - 1)
+      for (let i = 0; i < currentIndex; i++) {
+        const item = playlist[i];
+        if (item && !item.is_local && item.id && !hasValidCache(item.id)) {
+          missing.push(item.id);
+        }
+      }
+    } else {
+      // If currentIndex is out of range, safely scan all playlist items
+      for (let i = 0; i < len; i++) {
+        const item = playlist[i];
+        if (item && !item.is_local && item.id && !hasValidCache(item.id)) {
+          missing.push(item.id);
+        }
+      }
     }
 
-    queueRef.current = Array.from(new Set(missing));
+    queueRef.current = Array.from(new Set(missing.filter(Boolean)));
 
     const processQueue = async () => {
       if (isFetchingRef.current) return;
@@ -57,9 +92,11 @@ export function useAlbumInfo(playlist, currentIndex) {
           const info = await api.getVideoAlbumInfo(videoId);
           let artist = info.artist || '';
           artist = artist.replace(/\s*-\s*Topic$/i, '').trim();
+          artist = artist.replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
+          let album = (info.album || '').trim().replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
           
           const result = {
-            album: info.album || '',
+            album: album,
             artist: artist,
             albumPlaylistId: info.album_playlist_id || ''
           };
@@ -85,9 +122,11 @@ export function useAlbumInfo(playlist, currentIndex) {
     processQueue();
   }, [playlist, currentIndex]); // Don't depend on albumCache to avoid infinite loops
 
-  const currentSong = playlist?.[currentIndex];
-  const albumInfo = currentSong ? albumCache[currentSong.id] : null;
-  const isLoadingAlbum = currentSong && !currentSong.is_local && !albumCache[currentSong.id];
+  const currentSong = (playlist && currentIndex >= 0 && currentIndex < playlist.length)
+    ? playlist[currentIndex]
+    : null;
+  const albumInfo = currentSong?.id ? albumCache[currentSong.id] : null;
+  const isLoadingAlbum = Boolean(currentSong && !currentSong.is_local && currentSong.id && !hasValidCache(currentSong.id));
 
   return { albumInfo, isLoadingAlbum, albumCache };
 }

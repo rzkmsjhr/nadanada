@@ -8,7 +8,10 @@ export default function VideoOverlay({
   onClose,
   onTogglePlay,
   isFullscreen,
+  isMaximized,
   isMiniPlayer,
+  lyricsFontScale = 100,
+  chordsFontScale = 100,
   currentSong,
   // Lyrics props
   lyricsData,
@@ -123,18 +126,111 @@ export default function VideoOverlay({
     onClose
   ]);
 
+  // Responsive lyrics font size scaled across 4 modes (Mini Player, Fullscreen, Maximized, Default)
   const getActiveFontSize = (text) => {
     const len = text?.length || 0;
-    if (len <= 20) return 'clamp(1.65rem, 5.0vw, 3.2rem)';
-    if (len <= 35) return 'clamp(1.35rem, 4.0vw, 2.6rem)';
-    if (len <= 55) return 'clamp(1.15rem, 3.2vw, 2.1rem)';
-    return 'clamp(1.0rem, 2.6vw, 1.7rem)';
+    const factor = (lyricsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+
+    if (isMiniPlayer) {
+      if (len <= 20) return `clamp(${f(0.85)}rem, ${f(3.8)}vw, ${f(1.25)}rem)`;
+      if (len <= 35) return `clamp(${f(0.75)}rem, ${f(3.2)}vw, ${f(1.10)}rem)`;
+      if (len <= 55) return `clamp(${f(0.68)}rem, ${f(2.6)}vw, ${f(0.95)}rem)`;
+      return `clamp(${f(0.62)}rem, ${f(2.2)}vw, ${f(0.85)}rem)`;
+    }
+
+    if (isFullscreen) {
+      if (len <= 20) return `clamp(${f(2.20)}rem, ${f(5.5)}vw, ${f(4.50)}rem)`;
+      if (len <= 35) return `clamp(${f(1.80)}rem, ${f(4.5)}vw, ${f(3.60)}rem)`;
+      if (len <= 55) return `clamp(${f(1.50)}rem, ${f(3.8)}vw, ${f(2.80)}rem)`;
+      return `clamp(${f(1.25)}rem, ${f(3.0)}vw, ${f(2.20)}rem)`;
+    }
+
+    if (isMaximized) {
+      if (len <= 20) return `clamp(${f(1.85)}rem, ${f(5.0)}vw, ${f(3.40)}rem)`;
+      if (len <= 35) return `clamp(${f(1.50)}rem, ${f(4.0)}vw, ${f(2.80)}rem)`;
+      if (len <= 55) return `clamp(${f(1.25)}rem, ${f(3.2)}vw, ${f(2.20)}rem)`;
+      return `clamp(${f(1.05)}rem, ${f(2.6)}vw, ${f(1.80)}rem)`;
+    }
+
+    // Default window mode
+    if (len <= 20) return `clamp(${f(1.45)}rem, ${f(4.2)}vw, ${f(2.60)}rem)`;
+    if (len <= 35) return `clamp(${f(1.20)}rem, ${f(3.5)}vw, ${f(2.10)}rem)`;
+    if (len <= 55) return `clamp(${f(1.05)}rem, ${f(2.8)}vw, ${f(1.70)}rem)`;
+    return `clamp(${f(0.90)}rem, ${f(2.2)}vw, ${f(1.40)}rem)`;
   };
 
   const getNextFontSize = (text) => {
     const len = text?.length || 0;
-    if (len <= 30) return 'clamp(1.15rem, 3.2vw, 1.7rem)';
-    return 'clamp(0.95rem, 2.4vw, 1.4rem)';
+    const factor = (lyricsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+
+    if (isMiniPlayer) {
+      if (len <= 30) return `clamp(${f(0.68)}rem, ${f(2.6)}vw, ${f(0.90)}rem)`;
+      return `clamp(${f(0.60)}rem, ${f(2.0)}vw, ${f(0.80)}rem)`;
+    }
+
+    if (isFullscreen) {
+      if (len <= 30) return `clamp(${f(1.40)}rem, ${f(3.5)}vw, ${f(2.20)}rem)`;
+      return `clamp(${f(1.15)}rem, ${f(2.8)}vw, ${f(1.80)}rem)`;
+    }
+
+    if (isMaximized) {
+      if (len <= 30) return `clamp(${f(1.25)}rem, ${f(3.2)}vw, ${f(1.80)}rem)`;
+      return `clamp(${f(1.05)}rem, ${f(2.5)}vw, ${f(1.50)}rem)`;
+    }
+
+    // Default window mode
+    if (len <= 30) return `clamp(${f(1.05)}rem, ${f(2.7)}vw, ${f(1.45)}rem)`;
+    return `clamp(${f(0.88)}rem, ${f(2.1)}vw, ${f(1.20)}rem)`;
+  };
+
+  // Responsive chord font sizes scaled across 4 modes
+  const getActiveChordSize = () => {
+    const factor = (chordsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+    if (isMiniPlayer) return `clamp(${f(1.35)}rem, ${f(4.5)}vw, ${f(2.00)}rem)`;
+    if (isFullscreen) return `clamp(${f(3.50)}rem, ${f(8.0)}vw, ${f(6.00)}rem)`;
+    if (isMaximized) return `clamp(${f(2.80)}rem, ${f(7.0)}vw, ${f(4.80)}rem)`;
+    return `clamp(${f(2.20)}rem, ${f(5.5)}vw, ${f(3.60)}rem)`;
+  };
+
+  const getPrevChordSize = (dist) => {
+    const factor = (chordsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+    if (isMiniPlayer) {
+      return dist === 1 ? `clamp(${f(0.95)}rem, ${f(2.8)}vw, ${f(1.35)}rem)` : `clamp(${f(0.75)}rem, ${f(2.2)}vw, ${f(1.10)}rem)`;
+    }
+    if (isFullscreen) {
+      return dist === 1 ? `clamp(${f(2.20)}rem, ${f(5.0)}vw, ${f(3.50)}rem)` : `clamp(${f(1.70)}rem, ${f(3.8)}vw, ${f(2.60)}rem)`;
+    }
+    if (isMaximized) {
+      return dist === 1 ? `clamp(${f(1.80)}rem, ${f(4.2)}vw, ${f(2.80)}rem)` : `clamp(${f(1.40)}rem, ${f(3.2)}vw, ${f(2.20)}rem)`;
+    }
+    return dist === 1 ? `clamp(${f(1.40)}rem, ${f(3.4)}vw, ${f(2.10)}rem)` : `clamp(${f(1.10)}rem, ${f(2.6)}vw, ${f(1.60)}rem)`;
+  };
+
+  const getNextChordSize = (idx) => {
+    const factor = (chordsFontScale || 100) / 100;
+    const f = (val) => Number((val * factor).toFixed(2));
+    if (isMiniPlayer) {
+      if (idx === 0) return `clamp(${f(1.05)}rem, ${f(3.0)}vw, ${f(1.45)}rem)`;
+      if (idx === 1) return `clamp(${f(0.85)}rem, ${f(2.4)}vw, ${f(1.20)}rem)`;
+      return `clamp(${f(0.70)}rem, ${f(2.0)}vw, ${f(1.00)}rem)`;
+    }
+    if (isFullscreen) {
+      if (idx === 0) return `clamp(${f(2.40)}rem, ${f(5.2)}vw, ${f(3.80)}rem)`;
+      if (idx === 1) return `clamp(${f(1.90)}rem, ${f(4.2)}vw, ${f(3.00)}rem)`;
+      return `clamp(${f(1.50)}rem, ${f(3.2)}vw, ${f(2.40)}rem)`;
+    }
+    if (isMaximized) {
+      if (idx === 0) return `clamp(${f(1.90)}rem, ${f(4.4)}vw, ${f(3.00)}rem)`;
+      if (idx === 1) return `clamp(${f(1.50)}rem, ${f(3.5)}vw, ${f(2.40)}rem)`;
+      return `clamp(${f(1.30)}rem, ${f(2.8)}vw, ${f(1.90)}rem)`;
+    }
+    if (idx === 0) return `clamp(${f(1.50)}rem, ${f(3.6)}vw, ${f(2.30)}rem)`;
+    if (idx === 1) return `clamp(${f(1.20)}rem, ${f(2.8)}vw, ${f(1.80)}rem)`;
+    return `clamp(${f(1.00)}rem, ${f(2.3)}vw, ${f(1.50)}rem)`;
   };
 
   // If in error or empty state, render nothing so video remains completely unobstructed while overlay closes
@@ -443,9 +539,9 @@ export default function VideoOverlay({
                   display: 'flex',
                   justifyContent: 'flex-end',
                   alignItems: 'center',
-                  gap: 'clamp(12px, 2.5vw, 24px)',
+                  gap: isMiniPlayer ? 'clamp(6px, 1.5vw, 12px)' : 'clamp(12px, 2.5vw, 24px)',
                   overflow: 'hidden',
-                  paddingRight: 'clamp(14px, 3.0vw, 32px)',
+                  paddingRight: isMiniPlayer ? 'clamp(8px, 2.0vw, 16px)' : 'clamp(14px, 3.0vw, 32px)',
                   maskImage: 'linear-gradient(to left, black 50%, transparent 100%)',
                   WebkitMaskImage: 'linear-gradient(to left, black 50%, transparent 100%)'
                 }}
@@ -453,7 +549,7 @@ export default function VideoOverlay({
                 {prevChords.map((c, idx) => {
                   const dist = prevChords.length - idx;
                   const opacity = dist === 1 ? 0.35 : 0.18;
-                  const size = dist === 1 ? 'clamp(1.6rem, 3.8vw, 2.4rem)' : 'clamp(1.3rem, 3.0vw, 1.9rem)';
+                  const size = getPrevChordSize(dist);
 
                   return (
                     <div
@@ -492,7 +588,7 @@ export default function VideoOverlay({
                 <span
                   data-tauri-drag-region={isMiniPlayer ? '' : undefined}
                   style={{
-                    fontSize: 'clamp(2.5rem, 6.2vw, 4.0rem)',
+                    fontSize: getActiveChordSize(),
                     fontWeight: 'bold',
                     color: '#ffffff',
                     textShadow: '0 2px 12px rgba(0, 0, 0, 0.98), 0 1px 4px rgba(0, 0, 0, 0.95)',
@@ -515,16 +611,16 @@ export default function VideoOverlay({
                   display: 'flex',
                   justifyContent: 'flex-start',
                   alignItems: 'center',
-                  gap: 'clamp(12px, 2.5vw, 24px)',
+                  gap: isMiniPlayer ? 'clamp(6px, 1.5vw, 12px)' : 'clamp(12px, 2.5vw, 24px)',
                   overflow: 'hidden',
-                  paddingLeft: 'clamp(14px, 3.0vw, 32px)',
+                  paddingLeft: isMiniPlayer ? 'clamp(8px, 2.0vw, 16px)' : 'clamp(14px, 3.0vw, 32px)',
                   maskImage: 'linear-gradient(to right, black 50%, transparent 100%)',
                   WebkitMaskImage: 'linear-gradient(to right, black 50%, transparent 100%)'
                 }}
               >
                 {nextChords.map((c, idx) => {
                   const opacity = idx === 0 ? 0.55 : idx === 1 ? 0.32 : 0.15;
-                  const size = idx === 0 ? 'clamp(1.7rem, 4.0vw, 2.6rem)' : idx === 1 ? 'clamp(1.4rem, 3.2vw, 2.1rem)' : 'clamp(1.2rem, 2.6vw, 1.7rem)';
+                  const size = getNextChordSize(idx);
 
                   return (
                     <div

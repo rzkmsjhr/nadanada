@@ -32,7 +32,9 @@ export default function PlayerHeader({
   isFetchingEndless,
   onOpenSettings,
   videoOverlayMode,
-  setVideoOverlayMode
+  setVideoOverlayMode,
+  lyricsFontScale,
+  chordsFontScale
 }) {
   const isViewActive = (showLyrics || showChords) && !videoOverlayMode;
   const [showDropdown, setShowDropdown] = useState(false);
@@ -168,6 +170,7 @@ export default function PlayerHeader({
                     data={chordsData} 
                     syncOffset={syncOffset} 
                     transpose={transposeOffset} 
+                    chordsFontScale={chordsFontScale}
                     isLoading={isFetchingChords} 
                     error={chordsError} 
                     onRetry={() => {
@@ -297,6 +300,7 @@ export default function PlayerHeader({
                 syncOffset={lyricsSyncOffset}
                 onSyncChange={setLyricsSyncOffset}
                 onSwitchToOverlay={() => setVideoOverlayMode?.('lyrics')}
+                lyricsFontScale={lyricsFontScale}
                 isLoading={isFetchingLyrics}
                 error={lyricsError}
                 onRetry={onRetryLyrics}
@@ -338,7 +342,7 @@ export default function PlayerHeader({
                   whiteSpace: 'nowrap',
                   fontStyle: artistFact ? 'italic' : 'normal'
                 }}>
-                  {artistFact ? `"${artistFact}"` : playlist[currentIndex + 1] ? playlist[currentIndex + 1].title : isFetchingEndless ? 'Loading Mix...' : 'End of Playlist'}
+                  {artistFact ? `"${artistFact}"` : playlist?.[currentIndex + 1]?.title ? playlist[currentIndex + 1].title : isFetchingEndless ? 'Loading Mix...' : 'End of Playlist'}
                 </div>
               </div>
             </div>

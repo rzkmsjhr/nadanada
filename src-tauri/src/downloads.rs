@@ -100,10 +100,15 @@ pub async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<
 
     let mut cmd = tokio::process::Command::new(exe_path);
     cmd.stdin(std::process::Stdio::null())
+        .arg("--encoding")
+        .arg("utf-8")
         .arg("-g")
         .arg("-f")
         .arg("bestaudio")
         .arg(&url);
+
+    cmd.env("PYTHONIOENCODING", "utf-8");
+    cmd.env("PYTHONUTF8", "1");
 
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
@@ -212,6 +217,8 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
     };
 
     let mut command = Command::new(&exe_path);
+    command.env("PYTHONIOENCODING", "utf-8");
+    command.env("PYTHONUTF8", "1");
     #[cfg(target_os = "windows")]
     {
         command.creation_flags(0x08000000);
@@ -230,6 +237,8 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
     }
 
     let output = command
+        .arg("--encoding")
+        .arg("utf-8")
         .arg("--js-runtimes")
         .arg("node")
         .arg("--replace-in-metadata")
@@ -257,7 +266,7 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
     }
 
     // Use the stdout from yt-dlp which contains the exact final filepath because of `--print after_move:filepath`
-    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    let stdout_str = crate::youtube::decode_process_output(&output.stdout);
     let final_path = stdout_str
         .trim()
         .lines()

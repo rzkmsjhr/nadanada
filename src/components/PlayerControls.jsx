@@ -56,7 +56,8 @@ export default function PlayerControls({
     
     // Use albumInfo artist if available, else fall back to channel with Topic cleaned
     let artist = albumInfo?.artist || (currentSong.channel || '').replace(/\s*-\s*Topic$/i, '').trim();
-    let album = albumInfo?.album || '';
+    artist = artist.replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
+    let album = (albumInfo?.album || '').replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
     
     if (!artist && !album) return null;
     

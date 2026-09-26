@@ -33,19 +33,30 @@ export default function PlaylistHeader({
   handleToggleSearch,
   api,
   loadDownloadedSongs,
-  setGlobalError,
+  currentIndex,
+  setCurrentIndex,
+  currentSong,
   staticStyles
 }) {
+  const handleRestoreSavedPlaylist = () => {
+    if (!savedPlaylist) return;
+    const targetIdx = currentSong?.id
+      ? savedPlaylist.findIndex(s => s.id === currentSong.id)
+      : -1;
+    setPlaylist(savedPlaylist);
+    setSavedPlaylist(null);
+    if (setCurrentIndex) {
+      setCurrentIndex(targetIdx !== -1 ? targetIdx : 0);
+    }
+  };
+
   return (
     <div style={staticStyles.headerBar}>
       <div style={staticStyles.headerTitle}>
         {showSearch ? 'Search YouTube' : showDownloadedList ? (
           <button onClick={() => {
             setShowDownloadedList(false);
-            if (savedPlaylist) {
-              setPlaylist(savedPlaylist);
-              setSavedPlaylist(null);
-            }
+            handleRestoreSavedPlaylist();
           }} style={{
             background: 'transparent',
             border: 'none',
@@ -62,10 +73,7 @@ export default function PlaylistHeader({
             <ArrowLeft size={18} style={{ marginTop: '2px' }} /> Back to My Playlist
           </button>
         ) : isFetchingEndless ? <span>Finding next song...</span> : savedPlaylist ? (
-          <button onClick={() => {
-            setPlaylist(savedPlaylist);
-            setSavedPlaylist(null);
-          }} style={{
+          <button onClick={handleRestoreSavedPlaylist} style={{
             background: 'transparent',
             border: 'none',
             color: 'var(--text-main)',
@@ -185,8 +193,7 @@ export default function PlaylistHeader({
             hasAddedSongInSearchRef.current = false;
           }
           if (showDownloadedList && savedPlaylist) {
-            setPlaylist(savedPlaylist);
-            setSavedPlaylist(null);
+            handleRestoreSavedPlaylist();
           }
           setShowDownloadedList(!showDownloadedList);
           setShowSearch(false);

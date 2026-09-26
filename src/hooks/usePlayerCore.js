@@ -80,7 +80,7 @@ export function usePlayerCore({
   // Offline / Downloaded playback crossfade bypass
   const isSongOffline = (song) => {
     if (!song) return false;
-    if (song.is_local || song.file_path) return true;
+    if (song?.is_local || song?.file_path) return true;
     if (downloadedIds && typeof downloadedIds.has === 'function') {
       if (song.id && downloadedIds.has(song.id)) return true;
       if (song.file_path && downloadedIds.has(song.file_path)) return true;
@@ -398,12 +398,12 @@ export function usePlayerCore({
   
   const handleStallStart = () => {
     setIsBuffering(true);
-    if (currentSong && !currentSong.is_local && !stallTimeoutRef.current) {
+    if (currentSong && !currentSong?.is_local && !stallTimeoutRef.current) {
       stallTimeoutRef.current = setTimeout(() => {
-        console.warn("Audio stream stalled for 10s. Skipping.");
+        console.warn("Audio stream stalled for 25s. Skipping.");
         if (hasNext) onNext();
         else if (onError) onError("Stream stalled and failed to recover.");
-      }, 10000);
+      }, 25000);
     }
   };
 
@@ -415,32 +415,9 @@ export function usePlayerCore({
     }
   };
 
-  useEffect(() => {
-    let timeout;
-    if (isBuffering && !streamUrl && !isExtractingStream && currentSong && !currentSong.is_local) {
-      if (currentTime < 1) {
-        timeout = setTimeout(() => {
-          setIsExtractingStream(true);
-          api.getStreamUrl(currentSong.id)
-            .then(url => {
-              setStreamUrl(url);
-              setIsExtractingStream(false);
-            })
-            .catch(err => {
-              setIsExtractingStream(false);
-              if (hasNext) {
-                onNext();
-              } else {
-                setIsPlaying(false);
-                if (onPlayStateChange) onPlayStateChange(false);
-                if (onError) onError(`Failed to stream track from YouTube: ${err.message || err}`);
-              }
-            });
-        }, 15000);
-      }
-    }
-    return () => clearTimeout(timeout);
-  }, [isBuffering, streamUrl, isExtractingStream, currentSong]);
+  // Note: Embed blocks are handled explicitly by error events (codes 101/150) in Player.jsx.
+  // We do NOT use buffering timeouts to guess embed blocks, ensuring slow internet connections
+  // are never prematurely downgraded to audio fallback.
 
   const songId = currentSong?.id;
   const startSecs = Math.floor(currentSong?.startSeconds || currentSong?.initialTime || 0);
@@ -521,7 +498,7 @@ export function usePlayerCore({
   // Time tracking on activeDeck
   useEffect(() => {
     let interval;
-    if (isPlaying && !isDragging && (!currentSong || !currentSong.is_local) && !streamUrl) {
+    if (isPlaying && !isDragging && (!currentSong || !currentSong?.is_local) && !streamUrl) {
       interval = setInterval(async () => {
         const player = activeDeckRef.current === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
         if (player && typeof player.getCurrentTime === 'function') {
@@ -590,7 +567,7 @@ export function usePlayerCore({
   }, [currentTime, duration, currentSong]);
 
   const togglePlay = () => {
-    if (currentSong && (currentSong.is_local || streamUrl)) {
+    if (currentSong && (currentSong?.is_local || streamUrl)) {
       const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) {
         if (isPlaying) audioEl.pause();
@@ -610,7 +587,7 @@ export function usePlayerCore({
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
-    if (currentSong && (currentSong.is_local || streamUrl)) {
+    if (currentSong && (currentSong?.is_local || streamUrl)) {
       const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) audioEl.muted = !isMuted;
       return;
@@ -832,7 +809,7 @@ export function usePlayerCore({
       if (onTimeUpdate) onTimeUpdate(startSecs);
       
       const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
-      if (streamUrl || (currentSong && currentSong.is_local)) {
+      if (streamUrl || (currentSong && currentSong?.is_local)) {
         const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
         if (audioEl) { 
           audioEl.currentTime = startSecs; 
@@ -852,7 +829,7 @@ export function usePlayerCore({
         if (onTimeUpdate) onTimeUpdate(startSecs);
         
         const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
-        if (streamUrl || (currentSong && currentSong.is_local)) {
+        if (streamUrl || (currentSong && currentSong?.is_local)) {
           const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
           if (audioEl) { 
             audioEl.currentTime = startSecs; 
@@ -928,7 +905,7 @@ export function usePlayerCore({
     if (targetTime < duration - effectiveCrossfadeDuration) {
       hasTriggeredEndCrossfadeRef.current = false;
     }
-    if (currentSong && (currentSong.is_local || streamUrl)) {
+    if (currentSong && (currentSong?.is_local || streamUrl)) {
       const audioEl = document.getElementById(activeDeck === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) {
         audioEl.currentTime = targetTime;

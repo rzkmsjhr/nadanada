@@ -371,8 +371,12 @@ export function useMusicDiscovery({
         }
         setIsFetchingEndless(true);
         try {
-          const current = playlist[currentIndex];
-          const seedId = current.id;
+          const current = (currentIndex >= 0 && currentIndex < playlist.length) ? playlist[currentIndex] : playlist[playlist.length - 1];
+          const seedId = current?.id;
+          if (!seedId) {
+            setIsFetchingEndless(false);
+            return;
+          }
           const results = await api.getYouTubeMix(seedId);
           
           const getWords = (song) => {
@@ -483,9 +487,11 @@ export function useMusicDiscovery({
 
               if (available.length === 0 && playlist.length > 1) {
                  // Final fallback: try mixing from the previous song
-                 const prevSong = playlist[currentIndex - 1];
-                 const prevResults = await api.getYouTubeMix(prevSong.id);
-                 available = prevResults.filter(v => !existingIds.has(v.id));
+                 const prevSong = currentIndex > 0 ? playlist[currentIndex - 1] : null;
+                 if (prevSong?.id) {
+                   const prevResults = await api.getYouTubeMix(prevSong.id);
+                   available = prevResults.filter(v => !existingIds.has(v.id));
+                 }
               }
             } catch (fallbackErr) {
               console.error("Endless play fallback failed:", fallbackErr);

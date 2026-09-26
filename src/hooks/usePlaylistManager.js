@@ -16,10 +16,27 @@ export function usePlaylistManager({
   });
 
   const [currentIndex, setCurrentIndex] = useState(() => {
-    const saved = localStorage.getItem('nadanada-session-index');
-    const parsed = saved ? parseInt(saved, 10) : 0;
-    return isNaN(parsed) ? 0 : parsed;
+    try {
+      const saved = localStorage.getItem('nadanada-session-index');
+      const parsed = saved ? parseInt(saved, 10) : 0;
+      if (isNaN(parsed) || parsed < 0) return 0;
+      if (playlist.length > 0 && parsed >= playlist.length) return playlist.length - 1;
+      if (playlist.length === 0) return 0;
+      return parsed;
+    } catch {
+      return 0;
+    }
   });
+
+  useEffect(() => {
+    if (playlist.length === 0) {
+      if (currentIndex !== 0) setCurrentIndex(0);
+    } else if (currentIndex >= playlist.length) {
+      setCurrentIndex(playlist.length - 1);
+    } else if (currentIndex < 0) {
+      setCurrentIndex(0);
+    }
+  }, [playlist.length, currentIndex]);
 
   const [savedPlaylist, setSavedPlaylist] = useState(null);
   const [savedPlaylists, setSavedPlaylists] = useState([]);

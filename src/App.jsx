@@ -151,6 +151,28 @@ function App() {
     document.documentElement.style.setProperty('--mini-player-opacity', (miniPlayerOpacity / 100).toString());
   }, [miniPlayerOpacity]);
 
+  const [lyricsFontScale, setLyricsFontScale] = useState(() => {
+    const saved = localStorage.getItem('nadanada-lyrics-font-scale');
+    const parsed = saved !== null ? parseInt(saved, 10) : 100;
+    return isNaN(parsed) ? 100 : Math.max(70, Math.min(150, parsed));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-lyrics-font-scale', lyricsFontScale.toString());
+    document.documentElement.style.setProperty('--lyrics-scale', (lyricsFontScale / 100).toString());
+  }, [lyricsFontScale]);
+
+  const [chordsFontScale, setChordsFontScale] = useState(() => {
+    const saved = localStorage.getItem('nadanada-chords-font-scale');
+    const parsed = saved !== null ? parseInt(saved, 10) : 100;
+    return isNaN(parsed) ? 100 : Math.max(70, Math.min(150, parsed));
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-chords-font-scale', chordsFontScale.toString());
+    document.documentElement.style.setProperty('--chords-scale', (chordsFontScale / 100).toString());
+  }, [chordsFontScale]);
+
   const [showSettings, setShowSettings] = useState(false);
   const [showWelcome, setShowWelcome] = useState(() => localStorage.getItem('nadanada-welcome-seen') !== 'true');
 
@@ -444,6 +466,8 @@ function App() {
     theme, setTheme,
     crossfadeDuration, setCrossfadeDuration,
     miniPlayerOpacity, setMiniPlayerOpacity,
+    lyricsFontScale, setLyricsFontScale,
+    chordsFontScale, setChordsFontScale,
     closeBehavior, setCloseBehavior
   };
 
@@ -551,6 +575,8 @@ function App() {
                 onOpenSettings={() => setShowSettings(true)}
                 videoOverlayMode={videoOverlayMode}
                 setVideoOverlayMode={setVideoOverlayMode}
+                lyricsFontScale={lyricsFontScale}
+                chordsFontScale={chordsFontScale}
               />
             </div>
           </div>
@@ -613,6 +639,8 @@ function App() {
               downloadedIds={downloadedIds}
               videoOverlayMode={videoOverlayMode}
               setVideoOverlayMode={setVideoOverlayMode}
+              lyricsFontScale={lyricsFontScale}
+              chordsFontScale={chordsFontScale}
               lyricsData={lyricsData}
               lyricsSyncOffset={lyricsSyncOffset}
               setLyricsSyncOffset={setLyricsSyncOffset}
@@ -652,6 +680,9 @@ function App() {
             setSavedPlaylist={setSavedPlaylist}
             playlist={playlist}
             setPlaylist={setPlaylist}
+            currentIndex={currentIndex}
+            setCurrentIndex={setCurrentIndex}
+            currentSong={currentSong}
             isFetchingEndless={isFetchingEndless}
             failedEndlessFetch={failedEndlessFetch}
             setFailedEndlessFetch={setFailedEndlessFetch}
