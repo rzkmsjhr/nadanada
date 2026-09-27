@@ -1,3 +1,103 @@
+use tauri::Manager;
+
+async fn run_scraper_window(
+    app_handle: &tauri::AppHandle,
+    window_label: &str,
+    start_url: &str,
+    js_code: &str,
+    timeout_secs: u64,
+) -> Result<String, String> {
+    let parsed_url = match start_url.parse() {
+        Ok(u) => u,
+        Err(e) => return Err(format!("Failed to parse URL: {}", e)),
+    };
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    let tx_mutex_clone = tx_mutex.clone();
+    let label_for_nav = window_label.to_string();
+
+    let window = match tauri::WebviewWindowBuilder::new(
+        app_handle,
+        window_label,
+        tauri::WebviewUrl::External(parsed_url),
+    )
+    .incognito(true)
+    .visible(false)
+    .decorations(false)
+    .skip_taskbar(true)
+    .always_on_bottom(true)
+    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+    .initialization_script(js_code)
+    .on_navigation(move |url| {
+        println!("[{}] Navigating to: {}", label_for_nav, url.as_str());
+
+        if url.path().starts_with("/user/signup") || url.path().starts_with("/user/signin") {
+            println!("[{}] Redirect to signup ({}) – signalling fallback immediately", label_for_nav, url.path());
+            if let Ok(mut guard) = tx_mutex_clone.lock() {
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send("FALLBACK".to_string());
+                }
+            }
+            return false;
+        }
+
+        let mut got_result = false;
+        let mut json_str = String::new();
+
+        for (key, value) in url.query_pairs() {
+            if key == "scraper_log" {
+                println!("[{} JS Log] {}", label_for_nav, value);
+                return false;
+            }
+            if key == "scraper_result" {
+                got_result = true;
+                json_str = value.into_owned();
+                break;
+            }
+        }
+
+        if got_result {
+            if let Ok(mut guard) = tx_mutex_clone.lock() {
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send(json_str);
+                }
+            }
+            return false;
+        }
+        true
+    })
+    .build()
+    {
+        Ok(w) => {
+            let _ = w.hide();
+            w
+        }
+        Err(e) => {
+            if let Some(w) = app_handle.get_webview_window(window_label) {
+                let _ = w.destroy();
+            }
+            return Err(format!("Failed to build window {}: {}", window_label, e));
+        }
+    };
+
+    println!("[{}] Waiting for scraper result (timeout: {}s)...", window_label, timeout_secs);
+    let result_str = match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
+        Ok(Ok(data)) => {
+            println!("[{}] Got result from scraper!", window_label);
+            let _ = window.destroy();
+            Ok(data)
+        }
+        _ => {
+            println!("[{}] Scraper timed out!", window_label);
+            let _ = window.destroy();
+            Err(format!("Timeout waiting for scraper {}", window_label))
+        }
+    };
+
+    result_str
+}
+
 #[tauri::command]
 pub async fn scrape_chords(
     id: String,
@@ -5,7 +105,6 @@ pub async fn scrape_chords(
     duration: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<String, String> {
-    use tauri::Manager;
     let cache_dir = app_handle
         .path()
         .app_data_dir()
@@ -95,14 +194,17 @@ pub async fn scrape_chords(
         "https://chordify.net/search/https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D{}",
         id
     );
-    // Primary fallback: Google
-    let google_fallback_url = format!(
-        "https://www.google.com/search?q=site:chordify.net+{}",
-        query_str
-    );
-    // Secondary fallback: Yahoo (if Google serves CAPTCHA)
+    // Fallback URLs
     let yahoo_fallback_url = format!(
         "https://search.yahoo.com/search?p=site:chordify.net+{}",
+        query_str
+    );
+    let ddg_fallback_url = format!(
+        "https://duckduckgo.com/?q=site:chordify.net+{}&ia=web",
+        query_str
+    );
+    let google_fallback_url = format!(
+        "https://www.google.com/search?q=site:chordify.net+{}",
         query_str
     );
 
@@ -129,12 +231,57 @@ pub async fn scrape_chords(
     let js_code = format!(
         r#"
         (function() {{
-            // ── FALLBACK HANDLER (GOOGLE) ─────────────────────────────────────────
-            if (window.location.hostname.includes("google.")) {{
-                let googleAttempts = 0;
-                let checkGoogle = setInterval(() => {{
-                    googleAttempts++;
-                    let allLinks = Array.from(document.querySelectorAll('a[href*="chordify.net/chords/"], a[href*="chordify.net%2Fchords%2F"]'));
+            // Stealth overrides to pass bot detection across Google, Yahoo, DuckDuckGo, Chordify
+            try {{
+                delete Object.getPrototypeOf(navigator).webdriver;
+            }} catch(e) {{}}
+            try {{
+                Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
+            }} catch(e2) {{}}
+            try {{
+                if (!window.chrome) window.chrome = {{}};
+                if (!window.chrome.runtime) window.chrome.runtime = {{}};
+            }} catch(e) {{}}
+            try {{
+                if (!navigator.languages || navigator.languages.length === 0) {{
+                    Object.defineProperty(navigator, 'languages', {{ get: () => ['en-US', 'en'] }});
+                }}
+            }} catch(e) {{}}
+
+            function rustLog(msg) {{
+                try {{
+                    let ifr = document.createElement('iframe');
+                    ifr.style.display = 'none';
+                    ifr.src = "https://chordify.net/?scraper_log=" + encodeURIComponent(msg);
+                    document.documentElement.appendChild(ifr);
+                    setTimeout(() => ifr.remove(), 500);
+                }} catch(e) {{}}
+            }}
+
+            // ── UNIFIED SEARCH ENGINE HANDLER (Yahoo, DuckDuckGo, Google, Bing) ───
+            let isSearchEngine = window.location.hostname.includes("yahoo.") ||
+                                 window.location.hostname.includes("duckduckgo.") ||
+                                 window.location.hostname.includes("google.") ||
+                                 window.location.hostname.includes("bing.");
+            if (isSearchEngine) {{
+                let searchAttempts = 0;
+                let checkSearch = setInterval(() => {{
+                    searchAttempts++;
+
+                    // 1. Check for search engine CAPTCHA / bot challenge
+                    if (window.location.pathname.includes("/sorry/index") ||
+                        (document.body && document.body.innerText && (
+                            document.body.innerText.includes("unusual traffic") ||
+                            document.body.innerText.includes("tidak wajar") ||
+                            document.body.innerText.includes("verification required")
+                        ))) {{
+                        clearInterval(checkSearch);
+                        window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
+                        return;
+                    }}
+
+                    // 2. Extract Chordify chord links
+                    let allLinks = Array.from(document.querySelectorAll('a[href]'));
                     let candidates = [];
                     let seen = new Set();
                     let titleWords = {title_words_json}.map(w => w.toLowerCase());
@@ -143,9 +290,11 @@ pub async fn scrape_chords(
                         let h = a.href || "";
                         let raw = a.outerHTML || "";
                         if (!raw.includes("translate") && !raw.includes("webcache") && !raw.includes("policies")) {{
-                            let match = h.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
-                            let cleanUrl = match ? decodeURIComponent(match[1]) : h;
-                            cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
+                            let match = h.match(/(?:[?&](?:q|uddg)=|%2Fchords%2F)(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i)
+                                     || h.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i)
+                                     || h.match(/(https?:\/\/(?:www\.)?chordify\.net\/chords\/[^&"'>\s]+)/i);
+                            let cleanUrl = match ? (match[1].includes('%') ? decodeURIComponent(match[1]) : match[1]) : h;
+                            cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0].split('&rut=')[0];
 
                             // Skip artist discography listing pages (e.g., /chords/pitbull-songs)
                             let path = cleanUrl.replace(/^https?:\/\/[^\/]+/, '');
@@ -187,15 +336,8 @@ pub async fn scrape_chords(
                         }}
                     }}
 
-                    if (window.location.pathname.includes("/sorry/index") || (document.body && document.body.innerText && (document.body.innerText.includes("unusual traffic") || document.body.innerText.includes("tidak wajar")))) {{
-                        clearInterval(checkGoogle);
-                        // Trigger Yahoo fallback since Google is blocked
-                        window.location.replace("https://chordify.net/?scraper_result=YAHOO_FALLBACK");
-                        return;
-                    }}
-                    
                     if (candidates.length > 0) {{
-                        clearInterval(checkGoogle);
+                        clearInterval(checkSearch);
                         candidates.sort((a, b) => a.penalty - b.penalty);
                         let candidateUrls = candidates.map(c => c.url);
                         let target = candidateUrls.shift();
@@ -205,104 +347,13 @@ pub async fn scrape_chords(
                             : target;
                         window.location.replace(targetWithHash);
                         return;
-                    }} else if (googleAttempts > 20) {{ // Timeout after 10 seconds
-                        clearInterval(checkGoogle);
-                        let err = encodeURIComponent(JSON.stringify({{success: false, error: "Chords not found on Chordify.", data: null}}));
-                        window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    }} else if (searchAttempts > 16) {{ // 8 seconds timeout on search engine
+                        clearInterval(checkSearch);
+                        window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                         return;
                     }}
                 }}, 500);
                 return;
-            }}
-
-            // ── FALLBACK HANDLER (YAHOO) ─────────────────────────────────────────
-            if (window.location.hostname.includes("yahoo.")) {{
-                let searchAttempts = 0;
-                let checkSearch = setInterval(() => {{
-                    searchAttempts++;
-                    let allLinks = Array.from(document.querySelectorAll('a[href]')).filter(a => {{
-                        let h = (a.href || '').toLowerCase();
-                        return h.includes('chordify.net/chords/') || h.includes('chordify.net%2fchords%2f');
-                    }});
-                    if (allLinks.length > 0) {{
-                        let candidates = [];
-                        let seen = new Set();
-                        let titleWords = {title_words_json}.map(w => w.toLowerCase());
-
-                        for (let a of allLinks) {{
-                            let href = a.href || '';
-                            let match = href.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
-                            let cleanUrl = match ? decodeURIComponent(match[1]) : href;
-                            cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
-
-                            // Skip artist discography listing pages (e.g., /chords/pitbull-songs)
-                            let path = cleanUrl.replace(/^https?:\/\/[^\/]+/, '');
-                            if (/\/chords\/[^\/]+-songs\/?$/i.test(path)) {{
-                                continue;
-                            }}
-
-                            if (cleanUrl.includes('chordify.net/chords/') && !seen.has(cleanUrl)) {{
-                                seen.add(cleanUrl);
-                                let linkText = ((a.innerText || '') + ' ' + cleanUrl).toLowerCase();
-                                let isAcoustic = linkText.includes('acoustic');
-                                let isLive = linkText.includes('live');
-                                let isCover = linkText.includes('cover');
-                                let isEasy = linkText.includes('easy');
-
-                                let penalty = 0;
-                                if (isAcoustic) penalty += 10;
-                                if (isLive) penalty += 8;
-                                if (isCover) penalty += 8;
-                                if (isEasy) penalty += 4;
-
-                                if (cleanUrl.endsWith("-chords") || cleanUrl.includes("-chords")) {{
-                                    penalty -= 10;
-                                }}
-
-                                let matchCount = 0;
-                                for (let tw of titleWords) {{
-                                    if (tw.length >= 3 && linkText.includes(tw)) {{
-                                        matchCount++;
-                                    }}
-                                }}
-                                penalty -= (matchCount * 5);
-
-                                candidates.push({{
-                                    url: cleanUrl,
-                                    penalty: penalty
-                                }});
-                            }}
-                        }}
-                        candidates.sort((a, b) => a.penalty - b.penalty);
-                        if (candidates.length > 0) {{
-                            clearInterval(checkSearch);
-                            let candidateUrls = candidates.map(c => c.url);
-                            let target = candidateUrls.shift();
-                            try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
-                            let targetWithHash = candidateUrls.length > 0
-                                ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
-                                : target;
-                            window.location.replace(targetWithHash);
-                            return;
-                        }}
-                    }}
-                    
-                    if (searchAttempts > 20) {{ // Timeout after 10 seconds
-                        clearInterval(checkSearch);
-                        window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
-                    }}
-                }}, 500);
-                return;
-            }}
-
-            function rustLog(msg) {{
-                try {{
-                    let ifr = document.createElement('iframe');
-                    ifr.style.display = 'none';
-                    ifr.src = "https://chordify.net/?scraper_log=" + encodeURIComponent(msg);
-                    document.documentElement.appendChild(ifr);
-                    setTimeout(() => ifr.remove(), 500);
-                }} catch(e) {{}}
             }}
 
             if (!window.location.hostname.includes("chordify.net")) return;
@@ -338,24 +389,6 @@ pub async fn scrape_chords(
                 }}
                 return false;
             }}
-
-            // Stealth overrides to pass Cloudflare / Turnstile bot detection
-            try {{
-                delete Object.getPrototypeOf(navigator).webdriver;
-            }} catch(e) {{
-                try {{
-                    Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
-                }} catch(e2) {{}}
-            }}
-            try {{
-                if (!window.chrome) window.chrome = {{}};
-                if (!window.chrome.runtime) window.chrome.runtime = {{}};
-            }} catch(e) {{}}
-            try {{
-                if (!navigator.languages || navigator.languages.length === 0) {{
-                    Object.defineProperty(navigator, 'languages', {{ get: () => ['en-US', 'en'] }});
-                }}
-            }} catch(e) {{}}
             
             let attempts = 0;
             let prevChordCount = 0;
@@ -391,28 +424,26 @@ pub async fn scrape_chords(
                     if (attempts > 8) {{
                         clearInterval(checkInterval);
                         console.log('[NadaNada] Cloudflare challenge detected and unsolved – signalling fallback');
-                        let fallbackSig = window.location.hostname.includes("yahoo") ? "GOOGLE_FALLBACK" : "YAHOO_FALLBACK";
-                        window.location.replace("https://chordify.net/?scraper_result=" + fallbackSig);
+                        window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                         return;
                     }}
                     return;
                 }}
 
-                // ── SIGNUP / SIGNIN WALL (redirect) → signal Rust to open fresh Yahoo window ─
+                // ── SIGNUP / SIGNIN WALL (redirect) ──
                 if (window.location.pathname.startsWith('/user/signup') || window.location.pathname.startsWith('/user/signin')) {{
                     clearInterval(checkInterval);
-                    console.log('[NadaNada] Chordify login redirect – signalling Yahoo fallback');
-                    window.location.replace("https://chordify.net/?scraper_result=YAHOO_FALLBACK");
+                    console.log('[NadaNada] Chordify login redirect – signalling fallback');
+                    window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                     return;
                 }}
 
-                // ── SIGNUP MODAL POPUP (overlay on search page) → same fallback ────
-                // Use form selector (structural) + textContent (not innerText, which can miss hidden elements)
+                // ── SIGNUP MODAL POPUP (overlay on search page) ──
                 if (document.querySelector('form[action="/user/signup"]') ||
                     (document.body && document.body.textContent && document.body.textContent.includes("Please sign up to add new songs to Chordify"))) {{
                     clearInterval(checkInterval);
-                    console.log('[NadaNada] Chordify signup modal detected – signalling Yahoo fallback');
-                    window.location.replace("https://chordify.net/?scraper_result=YAHOO_FALLBACK");
+                    console.log('[NadaNada] Chordify signup modal detected – signalling fallback');
+                    window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                     return;
                 }}
                 
@@ -501,16 +532,14 @@ pub async fn scrape_chords(
                         }}
                     }}
                     if (document.body.textContent.includes("No results found")) {{
-                        // Chordify search yielded nothing – signal Rust to open fresh Yahoo window
                         clearInterval(checkInterval);
-                        console.log('[NadaNada] Chordify search found no results – signalling Yahoo fallback');
-                        window.location.replace("https://chordify.net/?scraper_result=YAHOO_FALLBACK");
+                        console.log('[NadaNada] Chordify search found no results – signalling fallback');
+                        window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                         return;
                     }} else if (allLinks.length > 0 && attempts > 6) {{
-                        // Results exist but none lead to /chords/ – song is signup-gated
                         clearInterval(checkInterval);
-                        console.log('[NadaNada] Chordify results are signup-gated – signalling Yahoo fallback');
-                        window.location.replace("https://chordify.net/?scraper_result=YAHOO_FALLBACK");
+                        console.log('[NadaNada] Chordify results are signup-gated – signalling fallback');
+                        window.location.replace("https://chordify.net/?scraper_result=FALLBACK");
                         return;
                     }}
                 }} 
@@ -871,6 +900,13 @@ pub async fn scrape_chords(
                             if (tryNextCandidate('Candidate rejected (too few chords or incomplete: ' + lastChordTime.toFixed(1) + 's of ' + finalTargetDur + 's)')) {{
                                 return;
                             }}
+                            let err = encodeURIComponent(JSON.stringify({{
+                                success: false,
+                                error: "Chords not found on Chordify.",
+                                data: null
+                            }}));
+                            window.location.replace("https://chordify.net/?scraper_result=" + err);
+                            return;
                         }}
 
                         let result = {{
@@ -897,261 +933,75 @@ pub async fn scrape_chords(
     "#
     );
 
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    let tx_mutex = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
-    let tx_mutex_clone = tx_mutex.clone();
-
-    let parsed_search_url = match search_url.parse() {
-        Ok(u) => u,
-        Err(e) => return Err(format!("Failed to parse search URL: {}", e)),
-    };
-
-    println!("Building hidden scraper window for URL: {}", search_url);
-    let window = match tauri::WebviewWindowBuilder::new(
+    println!("Building primary scraper window for URL: {}", search_url);
+    let mut current_result = run_scraper_window(
         &app_handle,
         &window_label,
-        tauri::WebviewUrl::External(parsed_search_url),
+        &search_url,
+        &js_code,
+        35,
     )
-    .incognito(true)
-    .visible(false)
-    .decorations(false)
-    .skip_taskbar(true)
-    .always_on_bottom(true)
-    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-    .initialization_script(&js_code)
-    .on_navigation(move |url| {
-        println!("Navigating to: {}", url.as_str());
+    .await
+    .unwrap_or_else(|_| "FALLBACK".to_string());
 
-        if url.path().starts_with("/user/signup") || url.path().starts_with("/user/signin") {
-            println!("[Rust on_navigation] Redirect to signup ({}) – triggering Yahoo fallback immediately", url.path());
-            if let Ok(mut guard) = tx_mutex_clone.lock() {
-                if let Some(sender) = guard.take() {
-                    let _ = sender.send("YAHOO_FALLBACK".to_string());
-                }
-            }
-            return false;
-        }
-
-        let mut got_result = false;
-        let mut json_str = String::new();
-
-        for (key, value) in url.query_pairs() {
-            if key == "scraper_log" {
-                println!("[Scraper JS Log] {}", value);
-                return false;
-            }
-            if key == "scraper_result" {
-                got_result = true;
-                json_str = value.into_owned();
-                break;
-            }
-        }
-
-        if got_result {
-            if let Ok(mut guard) = tx_mutex_clone.lock() {
-                if let Some(sender) = guard.take() {
-                    let _ = sender.send(json_str);
-                }
-            }
-            return false; // Cancel navigation
-        }
-        true
-    })
-    .build()
-    {
-        Ok(w) => {
-            let _ = w.hide();
-            w
-        },
-        Err(e) => {
-            if let Some(w) = app_handle.get_webview_window(&window_label) {
-                let _ = w.destroy();
-            }
-            return Err(format!("Failed to build window: {}", e));
-        }
+    let is_fallback_signal = |res: &str| -> bool {
+        let t = res.trim();
+        t == "FALLBACK"
+            || t == "YAHOO_FALLBACK"
+            || t == "GOOGLE_FALLBACK"
+            || t.is_empty()
+            || (!t.contains("\"success\": true")
+                && !t.contains("\"success\":true")
+                && !t.contains("\"success\": false")
+                && !t.contains("\"success\":false"))
     };
 
-    println!("Waiting for scraper result...");
-    // Wait for the result with a 45-second timeout
-    let result_str = match tokio::time::timeout(std::time::Duration::from_secs(45), rx).await {
-        Ok(Ok(data)) => {
-            println!("Got result from scraper!");
-            data
-        }
-        _ => {
-            println!("Scraper timed out!");
-            let _ = window.destroy();
-            return Err("Timeout waiting for scraper".to_string());
-        }
-    };
+    if is_fallback_signal(&current_result) {
+        let fallback_engines = vec![
+            ("Yahoo", yahoo_fallback_url),
+            ("DuckDuckGo", ddg_fallback_url),
+            ("Google", google_fallback_url),
+        ];
 
-    let _ = window.destroy();
+        for (engine_name, fallback_url) in fallback_engines {
+            println!("Chordify fallback triggered – opening fresh incognito window at {}", engine_name);
+            let fb_counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let fb_label = format!("scraper_{}_{}_{}_{}", safe_id, ts, fb_counter, engine_name.to_lowercase());
 
-    if result_str.trim().is_empty() {
-        return Err("Scraper returned empty output".to_string());
-    }
+            let fb_res = run_scraper_window(
+                &app_handle,
+                &fb_label,
+                &fallback_url,
+                &js_code,
+                25,
+            )
+            .await
+            .unwrap_or_else(|_| "FALLBACK".to_string());
 
-    // ── YAHOO FALLBACK: open a brand new fresh incognito window ─────────────
-    let mut current_result = result_str;
-
-    if current_result.trim() == "YAHOO_FALLBACK" {
-        println!("Chordify fallback triggered – opening fresh incognito window at Yahoo");
-
-        let ts2 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let counter2 = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let window_label2 = format!("scraper_{}_{}_{}_y", safe_id, ts2, counter2);
-
-        let (tx2, rx2) = tokio::sync::oneshot::channel();
-        let tx_mutex2 = std::sync::Arc::new(std::sync::Mutex::new(Some(tx2)));
-        let tx_mutex2_clone = tx_mutex2.clone();
-
-        let parsed_yahoo_url = match yahoo_fallback_url.parse() {
-            Ok(u) => u,
-            Err(e) => return Err(format!("Failed to parse Yahoo fallback URL: {}", e)),
-        };
-
-        let window2 = match tauri::WebviewWindowBuilder::new(
-            &app_handle,
-            &window_label2,
-            tauri::WebviewUrl::External(parsed_yahoo_url),
-        )
-        .incognito(true)
-        .visible(false)
-        .decorations(false)
-        .skip_taskbar(true)
-        .always_on_bottom(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        .initialization_script(&js_code)
-        .on_navigation(move |url| {
-            println!("[Yahoo fallback] Navigating to: {}", url.as_str());
-            let mut got_result = false;
-            let mut json_str = String::new();
-            for (key, value) in url.query_pairs() {
-                if key == "scraper_log" {
-                    println!("[Yahoo Scraper JS Log] {}", value);
-                    return false;
-                }
-                if key == "scraper_result" {
-                    got_result = true;
-                    json_str = value.into_owned();
-                    break;
-                }
-            }
-            if got_result {
-                if let Ok(mut guard) = tx_mutex2_clone.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(json_str);
+            if !is_fallback_signal(&fb_res) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&fb_res) {
+                    if val.get("success").and_then(|s| s.as_bool()).unwrap_or(false) {
+                        current_result = fb_res;
+                        break;
+                    } else {
+                        current_result = fb_res;
                     }
                 }
-                return false;
             }
-            true
-        })
-        .build()
-        {
-            Ok(w) => {
-                let _ = w.hide();
-                w
-            },
-            Err(e) => return Err(format!("Failed to build Yahoo fallback window: {}", e)),
-        };
-
-        println!("Waiting for Yahoo fallback scraper result...");
-        current_result = match tokio::time::timeout(std::time::Duration::from_secs(45), rx2).await {
-            Ok(Ok(data)) => {
-                println!("Got result from Yahoo fallback scraper!");
-                let _ = window2.destroy();
-                data
-            }
-            _ => {
-                println!("Yahoo fallback scraper timed out! Falling back to Google...");
-                let _ = window2.destroy();
-                "GOOGLE_FALLBACK".to_string()
-            }
-        };
+        }
     }
 
-    // ── GOOGLE FALLBACK: open another window if Yahoo failed ─
-    if current_result.trim() == "GOOGLE_FALLBACK" {
-        println!("Yahoo fallback blocked or timed out – opening fresh incognito window at Google");
-
-        let ts3 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let counter3 = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let window_label3 = format!("scraper_{}_{}_{}_g", safe_id, ts3, counter3);
-
-        let (tx3, rx3) = tokio::sync::oneshot::channel();
-        let tx_mutex3 = std::sync::Arc::new(std::sync::Mutex::new(Some(tx3)));
-        let tx_mutex3_clone = tx_mutex3.clone();
-
-        let parsed_google_url = match google_fallback_url.parse() {
-            Ok(u) => u,
-            Err(e) => return Err(format!("Failed to parse Google fallback URL: {}", e)),
-        };
-
-        let window3 = match tauri::WebviewWindowBuilder::new(
-            &app_handle,
-            &window_label3,
-            tauri::WebviewUrl::External(parsed_google_url),
-        )
-        .incognito(true)
-        .visible(false)
-        .decorations(false)
-        .skip_taskbar(true)
-        .always_on_bottom(true)
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-        .initialization_script(&js_code)
-        .on_navigation(move |url| {
-            println!("[Google fallback] Navigating to: {}", url.as_str());
-            let mut got_result = false;
-            let mut json_str = String::new();
-            for (key, value) in url.query_pairs() {
-                if key == "scraper_result" {
-                    got_result = true;
-                    json_str = value.into_owned();
-                    break;
-                }
-            }
-            if got_result {
-                if let Ok(mut guard) = tx_mutex3_clone.lock() {
-                    if let Some(sender) = guard.take() {
-                        let _ = sender.send(json_str);
-                    }
-                }
-                return false;
-            }
-            true
-        })
-        .build()
-        {
-            Ok(w) => {
-                let _ = w.hide();
-                w
-            },
-            Err(e) => return Err(format!("Failed to build Google fallback window: {}", e)),
-        };
-
-        println!("Waiting for Google fallback scraper result...");
-        current_result = match tokio::time::timeout(std::time::Duration::from_secs(45), rx3).await {
-            Ok(Ok(data)) => {
-                println!("Got result from Google fallback scraper!");
-                let _ = window3.destroy();
-                data
-            }
-            _ => {
-                println!("Google fallback scraper timed out!");
-                let _ = window3.destroy();
-                return Err("Timeout waiting for Google fallback scraper".to_string());
-            }
-        };
+    // Ensure current_result is ALWAYS 100% valid JSON before caching or returning to frontend
+    let is_valid_json = serde_json::from_str::<serde_json::Value>(&current_result).is_ok();
+    if !is_valid_json || current_result.trim().is_empty() {
+        println!("[scrape_chords] Scraper ended with non-JSON '{}'. Formatting clean error JSON.", current_result);
+        let safe_err = serde_json::json!({
+            "success": false,
+            "error": "Chords not found on Chordify.",
+            "data": null
+        });
+        current_result = safe_err.to_string();
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     if current_result.contains("\"success\": true") || current_result.contains("\"success\":true") {
         let mut should_cache = true;

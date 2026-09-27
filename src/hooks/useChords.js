@@ -36,7 +36,13 @@ export function useChords(currentSong, isAudioPlaying, api) {
             const res = await api.scrapeChords(currentSong.id, searchTitle, currentSong.duration);
             if (isCancelled) return;
             
-            const parsed = JSON.parse(res);
+            let parsed;
+            try {
+              parsed = typeof res === 'object' && res !== null ? res : JSON.parse(res);
+            } catch (parseErr) {
+              console.warn('[useChords] Failed to parse chords response:', res);
+              parsed = { success: false, error: 'Chords not found for this song.' };
+            }
             if (parsed.success) {
               const chordsList = parsed.data.chords;
               if (chordsList && chordsList.length > 0) {
@@ -105,7 +111,13 @@ export function useChords(currentSong, isAudioPlaying, api) {
               }
             } else {
               let err = parsed.error || 'Failed to load chords.';
-              if (err.includes('{') || err.toLowerCase().includes('timeout waiting')) {
+              if (
+                err.includes('{') ||
+                err.toLowerCase().includes('timeout waiting') ||
+                err.toLowerCase().includes('syntaxerror') ||
+                err.toLowerCase().includes('unexpected token') ||
+                err.toLowerCase().includes('not valid json')
+              ) {
                 err = 'Chords not found for this song.';
               }
               setChordsError(err);
@@ -115,11 +127,17 @@ export function useChords(currentSong, isAudioPlaying, api) {
             }
           } catch (e) {
             if (isCancelled) return;
-            let err = e.toString();
-            if (err.includes('{') || err.toLowerCase().includes('timeout waiting')) {
+            let err = e ? e.toString() : '';
+            if (
+              err.includes('{') ||
+              err.toLowerCase().includes('timeout waiting') ||
+              err.toLowerCase().includes('syntaxerror') ||
+              err.toLowerCase().includes('unexpected token') ||
+              err.toLowerCase().includes('not valid json')
+            ) {
               err = 'Chords not found for this song.';
             }
-            setChordsError(err);
+            setChordsError(err || 'Chords not found for this song.');
             setChordsData({
               _songId: currentSong.id
             });
