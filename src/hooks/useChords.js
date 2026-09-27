@@ -50,9 +50,10 @@ export function useChords(currentSong, isAudioPlaying, api) {
                 // 1. Chords extend past video end by > 5s (e.g. video version with long intro storytelling/dialogue)
                 const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 5;
 
-                // 2. Chords stop way too early (< 60% of song length), meaning transcription cut short / incomplete
+                // 2. Chords stop way too early (< 55% of song length), meaning transcription cut short / incomplete
                 // Applies even on exact video match so stuck/truncated chords are not silently played
-                const isTooShort = videoDuration > 60 && lastChordTime < videoDuration * 0.6;
+                const effectiveSongDuration = videoDuration > 0 ? videoDuration : chordifyDurationSec;
+                const isTooShort = effectiveSongDuration > 60 && lastChordTime < effectiveSongDuration * 0.55;
 
                 // 3. If Chordify's actual video duration is known, check if it differs by > 5s (e.g. 5:54 audio vs 6:04 music video)
                 // NOTE: We compare chordifyDurationSec to videoDuration, NOT lastChordTime, because many songs have instrument-free outros!

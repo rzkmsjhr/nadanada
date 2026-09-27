@@ -36,7 +36,34 @@ pub async fn scrape_chords(
 
     if cache_file.exists() {
         if let Ok(content) = std::fs::read_to_string(&cache_file) {
-            return Ok(content);
+            let mut is_valid_cache = true;
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(chords) = val.get("data").and_then(|d| d.get("chords")).and_then(|c| c.as_array()) {
+                    if let Some(last_chord) = chords.last() {
+                        let last_time = last_chord.get("time_sec").and_then(|t| t.as_f64()).unwrap_or(0.0);
+                        let chordify_dur = val.get("data")
+                            .and_then(|d| d.get("chordify_duration"))
+                            .and_then(|d| d.as_str())
+                            .map(|s| {
+                                let parts: Vec<&str> = s.split(':').collect();
+                                if parts.len() == 2 {
+                                    parts[0].parse::<f64>().unwrap_or(0.0) * 60.0 + parts[1].parse::<f64>().unwrap_or(0.0)
+                                } else { 0.0 }
+                            })
+                            .unwrap_or(0.0);
+                        let target_dur = if expected_duration_sec > 0 { expected_duration_sec as f64 } else { chordify_dur };
+                        if target_dur > 60.0 && last_time < (target_dur * 0.55) {
+                            println!("[Cache] Incomplete cached chords detected for {} (last chord at {:.1}s, target: {:.1}s) – invalidating cache", safe_id, last_time, target_dur);
+                            is_valid_cache = false;
+                        }
+                    }
+                }
+            }
+            if is_valid_cache {
+                return Ok(content);
+            } else {
+                let _ = std::fs::remove_file(&cache_file);
+            }
         }
     }
 
@@ -459,6 +486,39 @@ pub async fn scrape_chords(
 
                     let expectedDur = {expected_duration_sec};
 
+                    // Extract duration from page if available to know expected song length
+                    let pageDurSec = 0;
+                    let metaDur = document.querySelector('meta[itemprop="duration"]');
+                    if (metaDur && metaDur.content) {{
+                        let m = metaDur.content.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
+                        if (m) {{
+                            pageDurSec = (parseInt(m[1] || '0') * 60) + parseInt(m[2] || '0');
+                        }}
+                    }}
+                    let targetDur = expectedDur > 0 ? expectedDur : pageDurSec;
+
+                    // Calculate highest beat currently present in the DOM
+                    let maxBeatInDom = 0;
+                    for (let el of chordElements) {{
+                        let b = parseInt(el.getAttribute('data-i') || '0');
+                        if (b > maxBeatInDom) maxBeatInDom = b;
+                    }}
+                    let currentCoveredSec = maxBeatInDom * secondsPerBeat;
+
+                    let isLikelyIncomplete = targetDur > 60 && currentCoveredSec < (targetDur * 0.55);
+
+                    // If the sheet appears incomplete and we haven't timed out, keep scrolling to load all chords
+                    if (isLikelyIncomplete && attempts < 25) {{
+                        let scrollEl = document.querySelector('[data-bpm], [class*="sheet"], [class*="grid"]');
+                        if (scrollEl) {{
+                            scrollEl.scrollTop = scrollEl.scrollHeight;
+                            scrollEl.dispatchEvent(new Event('scroll'));
+                        }}
+                        window.scrollTo(0, document.body.scrollHeight);
+                        stableChordAttempts = 0;
+                        return;
+                    }}
+
                     // Wait for both chords AND BPM to load and stabilize in DOM
                     if (currentChordCount >= 10) {{
                         let diff = Math.abs(currentChordCount - prevChordCount);
@@ -525,8 +585,6 @@ pub async fn scrape_chords(
                         }}
                         
                         chords.sort((a, b) => a.time_sec - b.time_sec);
-
-                        // ── Extract the YouTube video ID that Chordify is using ──
                         let chordifyVideoId = null;
                         let chordifyTitle = null;
                         let chordifyChannel = null;
@@ -656,14 +714,25 @@ pub async fn scrape_chords(
                         }}
                         if (!Array.isArray(remCandidates)) remCandidates = [];
 
-                        // Only switch to next candidate if chords failed to extract (< 5 chords)
-                        if (chords.length < 5 && remCandidates.length > 0) {{
+                        // Check if extracted chords are incomplete (< 55% of song duration)
+                        let lastChordTime = chords.length > 0 ? chords[chords.length - 1].time_sec : 0;
+                        let chordifyDurSec = 0;
+                        if (chordifyDuration) {{
+                            let dp = chordifyDuration.split(':').map(Number);
+                            if (dp.length === 2) chordifyDurSec = dp[0] * 60 + dp[1];
+                            else if (dp.length === 3) chordifyDurSec = dp[0] * 3600 + dp[1] * 60 + dp[2];
+                        }}
+                        let finalTargetDur = targetDur > 0 ? targetDur : chordifyDurSec;
+                        let isIncomplete = finalTargetDur > 60 && lastChordTime < (finalTargetDur * 0.55);
+
+                        // Switch to next candidate if chords failed to extract (< 5 chords) OR if transcription is cut short
+                        if ((chords.length < 5 || isIncomplete) && remCandidates.length > 0) {{
                             let nextCandidateUrl = remCandidates.shift();
                             let nextWithHash = remCandidates.length > 0
                                 ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
                                 : nextCandidateUrl;
                             try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
-                            console.log('[NadaNada] Too few chords (' + chords.length + '). Trying next candidate:', nextCandidateUrl);
+                            console.log('[NadaNada] Candidate rejected (too few chords or incomplete: ' + lastChordTime.toFixed(1) + 's of ' + finalTargetDur + 's). Trying next candidate:', nextCandidateUrl);
                             window.location.replace(nextWithHash);
                             return;
                         }}
@@ -949,15 +1018,41 @@ pub async fn scrape_chords(
     // ─────────────────────────────────────────────────────────────────────────
 
     if current_result.contains("\"success\": true") || current_result.contains("\"success\":true") {
-        let _ = std::fs::write(&cache_file, &current_result);
-
-        // Also cache under chordify_video_id so when the user adds it to their playlist
-        // and plays it, it is an instant cache hit and NEVER re-scrapes or mismatches!
+        let mut should_cache = true;
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(&current_result) {
-            if let Some(vid) = val.get("data").and_then(|d| d.get("chordify_video_id")).and_then(|v| v.as_str()) {
-                if !vid.is_empty() && vid != safe_id {
-                    let second_cache_file = cache_dir.join(format!("{}.json", vid));
-                    let _ = std::fs::write(&second_cache_file, &current_result);
+            if let Some(chords) = val.get("data").and_then(|d| d.get("chords")).and_then(|c| c.as_array()) {
+                if let Some(last_chord) = chords.last() {
+                    let last_time = last_chord.get("time_sec").and_then(|t| t.as_f64()).unwrap_or(0.0);
+                    let chordify_dur = val.get("data")
+                        .and_then(|d| d.get("chordify_duration"))
+                        .and_then(|d| d.as_str())
+                        .map(|s| {
+                            let parts: Vec<&str> = s.split(':').collect();
+                            if parts.len() == 2 {
+                                parts[0].parse::<f64>().unwrap_or(0.0) * 60.0 + parts[1].parse::<f64>().unwrap_or(0.0)
+                            } else { 0.0 }
+                        })
+                        .unwrap_or(0.0);
+                    let target_dur = if expected_duration_sec > 0 { expected_duration_sec as f64 } else { chordify_dur };
+                    if target_dur > 60.0 && last_time < (target_dur * 0.55) {
+                        println!("[Cache] Not saving incomplete chords for {} (last chord at {:.1}s, target: {:.1}s)", safe_id, last_time, target_dur);
+                        should_cache = false;
+                    }
+                }
+            }
+        }
+
+        if should_cache {
+            let _ = std::fs::write(&cache_file, &current_result);
+
+            // Also cache under chordify_video_id so when the user adds it to their playlist
+            // and plays it, it is an instant cache hit and NEVER re-scrapes or mismatches!
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&current_result) {
+                if let Some(vid) = val.get("data").and_then(|d| d.get("chordify_video_id")).and_then(|v| v.as_str()) {
+                    if !vid.is_empty() && vid != safe_id {
+                        let second_cache_file = cache_dir.join(format!("{}.json", vid));
+                        let _ = std::fs::write(&second_cache_file, &current_result);
+                    }
                 }
             }
         }
