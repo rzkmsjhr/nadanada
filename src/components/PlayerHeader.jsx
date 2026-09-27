@@ -120,7 +120,7 @@ export default function PlayerHeader({
               borderRadius: '10px',
               background: 'var(--bg-color)',
               minHeight: isMaximized ? '60px' : '58px',
-              padding: isMaximized ? '8px 34px 8px 18px' : '10px 28px 10px 14px',
+              padding: isMaximized ? '8px 14px' : '8px 12px',
               margin: '0',
               display: 'flex',
               flexDirection: 'column',
@@ -129,47 +129,86 @@ export default function PlayerHeader({
               boxSizing: 'border-box'
             }}
           >
-            {/* Small circle close (x) button on the top right corner */}
-            <button
-              onClick={() => {
-                setShowLyrics?.(false);
-                setShowChords?.(false);
-              }}
-              title="Close"
-              style={{
-                position: 'absolute',
-                top: '8px',
-                right: '8px',
-                width: '18px',
-                height: '18px',
-                borderRadius: '50%',
-                border: '1px solid var(--panel-border)',
-                background: 'var(--panel-bg)',
-                color: 'var(--text-muted)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                padding: 0,
-                lineHeight: 1,
-                zIndex: 10,
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--text-main)';
-                e.currentTarget.style.transform = 'scale(1.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--text-muted)';
-                e.currentTarget.style.transform = 'scale(1)';
-              }}
-            >
-              <X size={11} strokeWidth={2.5} />
-            </button>
+            {/* Action buttons on top right corner */}
+            <div style={{
+              position: 'absolute',
+              top: '6px',
+              right: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              zIndex: 10
+            }}>
+              {/* Overlay button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setVideoOverlayMode?.(showChords ? 'chords' : 'lyrics');
+                }}
+                title="Overlay on video"
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  border: '1px solid var(--panel-border)',
+                  background: 'var(--panel-bg)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text-main)';
+                  e.currentTarget.style.transform = 'scale(1.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <Maximize2 size={10} strokeWidth={2.2} />
+              </button>
+
+              {/* Close (X) button */}
+              <button
+                onClick={() => {
+                  setShowLyrics?.(false);
+                  setShowChords?.(false);
+                }}
+                title="Close"
+                style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  border: '1px solid var(--panel-border)',
+                  background: 'var(--panel-bg)',
+                  color: 'var(--text-muted)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'all 0.15s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = 'var(--text-main)';
+                  e.currentTarget.style.transform = 'scale(1.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <X size={11} strokeWidth={2.5} />
+              </button>
+            </div>
 
             {showChords ? (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, justifyContent: 'center' }}>
-                <div style={{ minHeight: '36px', height: 'auto', display: 'flex', alignItems: 'center' }}>
+                <div style={{ minHeight: '36px', height: 'auto', display: 'flex', alignItems: 'center', paddingRight: '48px' }}>
                   <ChordDisplay 
                     data={chordsData} 
                     syncOffset={syncOffset} 
@@ -191,20 +230,22 @@ export default function PlayerHeader({
                   <div className="card-hover-controls" style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    marginTop: '8px',
+                    flexWrap: 'wrap',
+                    rowGap: '4px',
+                    columnGap: '5px',
+                    marginTop: '6px',
                     fontSize: '0.7rem',
                     color: 'var(--text-muted)'
                   }}>
-                    {/* Sync Capsule first on the left */}
+                    {/* Sync Capsule */}
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '3px',
+                      gap: '2px',
                       background: 'var(--panel-bg)',
                       border: '1px solid var(--panel-border)',
                       borderRadius: '6px',
-                      padding: '1px 5px'
+                      padding: '1px 4px'
                     }}>
                       <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Sync:</span>
                       <button onClick={() => setSyncOffset?.(s => Math.max(-30, Number((s - 0.25).toFixed(2))))} style={{
@@ -212,11 +253,12 @@ export default function PlayerHeader({
                         border: 'none',
                         color: 'inherit',
                         cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
+                        padding: '0 2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1
                       }} title="Delay Chords">-</button>
                       <span style={{
-                        minWidth: '28px',
+                        minWidth: '24px',
                         textAlign: 'center',
                         fontWeight: 'bold',
                         color: 'var(--text-main)'
@@ -226,20 +268,21 @@ export default function PlayerHeader({
                         border: 'none',
                         color: 'inherit',
                         cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
+                        padding: '0 2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1
                       }} title="Advance Chords">+</button>
                     </div>
 
-                    {/* Key Capsule second on the right */}
+                    {/* Key Capsule */}
                     <div style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: '3px',
+                      gap: '2px',
                       background: 'var(--panel-bg)',
                       border: '1px solid var(--panel-border)',
                       borderRadius: '6px',
-                      padding: '1px 5px'
+                      padding: '1px 4px'
                     }}>
                       <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>Key:</span>
                       <button onClick={() => setTransposeOffset?.(s => (s - 1) % 12)} style={{
@@ -247,11 +290,12 @@ export default function PlayerHeader({
                         border: 'none',
                         color: 'inherit',
                         cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
+                        padding: '0 2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1
                       }} title="Transpose Down">-</button>
                       <span style={{
-                        minWidth: '18px',
+                        minWidth: '14px',
                         textAlign: 'center',
                         fontWeight: 'bold',
                         color: 'var(--text-main)'
@@ -261,8 +305,9 @@ export default function PlayerHeader({
                         border: 'none',
                         color: 'inherit',
                         cursor: 'pointer',
-                        padding: '0 3px',
-                        fontSize: '0.75rem'
+                        padding: '0 2px',
+                        fontSize: '0.75rem',
+                        lineHeight: 1
                       }} title="Transpose Up">+</button>
                     </div>
 
@@ -271,11 +316,11 @@ export default function PlayerHeader({
                       <div style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '3px',
+                        gap: '2px',
                         background: 'var(--panel-bg)',
                         border: '1px solid var(--panel-border)',
                         borderRadius: '6px',
-                        padding: '1px 5px'
+                        padding: '1px 4px'
                       }}>
                         <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>BPM:</span>
                         <button onClick={() => setBpmOffset?.(b => Math.max(-50, b - 1))} style={{
@@ -283,13 +328,14 @@ export default function PlayerHeader({
                           border: 'none',
                           color: 'inherit',
                           cursor: 'pointer',
-                          padding: '0 3px',
-                          fontSize: '0.75rem'
+                          padding: '0 2px',
+                          fontSize: '0.75rem',
+                          lineHeight: 1
                         }} title="Slower / expand beat interval">-</button>
                         <span
                           onClick={() => bpmOffset !== 0 && setBpmOffset?.(0)}
                           style={{
-                            minWidth: '22px',
+                            minWidth: '20px',
                             textAlign: 'center',
                             fontWeight: 'bold',
                             color: bpmOffset !== 0 ? 'var(--accent-color)' : 'var(--text-main)',
@@ -304,13 +350,14 @@ export default function PlayerHeader({
                           border: 'none',
                           color: 'inherit',
                           cursor: 'pointer',
-                          padding: '0 3px',
-                          fontSize: '0.75rem'
+                          padding: '0 2px',
+                          fontSize: '0.75rem',
+                          lineHeight: 1
                         }} title="Faster / tighten beat interval">+</button>
                       </div>
                     )}
 
-                    {/* Fullscreen Overlay button next to Key */}
+                    {/* Fullscreen Overlay button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -323,7 +370,7 @@ export default function PlayerHeader({
                         background: 'var(--panel-bg)',
                         border: '1px solid var(--panel-border)',
                         borderRadius: '6px',
-                        padding: '2px 5px',
+                        padding: '1px 5px',
                         color: 'var(--text-muted)',
                         cursor: 'pointer',
                         fontSize: '0.75rem',

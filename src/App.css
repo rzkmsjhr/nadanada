@@ -649,8 +649,8 @@ body {
 
 .card-hover-container:hover .card-hover-controls {
   opacity: 1;
-  max-height: 36px;
-  margin-top: 8px !important;
+  max-height: 64px;
+  margin-top: 6px !important;
   transform: translateY(0);
   pointer-events: auto;
 }
