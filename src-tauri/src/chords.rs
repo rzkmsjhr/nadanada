@@ -115,6 +115,7 @@ pub async fn scrape_chords(
                         if (!raw.includes("translate") && !raw.includes("webcache") && !raw.includes("policies")) {{
                             let match = h.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
                             let cleanUrl = match ? decodeURIComponent(match[1]) : h;
+                            cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
                             if (cleanUrl.includes("chordify.net/chords/") && !seen.has(cleanUrl)) {{
                                 seen.add(cleanUrl);
                                 let linkText = ((a.innerText || "") + " " + cleanUrl).toLowerCase();
@@ -160,7 +161,10 @@ pub async fn scrape_chords(
                 let searchAttempts = 0;
                 let checkSearch = setInterval(() => {{
                     searchAttempts++;
-                    let allLinks = Array.from(document.querySelectorAll('a[href*="chordify.net/chords/"], a[href*="chordify.net%2Fchords%2F"]'));
+                    let allLinks = Array.from(document.querySelectorAll('a[href]')).filter(a => {{
+                        let h = (a.href || '').toLowerCase();
+                        return h.includes('chordify.net/chords/') || h.includes('chordify.net%2fchords%2f');
+                    }});
                     if (allLinks.length > 0) {{
                         clearInterval(checkSearch);
                         let candidates = [];
@@ -169,6 +173,7 @@ pub async fn scrape_chords(
                             let href = a.href || '';
                             let match = href.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
                             let cleanUrl = match ? decodeURIComponent(match[1]) : href;
+                            cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
                             if (cleanUrl.includes('chordify.net/chords/') && !seen.has(cleanUrl)) {{
                                 seen.add(cleanUrl);
                                 let linkText = ((a.innerText || '') + ' ' + cleanUrl).toLowerCase();
@@ -199,8 +204,18 @@ pub async fn scrape_chords(
                 return;
             }}
 
+            function rustLog(msg) {{
+                try {{
+                    let ifr = document.createElement('iframe');
+                    ifr.style.display = 'none';
+                    ifr.src = "https://chordify.net/?scraper_log=" + encodeURIComponent(msg);
+                    document.documentElement.appendChild(ifr);
+                    setTimeout(() => ifr.remove(), 500);
+                }} catch(e) {{}}
+            }}
+
             if (!window.location.hostname.includes("chordify.net")) return;
-            
+
             // Stealth overrides to pass Cloudflare / Turnstile bot detection
             try {{
                 delete Object.getPrototypeOf(navigator).webdriver;
@@ -267,15 +282,49 @@ pub async fn scrape_chords(
                     return;
                 }}
                 
-                if (attempts > 80) {{
+                if (attempts > 50) {{
                     clearInterval(checkInterval);
-                    let err = encodeURIComponent(JSON.stringify({{success: false, error: "Timeout waiting for chords", data: null}}));
+                    let sampleText = document.body ? document.body.innerText.replace(/\s+/g, ' ').substring(0, 300) : 'no body';
+                    let debugInfo = {{
+                        url: window.location.href,
+                        title: document.title,
+                        chord_el_count: document.querySelectorAll('.chord[data-i], [data-i].chord, [data-i]').length,
+                        sample_body: sampleText
+                    }};
+                    let err = encodeURIComponent(JSON.stringify({{
+                        success: false, 
+                        error: "Timeout waiting for chords: " + JSON.stringify(debugInfo), 
+                        data: null
+                    }}));
                     window.location.replace("https://chordify.net/?scraper_result=" + err);
                     return;
                 }}
                 
                 if (document.body && document.body.textContent && (document.body.textContent.includes("Ribbit! Nothing here") || document.querySelectorAll('img[src*="404"]').length > 0)) {{
                     clearInterval(checkInterval);
+                    let remCandidates = [];
+                    if (window.location.hash.includes('candidates=')) {{
+                        try {{
+                            let raw = decodeURIComponent(window.location.hash.split('candidates=')[1].split('&')[0]);
+                            remCandidates = JSON.parse(raw);
+                        }} catch(e) {{}}
+                    }}
+                    if (!remCandidates || remCandidates.length === 0) {{
+                        try {{
+                            let s = sessionStorage.getItem('chord_candidates');
+                            if (s) remCandidates = JSON.parse(s);
+                        }} catch(e) {{}}
+                    }}
+                    if (Array.isArray(remCandidates) && remCandidates.length > 0) {{
+                        let nextCandidateUrl = remCandidates.shift();
+                        let nextWithHash = remCandidates.length > 0
+                            ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
+                            : nextCandidateUrl;
+                        try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
+                        console.log('[NadaNada] 404 on current candidate, trying next candidate:', nextCandidateUrl);
+                        window.location.replace(nextWithHash);
+                        return;
+                    }}
                     let err = encodeURIComponent(JSON.stringify({{success: false, error: "Song not found or IP blocked by Chordify (404)", data: null}}));
                     window.location.replace("https://chordify.net/?scraper_result=" + err);
                     return;
@@ -334,27 +383,33 @@ pub async fn scrape_chords(
                 }} 
                 // ── CHORDIFY CHORD PAGE ───────────────────────────────────────────
                 else if (window.location.pathname.startsWith('/chords/')) {{
-                    // Click "Chords grid" tab if present to ensure sheet grid is rendered
-                    try {{
-                        let gridTab = Array.from(document.querySelectorAll('button, [role="tab"], div, a')).find(el => {{
-                            let t = (el.textContent || '').trim().toLowerCase();
-                            return t === 'chords grid' || t === 'chord grid';
-                        }});
-                        if (gridTab && !gridTab.classList.contains('active') && gridTab.getAttribute('aria-selected') !== 'true') {{
-                            gridTab.click();
-                        }}
-                    }} catch(e) {{}}
+                    // Click "Chords grid" tab ONCE if present to ensure sheet grid is rendered
+                    if (!window._didClickGrid) {{
+                        try {{
+                            let gridTab = Array.from(document.querySelectorAll('button, [role="tab"], div, a')).find(el => {{
+                                let t = (el.textContent || '').trim().toLowerCase();
+                                return t === 'chords grid' || t === 'chord grid';
+                            }});
+                            if (gridTab) {{
+                                window._didClickGrid = true;
+                                gridTab.click();
+                            }}
+                        }} catch(e) {{}}
+                    }}
 
-                    // Click "Show more" button if sidebar details are collapsed
-                    try {{
-                        let showMoreBtn = Array.from(document.querySelectorAll('button, a, span')).find(el => {{
-                            let t = (el.textContent || '').trim().toLowerCase();
-                            return t.includes('show more');
-                        }});
-                        if (showMoreBtn) {{
-                            showMoreBtn.click();
-                        }}
-                    }} catch(e) {{}}
+                    // Click "Show more" button ONCE if sidebar details are collapsed
+                    if (!window._didClickShowMore) {{
+                        try {{
+                            let showMoreBtn = Array.from(document.querySelectorAll('button, a, span')).find(el => {{
+                                let t = (el.textContent || '').trim().toLowerCase();
+                                return t.includes('show more');
+                            }});
+                            if (showMoreBtn) {{
+                                window._didClickShowMore = true;
+                                showMoreBtn.click();
+                            }}
+                        }} catch(e) {{}}
+                    }}
 
                     let chordElements = document.querySelectorAll('.chord[data-i], [data-i].chord, [data-i][class*="chord"]');
                     if (chordElements.length === 0) {{
@@ -386,53 +441,39 @@ pub async fn scrape_chords(
                             bpm = parseFloat(bpmMatch[1]) || 0;
                         }}
                     }}
-                    if (!bpm && attempts > 10) {{
+                    if (!bpm && attempts > 8) {{
                         bpm = 120;
                     }}
                     let effectiveBpm = bpm > 0 ? bpm : 120;
                     let secondsPerBeat = 60.0 / effectiveBpm;
 
-                    // Trigger scroll on sheet container and page so lazy/virtualized chord grids render
-                    let scrollEl = document.querySelector('[data-bpm], [class*="sheet"], [class*="grid"]');
-                    if (scrollEl) {{
-                        scrollEl.scrollTop = scrollEl.scrollHeight;
-                        scrollEl.dispatchEvent(new Event('scroll'));
-                    }}
-                    window.scrollTo(0, document.body.scrollHeight);
-                    if (currentChordCount > 0) {{
-                        let lastEl = chordElements[currentChordCount - 1];
-                        if (lastEl) lastEl.scrollIntoView({{ block: 'end' }});
-                    }}
-
-                    // Calculate maximum time covered by currently rendered chords
-                    let maxTimeSec = 0;
-                    for (let el of chordElements) {{
-                        if (el.hasAttribute('data-i')) {{
-                            let bi = parseInt(el.getAttribute('data-i'));
-                            let t = bi * secondsPerBeat;
-                            if (t > maxTimeSec) maxTimeSec = t;
+                    // Only scroll once or twice at beginning to trigger lazy grid render
+                    if (attempts <= 2) {{
+                        let scrollEl = document.querySelector('[data-bpm], [class*="sheet"], [class*="grid"]');
+                        if (scrollEl) {{
+                            scrollEl.scrollTop = scrollEl.scrollHeight;
+                            scrollEl.dispatchEvent(new Event('scroll'));
                         }}
+                        window.scrollTo(0, document.body.scrollHeight);
                     }}
 
                     let expectedDur = {expected_duration_sec};
 
                     // Wait for both chords AND BPM to load and stabilize in DOM
-                    if (currentChordCount > 0) {{
-                        if (currentChordCount > prevChordCount) {{
-                            prevChordCount = currentChordCount;
-                            stableChordAttempts = 0;
-                            return; // Chords are still streaming/populating in DOM
-                        }} else {{
+                    if (currentChordCount >= 10) {{
+                        let diff = Math.abs(currentChordCount - prevChordCount);
+                        if (diff <= 3) {{
                             stableChordAttempts++;
-                            // If chords haven't reached at least 65% of expected duration, require longer stability (8 checks = 4s)
-                            let isCoverageLow = expectedDur > 60 && maxTimeSec < (expectedDur * 0.65);
-                            let requiredStable = isCoverageLow ? 8 : 3;
-                            if (stableChordAttempts < requiredStable && attempts < 50) {{
-                                return;
-                            }}
+                        }} else {{
+                            stableChordAttempts = 0;
+                            prevChordCount = currentChordCount;
                         }}
 
-                        if (!bpm && attempts < 10) {{
+                        if (stableChordAttempts < 2 && attempts < 15) {{
+                            return;
+                        }}
+
+                        if (!bpm && attempts < 8) {{
                             return; // Wait a brief moment for the sidebar or script tags to populate
                         }}
                         
@@ -460,6 +501,19 @@ pub async fn scrape_chords(
                                 chordText = chordText.split('\n')[0].trim();
                             }}
                             
+                            // Normalize Unicode music symbols to standard notation
+                            chordText = chordText
+                                .replace(/♭/g, 'b')
+                                .replace(/♯/g, '#')
+                                .replace(/ᵐᵃʲ/g, 'maj')
+                                .replace(/ₘ/g, 'm')
+                                .replace(/⁷/g, '7')
+                                .replace(/⁹/g, '9')
+                                .replace(/⁴/g, '4')
+                                .replace(/⁵/g, '5')
+                                .replace(/⁶/g, '6')
+                                .replace(/²/g, '2');
+
                             if (chordText && chordText !== '' && !el.classList.contains('nolabel') && /^[A-G]/i.test(chordText)) {{
                                 chords.push({{
                                     beat: beatIdx + 1,
@@ -538,8 +592,8 @@ pub async fn scrape_chords(
                         // Extract title and artist from h1
                         let h1 = document.querySelector('h1');
                         if (h1) {{
-                            let txt = h1.innerText.trim();
-                            let byMatch = txt.match(/^(.+?)\s+Chords?\s*(?:&|and)?\s*Lyrics?\s+by\s+(.+)$/i);
+                            let txt = h1.innerText.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+                            let byMatch = txt.match(/^(.+?)\s+Chords?\s*(?:(?:&|and)?\s*lyrics)?\s+by\s+(.+)$/i);
                             if (byMatch) {{
                                 chordifyTitle = byMatch[1].trim();
                                 chordifyChannel = byMatch[2].trim();
@@ -548,37 +602,45 @@ pub async fn scrape_chords(
                             }}
                         }}
                         if (!chordifyTitle && document.title) {{
-                            let byMatch = document.title.match(/^(.+?)\s+Chords?\s*(?:&|and)?\s*Lyrics?\s+by\s+(.+?)(?:\s*[-|].*)?$/i);
+                            let txt = document.title.replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim();
+                            let byMatch = txt.match(/^(.+?)\s+Chords?\s*(?:(?:&|and)?\s*lyrics)?\s+by\s+(.+?)(?:\s*[-|].*)?$/i);
                             if (byMatch) {{
                                 chordifyTitle = byMatch[1].trim();
                                 chordifyChannel = byMatch[2].trim();
                             }} else {{
-                                chordifyTitle = document.title.replace(/\s*[-|]\s*Chordify.*$/i, '').trim();
+                                chordifyTitle = txt.replace(/\s*[-|]\s*Chordify.*$/i, '').trim();
                             }}
                         }}
 
                         // Extract duration
-                        let durMatches = (document.body.innerText || '').match(/(\d{{1,2}}:\d{{2}})/g);
-                        if (durMatches) {{
-                            let nonZero = durMatches.filter(d => d !== '00:00' && d !== '0:00');
-                            if (nonZero.length > 0) chordifyDuration = nonZero[0];
+                        let metaDur = document.querySelector('meta[itemprop="duration"]');
+                        if (metaDur && metaDur.content) {{
+                            let m = metaDur.content.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
+                            if (m) {{
+                                let mins = parseInt(m[1] || '0');
+                                let secs = parseInt(m[2] || '0');
+                                chordifyDuration = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                            }}
+                        }}
+                        if (!chordifyDuration) {{
+                            let timeEls = Array.from(document.querySelectorAll('span, div, time')).filter(el => {{
+                                let txt = (el.innerText || '').trim();
+                                return /^\d{{1,2}}:\d{{2}}$/.test(txt) && txt !== '00:00' && txt !== '0:00';
+                            }});
+                            if (timeEls.length > 0) {{
+                                chordifyDuration = timeEls[timeEls.length - 1].innerText.trim();
+                            }}
+                        }}
+                        if (!chordifyDuration) {{
+                            let durMatches = (document.body.innerText || '').match(/(\d{{1,2}}:\d{{2}})/g);
+                            if (durMatches) {{
+                                let nonZero = durMatches.filter(d => d !== '00:00' && d !== '0:00');
+                                if (nonZero.length > 0) chordifyDuration = nonZero[nonZero.length - 1];
+                            }}
                         }}
 
                         let chordifyThumbnail = chordifyVideoId ? ('https://i.ytimg.com/vi/' + chordifyVideoId + '/hqdefault.jpg') : null;
-                        
-                        // Check if current candidate's duration is a major mismatch (> 5s) and we have more search candidates
-                        let chordifyDurSec = 0;
-                        if (chordifyDuration) {{
-                            let dp = chordifyDuration.split(':').map(Number);
-                            if (dp.length === 2) chordifyDurSec = dp[0] * 60 + dp[1];
-                            else if (dp.length === 3) chordifyDurSec = dp[0] * 3600 + dp[1] * 60 + dp[2];
-                        }}
-                        let lastChordTime = chords.length > 0 ? chords[chords.length - 1].time_sec : 0;
-                        let candDur = chordifyDurSec > 0 ? chordifyDurSec : lastChordTime;
-                        let expectedDur = {expected_duration_sec};
-                        let durDiff = expectedDur > 0 && candDur > 0 ? Math.abs(candDur - expectedDur) : 0;
-                        let isIncomplete = expectedDur > 60 && lastChordTime < (expectedDur * 0.6);
-                        
+
                         let remCandidates = [];
                         if (window.location.hash.includes('candidates=')) {{
                             try {{
@@ -594,13 +656,14 @@ pub async fn scrape_chords(
                         }}
                         if (!Array.isArray(remCandidates)) remCandidates = [];
 
-                        if (expectedDur > 0 && (durDiff > 5 || isIncomplete) && remCandidates.length > 0) {{
+                        // Only switch to next candidate if chords failed to extract (< 5 chords)
+                        if (chords.length < 5 && remCandidates.length > 0) {{
                             let nextCandidateUrl = remCandidates.shift();
                             let nextWithHash = remCandidates.length > 0
                                 ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
                                 : nextCandidateUrl;
                             try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
-                            console.log('[NadaNada] Candidate issue (' + durDiff.toFixed(1) + 's diff, incomplete: ' + isIncomplete + '). Trying next candidate:', nextCandidateUrl);
+                            console.log('[NadaNada] Too few chords (' + chords.length + '). Trying next candidate:', nextCandidateUrl);
                             window.location.replace(nextWithHash);
                             return;
                         }}
@@ -653,10 +716,25 @@ pub async fn scrape_chords(
     .initialization_script(&js_code)
     .on_navigation(move |url| {
         println!("Navigating to: {}", url.as_str());
+
+        if url.path().starts_with("/user/signup") || url.path().starts_with("/user/signin") {
+            println!("[Rust on_navigation] Redirect to signup ({}) – triggering Yahoo fallback immediately", url.path());
+            if let Ok(mut guard) = tx_mutex_clone.lock() {
+                if let Some(sender) = guard.take() {
+                    let _ = sender.send("YAHOO_FALLBACK".to_string());
+                }
+            }
+            return false;
+        }
+
         let mut got_result = false;
         let mut json_str = String::new();
 
         for (key, value) in url.query_pairs() {
+            if key == "scraper_log" {
+                println!("[Scraper JS Log] {}", value);
+                return false;
+            }
             if key == "scraper_result" {
                 got_result = true;
                 json_str = value.into_owned();
@@ -747,6 +825,10 @@ pub async fn scrape_chords(
             let mut got_result = false;
             let mut json_str = String::new();
             for (key, value) in url.query_pairs() {
+                if key == "scraper_log" {
+                    println!("[Yahoo Scraper JS Log] {}", value);
+                    return false;
+                }
                 if key == "scraper_result" {
                     got_result = true;
                     json_str = value.into_owned();
