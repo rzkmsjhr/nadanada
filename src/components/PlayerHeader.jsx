@@ -356,40 +356,6 @@ export default function PlayerHeader({
                         }} title="Faster / tighten beat interval">+</button>
                       </div>
                     )}
-
-                    {/* Fullscreen Overlay button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setVideoOverlayMode?.('chords');
-                      }}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'var(--panel-bg)',
-                        border: '1px solid var(--panel-border)',
-                        borderRadius: '6px',
-                        padding: '1px 5px',
-                        color: 'var(--text-muted)',
-                        cursor: 'pointer',
-                        fontSize: '0.75rem',
-                        lineHeight: 1,
-                        height: '18px',
-                        transition: 'all 0.15s ease'
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = 'var(--text-main)';
-                        e.currentTarget.style.borderColor = 'var(--accent-color)';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = 'var(--text-muted)';
-                        e.currentTarget.style.borderColor = 'var(--panel-border)';
-                      }}
-                      title="Overlay on video"
-                    >
-                      <Maximize2 size={11} strokeWidth={2.2} />
-                    </button>
                   </div>
                 )}
               </div>
