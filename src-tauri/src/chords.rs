@@ -141,8 +141,11 @@ pub async fn scrape_chords(
                         candidates.sort((a, b) => a.penalty - b.penalty);
                         let candidateUrls = candidates.map(c => c.url);
                         let target = candidateUrls.shift();
-                        sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls));
-                        window.location.replace(target);
+                        try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
+                        let targetWithHash = candidateUrls.length > 0
+                            ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
+                            : target;
+                        window.location.replace(targetWithHash);
                     }} else if (googleAttempts > 20) {{ // Timeout after 10 seconds
                         clearInterval(checkGoogle);
                         let err = encodeURIComponent(JSON.stringify({{success: false, error: "Not found on Chordify", data: null}}));
@@ -182,8 +185,11 @@ pub async fn scrape_chords(
                         if (candidates.length > 0) {{
                             let candidateUrls = candidates.map(c => c.url);
                             let target = candidateUrls.shift();
-                            sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls));
-                            window.location.replace(target);
+                            try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
+                            let targetWithHash = candidateUrls.length > 0
+                                ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
+                                : target;
+                            window.location.replace(targetWithHash);
                         }}
                     }} else if (searchAttempts > 20) {{ // Timeout after 10 seconds
                         clearInterval(checkSearch);
@@ -195,25 +201,22 @@ pub async fn scrape_chords(
 
             if (!window.location.hostname.includes("chordify.net")) return;
             
-            // Stealth overrides to bypass Cloudflare bot detection
+            // Stealth overrides to pass Cloudflare / Turnstile bot detection
             try {{
-                Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
-                window.chrome = {{ runtime: {{}} }};
-                if (!navigator.plugins || navigator.plugins.length === 0) {{
-                    Object.defineProperty(navigator, 'plugins', {{ get: () => [1, 2, 3] }});
-                }}
+                delete Object.getPrototypeOf(navigator).webdriver;
+            }} catch(e) {{
+                try {{
+                    Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
+                }} catch(e2) {{}}
+            }}
+            try {{
+                if (!window.chrome) window.chrome = {{}};
+                if (!window.chrome.runtime) window.chrome.runtime = {{}};
+            }} catch(e) {{}}
+            try {{
                 if (!navigator.languages || navigator.languages.length === 0) {{
                     Object.defineProperty(navigator, 'languages', {{ get: () => ['en-US', 'en'] }});
                 }}
-            }} catch(e) {{}}
-
-            // Clear storage immediately to bypass Chordify's JS-based daily limits
-            try {{
-                window.localStorage.clear();
-                window.sessionStorage.clear();
-                document.cookie.split(";").forEach(function(c) {{ 
-                    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
-                }});
             }} catch(e) {{}}
             
             let attempts = 0;
@@ -222,6 +225,30 @@ pub async fn scrape_chords(
             let checkInterval = setInterval(() => {{
                 attempts++;
                 
+                // ── CLOUDFLARE CHALLENGE DETECTION ─────────────────────────────────
+                let isCloudflare = false;
+                try {{
+                    let title = (document.title || '').toLowerCase();
+                    if (title.includes("just a moment") || title.includes("attention required") || title.includes("cloudflare")) {{
+                        isCloudflare = true;
+                    }}
+                    if (document.querySelector('#challenge-running, #challenge-stage, .cf-turnstile, #cf-wrapper')) {{
+                        isCloudflare = true;
+                    }}
+                }} catch(e) {{}}
+
+                if (isCloudflare) {{
+                    // Give Cloudflare Turnstile up to 8 checks (4s) to automatically solve itself
+                    if (attempts > 8) {{
+                        clearInterval(checkInterval);
+                        console.log('[NadaNada] Cloudflare challenge detected and unsolved – signalling fallback');
+                        let fallbackSig = window.location.hostname.includes("yahoo") ? "GOOGLE_FALLBACK" : "YAHOO_FALLBACK";
+                        window.location.replace("https://chordify.net/?scraper_result=" + fallbackSig);
+                        return;
+                    }}
+                    return;
+                }}
+
                 // ── SIGNUP / SIGNIN WALL (redirect) → signal Rust to open fresh Yahoo window ─
                 if (window.location.pathname.startsWith('/user/signup') || window.location.pathname.startsWith('/user/signin')) {{
                     clearInterval(checkInterval);
@@ -281,10 +308,13 @@ pub async fn scrape_chords(
                             candidates.sort((a, b) => a.penalty - b.penalty);
                             let candidateUrls = candidates.map(c => c.url);
                             let target = candidateUrls.shift();
-                            sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls));
+                            try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
+                            let targetWithHash = candidateUrls.length > 0
+                                ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
+                                : target;
                             // Add human delay before clicking to avoid bot detection
                             setTimeout(() => {{
-                                window.location.href = target;
+                                window.location.href = targetWithHash;
                             }}, 1500 + Math.random() * 1500);
                             return;
                         }}
@@ -304,20 +334,66 @@ pub async fn scrape_chords(
                 }} 
                 // ── CHORDIFY CHORD PAGE ───────────────────────────────────────────
                 else if (window.location.pathname.startsWith('/chords/')) {{
-                    let chordElements = document.querySelectorAll('.chord[data-i]');
-                    let scrollEl = document.querySelector('[data-bpm]');
-                    let bpmMatch = document.body.textContent.match(/BPM\s*(\d{{2,3}})/i);
+                    // Click "Chords grid" tab if present to ensure sheet grid is rendered
+                    try {{
+                        let gridTab = Array.from(document.querySelectorAll('button, [role="tab"], div, a')).find(el => {{
+                            let t = (el.textContent || '').trim().toLowerCase();
+                            return t === 'chords grid' || t === 'chord grid';
+                        }});
+                        if (gridTab && !gridTab.classList.contains('active') && gridTab.getAttribute('aria-selected') !== 'true') {{
+                            gridTab.click();
+                        }}
+                    }} catch(e) {{}}
+
+                    // Click "Show more" button if sidebar details are collapsed
+                    try {{
+                        let showMoreBtn = Array.from(document.querySelectorAll('button, a, span')).find(el => {{
+                            let t = (el.textContent || '').trim().toLowerCase();
+                            return t.includes('show more');
+                        }});
+                        if (showMoreBtn) {{
+                            showMoreBtn.click();
+                        }}
+                    }} catch(e) {{}}
+
+                    let chordElements = document.querySelectorAll('.chord[data-i], [data-i].chord, [data-i][class*="chord"]');
+                    if (chordElements.length === 0) {{
+                        chordElements = document.querySelectorAll('[data-i]');
+                    }}
                     let currentChordCount = chordElements.length;
                     
-                    let bpm = 120;
-                    if (scrollEl) {{
-                        bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 120;
-                    }} else if (bpmMatch) {{
-                        bpm = parseFloat(bpmMatch[1]) || 120;
+                    let bpm = 0;
+                    // Check script tags for BPM first
+                    try {{
+                        let scripts = document.querySelectorAll('script:not([src])');
+                        for (let s of scripts) {{
+                            let m = s.textContent.match(/["'](?:bpm|tempo)["']\s*[:=]\s*(\d{{2,3}})/i);
+                            if (m) {{
+                                bpm = parseFloat(m[1]);
+                                break;
+                            }}
+                        }}
+                    }} catch(e) {{}}
+                    if (!bpm) {{
+                        let scrollEl = document.querySelector('[data-bpm]');
+                        if (scrollEl) {{
+                            bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 0;
+                        }}
                     }}
-                    let secondsPerBeat = 60.0 / bpm;
+                    if (!bpm) {{
+                        let bpmMatch = document.body.textContent.match(/BPM\s*[:\-]?\s*(\d{{2,3}})/i);
+                        if (bpmMatch) {{
+                            bpm = parseFloat(bpmMatch[1]) || 0;
+                        }}
+                    }}
+                    if (!bpm && attempts > 10) {{
+                        bpm = 120;
+                    }}
+                    let effectiveBpm = bpm > 0 ? bpm : 120;
+                    let secondsPerBeat = 60.0 / effectiveBpm;
 
                     // Trigger scroll on sheet container and page so lazy/virtualized chord grids render
+                    let scrollEl = document.querySelector('[data-bpm], [class*="sheet"], [class*="grid"]');
                     if (scrollEl) {{
                         scrollEl.scrollTop = scrollEl.scrollHeight;
                         scrollEl.dispatchEvent(new Event('scroll'));
@@ -356,35 +432,39 @@ pub async fn scrape_chords(
                             }}
                         }}
 
-                        if (!scrollEl && !bpmMatch && attempts < 40) {{
-                            return; // Wait a bit longer for the sidebar to load asynchronously
+                        if (!bpm && attempts < 10) {{
+                            return; // Wait a brief moment for the sidebar or script tags to populate
                         }}
                         
                         clearInterval(checkInterval);
                         
                         let chords = [];
-                        let bpm = 120;
-                        
-                        if (scrollEl) {{
-                            bpm = parseFloat(scrollEl.getAttribute('data-bpm')) || 120;
-                        }} else if (bpmMatch) {{
-                            bpm = parseFloat(bpmMatch[1]) || 120;
-                        }}
-                        let secondsPerBeat = 60.0 / bpm;
+                        let finalBpm = bpm > 0 ? bpm : 120;
+                        let finalSecondsPerBeat = 60.0 / finalBpm;
                         
                         let seenBeats = new Set();
                         for (let el of chordElements) {{
                             if (!el.hasAttribute('data-i')) continue;
                             
                             let beatIdx = parseInt(el.getAttribute('data-i'));
-                            if (seenBeats.has(beatIdx)) continue;
+                            if (isNaN(beatIdx) || seenBeats.has(beatIdx)) continue;
                             
-                            let text = el.innerText.trim();
-                            if (text && text !== '' && !el.classList.contains('nolabel')) {{
+                            let chordText = '';
+                            let labelEl = el.querySelector('.chord, .chord-label, [class*="label"], [class*="chord"]');
+                            if (labelEl && labelEl.innerText && labelEl.innerText.trim()) {{
+                                chordText = labelEl.innerText.trim();
+                            }} else if (el.innerText && el.innerText.trim()) {{
+                                chordText = el.innerText.trim();
+                            }}
+                            if (chordText.includes('\n')) {{
+                                chordText = chordText.split('\n')[0].trim();
+                            }}
+                            
+                            if (chordText && chordText !== '' && !el.classList.contains('nolabel') && /^[A-G]/i.test(chordText)) {{
                                 chords.push({{
                                     beat: beatIdx + 1,
-                                    time_sec: beatIdx * secondsPerBeat,
-                                    chord: text
+                                    time_sec: beatIdx * finalSecondsPerBeat,
+                                    chord: chordText
                                 }});
                                 seenBeats.add(beatIdx);
                             }}
@@ -498,21 +578,37 @@ pub async fn scrape_chords(
                         let expectedDur = {expected_duration_sec};
                         let durDiff = expectedDur > 0 && candDur > 0 ? Math.abs(candDur - expectedDur) : 0;
                         let isIncomplete = expectedDur > 60 && lastChordTime < (expectedDur * 0.6);
-                        let remCandidatesJson = sessionStorage.getItem('chord_candidates');
-                        let remCandidates = remCandidatesJson ? JSON.parse(remCandidatesJson) : [];
+                        
+                        let remCandidates = [];
+                        if (window.location.hash.includes('candidates=')) {{
+                            try {{
+                                let raw = decodeURIComponent(window.location.hash.split('candidates=')[1].split('&')[0]);
+                                remCandidates = JSON.parse(raw);
+                            }} catch(e) {{}}
+                        }}
+                        if (!remCandidates || remCandidates.length === 0) {{
+                            try {{
+                                let s = sessionStorage.getItem('chord_candidates');
+                                if (s) remCandidates = JSON.parse(s);
+                            }} catch(e) {{}}
+                        }}
+                        if (!Array.isArray(remCandidates)) remCandidates = [];
 
                         if (expectedDur > 0 && (durDiff > 5 || isIncomplete) && remCandidates.length > 0) {{
                             let nextCandidateUrl = remCandidates.shift();
-                            sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates));
+                            let nextWithHash = remCandidates.length > 0
+                                ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
+                                : nextCandidateUrl;
+                            try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
                             console.log('[NadaNada] Candidate issue (' + durDiff.toFixed(1) + 's diff, incomplete: ' + isIncomplete + '). Trying next candidate:', nextCandidateUrl);
-                            window.location.replace(nextCandidateUrl);
+                            window.location.replace(nextWithHash);
                             return;
                         }}
 
                         let result = {{
                             success: true,
                             data: {{
-                                bpm: bpm,
+                                bpm: finalBpm,
                                 chords: chords,
                                 chordify_video_id: chordifyVideoId,
                                 chordify_title: chordifyTitle,
@@ -553,6 +649,7 @@ pub async fn scrape_chords(
     .decorations(false)
     .skip_taskbar(true)
     .always_on_bottom(true)
+    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
     .initialization_script(&js_code)
     .on_navigation(move |url| {
         println!("Navigating to: {}", url.as_str());
@@ -643,6 +740,7 @@ pub async fn scrape_chords(
         .decorations(false)
         .skip_taskbar(true)
         .always_on_bottom(true)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .initialization_script(&js_code)
         .on_navigation(move |url| {
             println!("[Yahoo fallback] Navigating to: {}", url.as_str());
@@ -719,6 +817,7 @@ pub async fn scrape_chords(
         .decorations(false)
         .skip_taskbar(true)
         .always_on_bottom(true)
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
         .initialization_script(&js_code)
         .on_navigation(move |url| {
             println!("[Google fallback] Navigating to: {}", url.as_str());
