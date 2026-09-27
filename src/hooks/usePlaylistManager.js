@@ -93,7 +93,10 @@ export function usePlaylistManager({
     return () => clearTimeout(timer);
   }, [savedPlaylists, api]);
 
-  const handleAddSong = video => {
+  const currentIndexRef = useRef(currentIndex);
+  currentIndexRef.current = currentIndex;
+
+  const handleAddSong = (video, options = {}) => {
     console.log("handleAddSong called. showSearch is:", showSearch);
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
@@ -103,11 +106,32 @@ export function usePlaylistManager({
       ...video,
       queueId
     };
+    const afterCurrent = Boolean(options?.afterCurrent);
+    const currIdx = currentIndexRef.current;
+
     if (savedPlaylist) {
-      setSavedPlaylist(prev => [...prev, newSong]);
-    } else {
-      setPlaylist(prev => [...prev, newSong]);
+      setSavedPlaylist(prev => {
+        if (afterCurrent && currIdx >= 0 && currIdx < prev.length) {
+          const next = [...prev];
+          next.splice(currIdx + 1, 0, newSong);
+          return next;
+        }
+        return [...prev, newSong];
+      });
     }
+
+    setPlaylist(prev => {
+      if (afterCurrent && currIdx >= 0 && currIdx < prev.length) {
+        const next = [...prev];
+        next.splice(currIdx + 1, 0, newSong);
+        return next;
+      }
+      return [...prev, newSong];
+    });
+  };
+
+  const handleAddSongAfterCurrent = video => {
+    handleAddSong(video, { afterCurrent: true });
   };
 
   const handleAddMultiple = videos => {
@@ -182,7 +206,7 @@ export function usePlaylistManager({
     savedPlaylist, setSavedPlaylist,
     savedPlaylists, setSavedPlaylists,
     shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
-    handleAddSong, handleAddMultiple,
+    handleAddSong, handleAddSongAfterCurrent, handleAddMultiple,
     handleRemoveSong, handleReorder
   };
 }

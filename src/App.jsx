@@ -189,7 +189,7 @@ function App() {
     savedPlaylist, setSavedPlaylist,
     savedPlaylists, setSavedPlaylists,
     shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
-    handleAddSong, handleAddMultiple,
+    handleAddSong, handleAddSongAfterCurrent, handleAddMultiple,
     handleRemoveSong, handleReorder
   } = usePlaylistManager({
     api,
@@ -441,7 +441,7 @@ function App() {
     api,
     loadDownloadedSongs,
     setGlobalError, globalError,
-    handleAddSong, handleAddMultiple,
+    handleAddSong, handleAddSongAfterCurrent, handleAddMultiple,
     handlePlayPreview, handleStopPreview,
     previewSong,
     handleRemoveSong, handleReorder,
@@ -573,7 +573,7 @@ function App() {
                 videoOverlayMode={videoOverlayMode}
                 setVideoOverlayMode={setVideoOverlayMode}
                 fontScale={fontScale}
-                onAddChordifySong={handleAddSong}
+                onAddChordifySong={handleAddSongAfterCurrent}
               />
             </div>
           </div>
