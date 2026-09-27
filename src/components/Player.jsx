@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
+import { createPortal } from 'react-dom';
 import ProxyYouTube from './ProxyYouTube';
 import PlayerControls from './PlayerControls';
-import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Maximize2, Minimize2, Mic2, ListMusic } from 'lucide-react';
+import { Loader2, Subtitles, Play, Pause, SkipBack, SkipForward, X, Shuffle, Repeat, Repeat1, Volume2, VolumeX, Maximize2, Minimize2, Mic2, ListMusic, Disc, Check } from 'lucide-react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
 import VideoOverlay from './VideoOverlay';
+import SpinningVinyl, { isAlbumArtTrack } from './SpinningVinyl';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
@@ -17,7 +19,9 @@ const Player = React.forwardRef(function Player({
   chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, bpmOffset = 0, setBpmOffset, isFetchingChords, chordsError, onRetryChords,
   fontScale,
   lyricsFontScale, chordsFontScale,
-  downloadedIds
+  downloadedIds,
+  isVinylEnabled = true,
+  onToggleVinyl
 }, ref) {
   
   const core = usePlayerCore({
@@ -37,6 +41,9 @@ const Player = React.forwardRef(function Player({
     downloadedIds
   });
 
+  const activeSong = core.activeDeck === 0 ? core.deck0Song : core.deck1Song;
+  const isAlbumArtSong = isAlbumArtTrack(activeSong || currentSong);
+
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
   const fullscreenTimerRef = useRef(null);
   const lastMousePosRef = useRef({ x: -1, y: -1 });
@@ -46,6 +53,65 @@ const Player = React.forwardRef(function Player({
 
   const isCaptionMenuOpenRef = useRef(core.isCaptionMenuOpen);
   isCaptionMenuOpenRef.current = core.isCaptionMenuOpen;
+
+  const captionButtonRef = useRef(null);
+  const captionMenuRef = useRef(null);
+  const [captionMenuCoords, setCaptionMenuCoords] = useState(null);
+
+  const updateCaptionCoords = useCallback(() => {
+    if (captionButtonRef.current) {
+      const rect = captionButtonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - (rect.bottom + 8);
+      const spaceAbove = rect.top - 8;
+      const shouldFlipUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+
+      setCaptionMenuCoords({
+        top: shouldFlipUp ? undefined : rect.bottom + 6,
+        bottom: shouldFlipUp ? window.innerHeight - rect.top + 6 : undefined,
+        right: Math.max(12, window.innerWidth - rect.right),
+        maxHeight: Math.min(340, Math.max(160, shouldFlipUp ? spaceAbove : spaceBelow))
+      });
+    }
+  }, []);
+
+  const handleToggleCaptionMenu = useCallback((e) => {
+    e?.stopPropagation?.();
+    if (!core.isCaptionMenuOpen) {
+      updateCaptionCoords();
+      core.setIsCaptionMenuOpen(true);
+    } else {
+      core.setIsCaptionMenuOpen(false);
+    }
+  }, [core, updateCaptionCoords]);
+
+  // Close caption dropdown when clicking outside or update position on window resize/scroll
+  useEffect(() => {
+    if (!core.isCaptionMenuOpen) return;
+    updateCaptionCoords();
+
+    const handleClickOutside = (e) => {
+      if (
+        captionMenuRef.current && !captionMenuRef.current.contains(e.target) &&
+        captionButtonRef.current && !captionButtonRef.current.contains(e.target)
+      ) {
+        core.setIsCaptionMenuOpen(false);
+      }
+    };
+
+    const handleWindowUpdate = () => {
+      updateCaptionCoords();
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    window.addEventListener('resize', handleWindowUpdate);
+    window.addEventListener('scroll', handleWindowUpdate, true);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('resize', handleWindowUpdate);
+      window.removeEventListener('scroll', handleWindowUpdate, true);
+    };
+  }, [core.isCaptionMenuOpen, updateCaptionCoords, core]);
 
   const resetFullscreenTimer = useCallback(() => {
     setShowFullscreenControls(true);
@@ -172,7 +238,7 @@ const Player = React.forwardRef(function Player({
       }}>
         <div 
           onMouseEnter={() => core.setIsVideoHovered(true)}
-          onMouseLeave={() => { core.setIsVideoHovered(false); core.setIsCaptionMenuOpen(false); }}
+          onMouseLeave={() => { core.setIsVideoHovered(false); }}
           style={isFullscreen ? {
             width: '100cqw',
             maxWidth: 'calc(100cqh * (16 / 9))',
@@ -218,71 +284,84 @@ const Player = React.forwardRef(function Player({
                 pointerEvents: core.activeDeck === 0 ? 'auto' : 'none',
                 transition: 'opacity 0.1s linear'
               }}>
-                <ProxyYouTube
-                  key="deck-0"
-                  videoId={core.deck0Song.id}
-                  onCaptionsReceived={core.handleCaptionsReceived}
-                  opts={{
-                    ...opts,
-                    playerVars: {
-                      ...opts.playerVars,
-                      start: Math.floor(core.deck0Song.startSeconds || core.deck0Song.initialTime || 0)
-                    }
-                  }}
-                  onReady={(e) => core.onDeckReady(0, e)}
-                  onStateChange={(e) => core.onDeckStateChange(0, e)}
-                  onError={async (e) => {
-                    console.error("Deck 0 YouTube Error:", e);
-                    const rawCode = e?.data ?? e;
-                    const errorCode = Number(rawCode);
-                    // YouTube IFrame API standard embed restriction errors:
-                    // 101 - The owner of the requested video does not allow it to be played in embedded players.
-                    // 150 - Same as 101 (embed blocked by owner / copyright restriction).
-                    const isEmbedBlocked = errorCode === 101 || errorCode === 150;
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  opacity: (isVinylEnabled && isAlbumArtTrack(core.deck0Song)) ? 0 : 1,
+                  pointerEvents: (isVinylEnabled && isAlbumArtTrack(core.deck0Song)) ? 'none' : 'auto'
+                }}>
+                  <ProxyYouTube
+                    key="deck-0"
+                    videoId={core.deck0Song.id}
+                    onCaptionsReceived={core.handleCaptionsReceived}
+                    opts={{
+                      ...opts,
+                      playerVars: {
+                        ...opts.playerVars,
+                        start: Math.floor(core.deck0Song.startSeconds || core.deck0Song.initialTime || 0)
+                      }
+                    }}
+                    onReady={(e) => core.onDeckReady(0, e)}
+                    onStateChange={(e) => core.onDeckStateChange(0, e)}
+                    onError={async (e) => {
+                      console.error("Deck 0 YouTube Error:", e);
+                      const rawCode = e?.data ?? e;
+                      const errorCode = Number(rawCode);
+                      // YouTube IFrame API standard embed restriction errors:
+                      // 101 - The owner of the requested video does not allow it to be played in embedded players.
+                      // 150 - Same as 101 (embed blocked by owner / copyright restriction).
+                      const isEmbedBlocked = errorCode === 101 || errorCode === 150;
 
-                    if (isEmbedBlocked) {
-                      console.log(`[Player] Deck 0 video ${core.deck0Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
-                      if (core.isCrossfading) {
-                        if (core.activeDeck === 0) {
-                          if (core.finishCrossfade) core.finishCrossfade();
-                          else core.cancelCrossfade();
-                        } else {
-                          core.cancelCrossfade();
-                        }
-                      }
-                      if (!core.streamUrl && !core.isExtractingStream && core.deck0Song) {
-                        core.setIsExtractingStream(true);
-                        try {
-                          const url = await api.getStreamUrl(core.deck0Song.id);
-                          core.setStreamUrl(url);
-                        } catch (err) {
-                          console.error("Stream extraction fallback failed:", err);
-                          if (hasNext) onNext();
-                          else {
-                            core.setIsPlaying(false);
-                            if (onPlayStateChange) onPlayStateChange(false);
-                            if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                      if (isEmbedBlocked) {
+                        console.log(`[Player] Deck 0 video ${core.deck0Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
+                        if (core.isCrossfading) {
+                          if (core.activeDeck === 0) {
+                            if (core.finishCrossfade) core.finishCrossfade();
+                            else core.cancelCrossfade();
+                          } else {
+                            core.cancelCrossfade();
                           }
-                        } finally {
-                          core.setIsExtractingStream(false);
+                        }
+                        if (!core.streamUrl && !core.isExtractingStream && core.deck0Song) {
+                          core.setIsExtractingStream(true);
+                          try {
+                            const url = await api.getStreamUrl(core.deck0Song.id);
+                            core.setStreamUrl(url);
+                          } catch (err) {
+                            console.error("Stream extraction fallback failed:", err);
+                            if (hasNext) onNext();
+                            else {
+                              core.setIsPlaying(false);
+                              if (onPlayStateChange) onPlayStateChange(false);
+                              if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                            }
+                          } finally {
+                            core.setIsExtractingStream(false);
+                          }
+                        }
+                      } else {
+                        console.warn(`[Player] Deck 0 YouTube Error ${errorCode} is not an embed block.`);
+                        if (errorCode === 5) {
+                          // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
+                          // Give it a chance to buffer and play without killing the video.
+                          try { e.target?.playVideo?.(); } catch (_) {}
+                        } else if (errorCode === 100) {
+                          // Video removed or private
+                          if (hasNext) onNext();
+                          else if (onError) onError("Video not found or has been removed.");
                         }
                       }
-                    } else {
-                      console.warn(`[Player] Deck 0 YouTube Error ${errorCode} is not an embed block.`);
-                      if (errorCode === 5) {
-                        // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
-                        // Give it a chance to buffer and play without killing the video.
-                        try { e.target?.playVideo?.(); } catch (_) {}
-                      } else if (errorCode === 100) {
-                        // Video removed or private
-                        if (hasNext) onNext();
-                        else if (onError) onError("Video not found or has been removed.");
-                      }
-                    }
-                  }}
-                  style={{ width: '100%', height: '100%' }}
-                  iframeClassName="youtube-iframe"
-                />
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                    iframeClassName="youtube-iframe"
+                  />
+                </div>
+                {isVinylEnabled && isAlbumArtTrack(core.deck0Song) && (
+                  <SpinningVinyl
+                    song={core.deck0Song}
+                    isPlaying={core.isPlaying && core.activeDeck === 0}
+                  />
+                )}
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
                   onClick={() => core.togglePlay()}
@@ -301,71 +380,84 @@ const Player = React.forwardRef(function Player({
                 pointerEvents: core.activeDeck === 1 ? 'auto' : 'none',
                 transition: 'opacity 0.1s linear'
               }}>
-                <ProxyYouTube
-                  key="deck-1"
-                  videoId={core.deck1Song.id}
-                  onCaptionsReceived={core.handleCaptionsReceived}
-                  opts={{
-                    ...opts,
-                    playerVars: {
-                      ...opts.playerVars,
-                      start: Math.floor(core.deck1Song.startSeconds || core.deck1Song.initialTime || 0)
-                    }
-                  }}
-                  onReady={(e) => core.onDeckReady(1, e)}
-                  onStateChange={(e) => core.onDeckStateChange(1, e)}
-                  onError={async (e) => {
-                    console.error("Deck 1 YouTube Error:", e);
-                    const rawCode = e?.data ?? e;
-                    const errorCode = Number(rawCode);
-                    // YouTube IFrame API standard embed restriction errors:
-                    // 101 - The owner of the requested video does not allow it to be played in embedded players.
-                    // 150 - Same as 101 (embed blocked by owner / copyright restriction).
-                    const isEmbedBlocked = errorCode === 101 || errorCode === 150;
+                <div style={{
+                  width: '100%',
+                  height: '100%',
+                  opacity: (isVinylEnabled && isAlbumArtTrack(core.deck1Song)) ? 0 : 1,
+                  pointerEvents: (isVinylEnabled && isAlbumArtTrack(core.deck1Song)) ? 'none' : 'auto'
+                }}>
+                  <ProxyYouTube
+                    key="deck-1"
+                    videoId={core.deck1Song.id}
+                    onCaptionsReceived={core.handleCaptionsReceived}
+                    opts={{
+                      ...opts,
+                      playerVars: {
+                        ...opts.playerVars,
+                        start: Math.floor(core.deck1Song.startSeconds || core.deck1Song.initialTime || 0)
+                      }
+                    }}
+                    onReady={(e) => core.onDeckReady(1, e)}
+                    onStateChange={(e) => core.onDeckStateChange(1, e)}
+                    onError={async (e) => {
+                      console.error("Deck 1 YouTube Error:", e);
+                      const rawCode = e?.data ?? e;
+                      const errorCode = Number(rawCode);
+                      // YouTube IFrame API standard embed restriction errors:
+                      // 101 - The owner of the requested video does not allow it to be played in embedded players.
+                      // 150 - Same as 101 (embed blocked by owner / copyright restriction).
+                      const isEmbedBlocked = errorCode === 101 || errorCode === 150;
 
-                    if (isEmbedBlocked) {
-                      console.log(`[Player] Deck 1 video ${core.deck1Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
-                      if (core.isCrossfading) {
-                        if (core.activeDeck === 1) {
-                          if (core.finishCrossfade) core.finishCrossfade();
-                          else core.cancelCrossfade();
-                        } else {
-                          core.cancelCrossfade();
-                        }
-                      }
-                      if (!core.streamUrl && !core.isExtractingStream && core.deck1Song) {
-                        core.setIsExtractingStream(true);
-                        try {
-                          const url = await api.getStreamUrl(core.deck1Song.id);
-                          core.setStreamUrl(url);
-                        } catch (err) {
-                          console.error("Stream extraction fallback failed:", err);
-                          if (hasNext) onNext();
-                          else {
-                            core.setIsPlaying(false);
-                            if (onPlayStateChange) onPlayStateChange(false);
-                            if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                      if (isEmbedBlocked) {
+                        console.log(`[Player] Deck 1 video ${core.deck1Song?.id} is blocked from embedding (error ${errorCode}). Bypassing embed block via stream extraction...`);
+                        if (core.isCrossfading) {
+                          if (core.activeDeck === 1) {
+                            if (core.finishCrossfade) core.finishCrossfade();
+                            else core.cancelCrossfade();
+                          } else {
+                            core.cancelCrossfade();
                           }
-                        } finally {
-                          core.setIsExtractingStream(false);
+                        }
+                        if (!core.streamUrl && !core.isExtractingStream && core.deck1Song) {
+                          core.setIsExtractingStream(true);
+                          try {
+                            const url = await api.getStreamUrl(core.deck1Song.id);
+                            core.setStreamUrl(url);
+                          } catch (err) {
+                            console.error("Stream extraction fallback failed:", err);
+                            if (hasNext) onNext();
+                            else {
+                              core.setIsPlaying(false);
+                              if (onPlayStateChange) onPlayStateChange(false);
+                              if (onError) onError(`Failed to stream track from YouTube: ${err}`);
+                            }
+                          } finally {
+                            core.setIsExtractingStream(false);
+                          }
+                        }
+                      } else {
+                        console.warn(`[Player] Deck 1 YouTube Error ${errorCode} is not an embed block.`);
+                        if (errorCode === 5) {
+                          // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
+                          // Give it a chance to buffer and play without killing the video.
+                          try { e.target?.playVideo?.(); } catch (_) {}
+                        } else if (errorCode === 100) {
+                          // Video removed or private
+                          if (hasNext) onNext();
+                          else if (onError) onError("Video not found or has been removed.");
                         }
                       }
-                    } else {
-                      console.warn(`[Player] Deck 1 YouTube Error ${errorCode} is not an embed block.`);
-                      if (errorCode === 5) {
-                        // Error 5 is HTML5 player error (frequently caused by slow network buffer underrun).
-                        // Give it a chance to buffer and play without killing the video.
-                        try { e.target?.playVideo?.(); } catch (_) {}
-                      } else if (errorCode === 100) {
-                        // Video removed or private
-                        if (hasNext) onNext();
-                        else if (onError) onError("Video not found or has been removed.");
-                      }
-                    }
-                  }}
-                  style={{ width: '100%', height: '100%' }}
-                  iframeClassName="youtube-iframe"
-                />
+                    }}
+                    style={{ width: '100%', height: '100%' }}
+                    iframeClassName="youtube-iframe"
+                  />
+                </div>
+                {isVinylEnabled && isAlbumArtTrack(core.deck1Song) && (
+                  <SpinningVinyl
+                    song={core.deck1Song}
+                    isPlaying={core.isPlaying && core.activeDeck === 1}
+                  />
+                )}
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
                   onClick={() => core.togglePlay()}
@@ -374,85 +466,166 @@ const Player = React.forwardRef(function Player({
               </div>
             )}
 
-            {core.captions.length > 0 && !isMiniPlayer && !isFullscreen && !videoOverlayMode && (
+            {/* Vinyl Effect Toggle Button - Bottom Left */}
+            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && isAlbumArtSong && (
+              <button
+                className="btn btn-icon"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleVinyl?.();
+                }}
+                title={isVinylEnabled ? "Vinyl Player: ON (Click to turn off)" : "Vinyl Player: OFF (Click to turn on)"}
+                style={{
+                  position: 'absolute',
+                  bottom: '12px',
+                  left: '12px',
+                  zIndex: 100,
+                  background: isVinylEnabled ? 'rgba(0, 0, 0, 0.65)' : 'rgba(0, 0, 0, 0.45)',
+                  color: isVinylEnabled ? 'var(--accent-color)' : 'rgba(255,255,255,0.7)',
+                  backdropFilter: 'blur(6px)',
+                  border: isVinylEnabled ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '50%',
+                  padding: '7px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  opacity: core.isVideoHovered ? 1 : 0,
+                  transition: 'opacity 0.2s ease, transform 0.15s ease',
+                  pointerEvents: core.isVideoHovered ? 'auto' : 'none',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.4)'
+                }}
+              >
+                <Disc size={18} />
+              </button>
+            )}
+
+            {/* Captions button - Top Right */}
+            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && currentSong && !currentSong.is_local && core.captions?.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
                   top: '8px',
                   right: '8px',
                   zIndex: 100,
-                  opacity: core.isVideoHovered || core.isCaptionMenuOpen ? 1 : 0,
+                  display: 'flex',
+                  gap: '6px',
+                  alignItems: 'center',
+                  opacity: (core.isVideoHovered || core.isCaptionMenuOpen) ? 1 : 0.65,
                   transition: 'opacity 0.2s',
-                  pointerEvents: core.isVideoHovered || core.isCaptionMenuOpen ? 'auto' : 'none'
+                  pointerEvents: 'auto'
                 }}
               >
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className="btn btn-icon"
-                    onClick={() => core.setIsCaptionMenuOpen(!core.isCaptionMenuOpen)}
-                    style={{
-                      background: 'rgba(0, 0, 0, 0.6)',
-                      color: core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
-                      backdropFilter: 'blur(4px)',
-                      border: '1px solid rgba(255,255,255,0.1)'
-                    }}
-                  >
-                    <Subtitles size={20} />
-                  </button>
-                  {core.isCaptionMenuOpen && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      right: 0,
-                      marginTop: '4px',
-                      background: 'var(--bg-color)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '4px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-                      minWidth: '120px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '2px',
-                      maxHeight: '200px',
-                      overflowY: 'auto'
-                    }}>
-                      <button 
-                        onClick={() => core.selectCaption(null)}
-                        style={{
-                          background: !core.activeCaptionCode ? 'var(--text-main)' : 'transparent',
-                          color: !core.activeCaptionCode ? 'var(--bg-color)' : 'var(--text-main)',
-                          padding: '6px 12px',
-                          border: 'none',
-                          borderRadius: '4px',
-                          textAlign: 'left',
-                          cursor: 'pointer',
-                          fontSize: '0.9rem'
-                        }}
-                      >Off</button>
-                      {core.captions.map(c => (
-                        <button
-                          key={c.languageCode}
-                          onClick={() => core.selectCaption(c.languageCode)}
-                          style={{
-                            background: core.activeCaptionCode === c.languageCode ? 'var(--text-main)' : 'transparent',
-                            color: core.activeCaptionCode === c.languageCode ? 'var(--bg-color)' : 'var(--text-main)',
-                            padding: '6px 12px',
-                            border: 'none',
-                            borderRadius: '4px',
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            fontSize: '0.9rem',
-                            whiteSpace: 'nowrap'
-                          }}
-                        >
-                          {c.languageName}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <button
+                  ref={captionButtonRef}
+                  className="btn btn-icon"
+                  onClick={handleToggleCaptionMenu}
+                  title={core.activeCaptionCode ? "Subtitles: ON (Click to change)" : "Subtitles / Closed Captions"}
+                  style={{
+                    background: core.isCaptionMenuOpen ? 'var(--accent-color)' : 'rgba(0, 0, 0, 0.65)',
+                    color: core.isCaptionMenuOpen ? '#ffffff' : core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
+                    backdropFilter: 'blur(6px)',
+                    border: core.isCaptionMenuOpen ? '1px solid var(--accent-color)' : core.activeCaptionCode ? '1px solid var(--accent-color)' : '1px solid rgba(255,255,255,0.15)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <Subtitles size={18} />
+                </button>
               </div>
+            )}
+
+            {/* Subtitle / Caption Dropdown Menu Portal (Unconstrained by video container overflow) */}
+            {!isMiniPlayer && !isFullscreen && core.captions?.length > 0 && core.isCaptionMenuOpen && captionMenuCoords && createPortal(
+              <div
+                ref={captionMenuRef}
+                className="dropdown-menu-portal"
+                style={{
+                  position: 'fixed',
+                  top: captionMenuCoords.top !== undefined ? `${captionMenuCoords.top}px` : 'auto',
+                  bottom: captionMenuCoords.bottom !== undefined ? `${captionMenuCoords.bottom}px` : 'auto',
+                  right: `${captionMenuCoords.right}px`,
+                  maxHeight: `${captionMenuCoords.maxHeight}px`,
+                  minWidth: '170px',
+                  maxWidth: '300px',
+                  overflowY: 'auto',
+                  zIndex: 999999,
+                  background: 'var(--bg-color)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '10px',
+                  boxShadow: '0 12px 36px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+                  padding: '6px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '3px'
+                }}
+              >
+                <div style={{
+                  padding: '4px 10px',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '1px',
+                  color: 'var(--text-muted)',
+                  borderBottom: '1px solid var(--panel-border)',
+                  marginBottom: '2px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}>
+                  <span>Subtitles</span>
+                  <span style={{ opacity: 0.6 }}>{core.captions.length}</span>
+                </div>
+
+                <button
+                  className="dropdown-item-btn"
+                  onClick={() => {
+                    core.selectCaption(null);
+                    core.setIsCaptionMenuOpen(false);
+                  }}
+                  style={{
+                    background: !core.activeCaptionCode ? 'var(--panel-bg)' : 'transparent',
+                    color: !core.activeCaptionCode ? 'var(--accent-color)' : 'var(--text-main)',
+                    fontWeight: !core.activeCaptionCode ? 700 : 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between'
+                  }}
+                >
+                  <span>Off</span>
+                  {!core.activeCaptionCode && <Check size={14} color="var(--accent-color)" />}
+                </button>
+
+                {core.captions.map(c => {
+                  const isSelected = core.activeCaptionCode === c.languageCode;
+                  return (
+                    <button
+                      key={c.languageCode}
+                      className="dropdown-item-btn"
+                      onClick={() => {
+                        core.selectCaption(c.languageCode);
+                        core.setIsCaptionMenuOpen(false);
+                      }}
+                      style={{
+                        background: isSelected ? 'var(--panel-bg)' : 'transparent',
+                        color: isSelected ? 'var(--accent-color)' : 'var(--text-main)',
+                        fontWeight: isSelected ? 700 : 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {c.languageName}
+                      </span>
+                      {isSelected && <Check size={14} color="var(--accent-color)" style={{ flexShrink: 0 }} />}
+                    </button>
+                  );
+                })}
+              </div>,
+              document.body
             )}
             {core.isExtractingStream && (
               <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', background: 'rgba(0,0,0,0.5)' }}>
@@ -463,11 +636,31 @@ const Player = React.forwardRef(function Player({
 
             {/* Deck 0 (Local / Stream Audio) */}
             {core.deck0Song && (core.deck0Song?.is_local || core.streamUrl) && (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
-                   ♪
-                </div>
-                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: core.deck0Opacity,
+                zIndex: core.activeDeck === 0 ? 2 : 1,
+                pointerEvents: core.activeDeck === 0 ? 'auto' : 'none',
+                transition: 'opacity 0.1s linear',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {isVinylEnabled && isAlbumArtTrack(core.deck0Song) ? (
+                  <SpinningVinyl
+                    song={core.deck0Song}
+                    isPlaying={core.isPlaying && core.activeDeck === 0}
+                    subtext={core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}
+                  />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                    <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
+                      ♪
+                    </div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                  </div>
+                )}
                 <audio
                   id="deck-0-audio"
                   src={core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl}
@@ -515,16 +708,41 @@ const Player = React.forwardRef(function Player({
                   onCanPlay={core.handleStallClear}
                   onPlaying={core.handleStallClear}
                 />
+                <div 
+                  style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+                  onClick={() => core.togglePlay()}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                />
               </div>
             )}
 
             {/* Deck 1 (Local / Stream Audio) */}
             {core.deck1Song && (core.deck1Song?.is_local || core.streamUrl) && (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
-                   ♪
-                </div>
-                <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+              <div style={{
+                position: 'absolute',
+                inset: 0,
+                opacity: core.deck1Opacity,
+                zIndex: core.activeDeck === 1 ? 2 : 1,
+                pointerEvents: core.activeDeck === 1 ? 'auto' : 'none',
+                transition: 'opacity 0.1s linear',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {isVinylEnabled && isAlbumArtTrack(core.deck1Song) ? (
+                  <SpinningVinyl
+                    song={core.deck1Song}
+                    isPlaying={core.isPlaying && core.activeDeck === 1}
+                    subtext={core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}
+                  />
+                ) : (
+                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                    <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
+                      ♪
+                    </div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                  </div>
+                )}
                 <audio
                   id="deck-1-audio"
                   src={core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl}
@@ -571,6 +789,11 @@ const Player = React.forwardRef(function Player({
                   onStalled={core.handleStallStart}
                   onCanPlay={core.handleStallClear}
                   onPlaying={core.handleStallClear}
+                />
+                <div 
+                  style={{ position: 'absolute', inset: 0, zIndex: 10 }}
+                  onClick={() => core.togglePlay()}
+                  onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 />
               </div>
             )}
@@ -1145,7 +1368,7 @@ const Player = React.forwardRef(function Player({
 
               <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                 {/* Subtitles / Captions toggle in Fullscreen */}
-                {core.captions.length > 0 && (
+                {currentSong && !currentSong.is_local && core.captions?.length > 0 && (
                   <div style={{ position: 'relative' }}>
                     <button
                       className="btn btn-icon"
@@ -1155,7 +1378,7 @@ const Player = React.forwardRef(function Player({
                         color: core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
                         padding: '8px'
                       }}
-                      title="Subtitles"
+                      title={core.activeCaptionCode ? "Subtitles: ON (Click to change)" : "Subtitles / Closed Captions"}
                     >
                       <Subtitles size={20} />
                     </button>
@@ -1165,55 +1388,114 @@ const Player = React.forwardRef(function Player({
                         bottom: '100%',
                         right: 0,
                         marginBottom: '8px',
-                        background: 'rgba(20, 20, 20, 0.95)',
-                        backdropFilter: 'blur(12px)',
-                        border: '1px solid rgba(255,255,255,0.15)',
-                        borderRadius: '8px',
-                        padding: '4px',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
-                        minWidth: '130px',
+                        background: 'rgba(20, 20, 24, 0.95)',
+                        backdropFilter: 'blur(16px)',
+                        border: '1px solid rgba(255, 255, 255, 0.15)',
+                        borderRadius: '10px',
+                        padding: '6px',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                        minWidth: '160px',
+                        maxWidth: '300px',
                         display: 'flex',
                         flexDirection: 'column',
-                        gap: '2px',
-                        maxHeight: '200px',
+                        gap: '3px',
+                        maxHeight: '340px',
                         overflowY: 'auto',
                         zIndex: 100
                       }}>
+                        <div style={{
+                          padding: '4px 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px',
+                          color: 'rgba(255, 255, 255, 0.5)',
+                          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                          marginBottom: '2px',
+                          display: 'flex',
+                          justifyContent: 'space-between'
+                        }}>
+                          <span>Subtitles</span>
+                          <span>{core.captions.length}</span>
+                        </div>
                         <button 
-                          onClick={() => core.selectCaption(null)}
+                          onClick={() => {
+                            core.selectCaption(null);
+                            core.setIsCaptionMenuOpen(false);
+                          }}
                           style={{
-                            background: !core.activeCaptionCode ? 'var(--accent-color)' : 'transparent',
-                            color: '#fff',
-                            padding: '6px 12px',
+                            background: !core.activeCaptionCode ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                            color: !core.activeCaptionCode ? 'var(--accent-color)' : '#fff',
+                            padding: '7px 12px',
                             border: 'none',
-                            borderRadius: '4px',
+                            borderRadius: '6px',
                             textAlign: 'left',
                             cursor: 'pointer',
-                            fontSize: '0.85rem'
+                            fontSize: '0.85rem',
+                            fontWeight: !core.activeCaptionCode ? 700 : 500,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between'
                           }}
-                        >Off</button>
-                        {core.captions.map(c => (
-                          <button
-                            key={c.languageCode}
-                            onClick={() => core.selectCaption(c.languageCode)}
-                            style={{
-                              background: core.activeCaptionCode === c.languageCode ? 'var(--accent-color)' : 'transparent',
-                              color: '#fff',
-                              padding: '6px 12px',
-                              border: 'none',
-                              borderRadius: '4px',
-                              textAlign: 'left',
-                              cursor: 'pointer',
-                              fontSize: '0.85rem',
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            {c.languageName}
-                          </button>
-                        ))}
+                        >
+                          <span>Off</span>
+                          {!core.activeCaptionCode && <Check size={14} color="var(--accent-color)" />}
+                        </button>
+                        {core.captions.map(c => {
+                          const isSelected = core.activeCaptionCode === c.languageCode;
+                          return (
+                            <button
+                              key={c.languageCode}
+                              onClick={() => {
+                                core.selectCaption(c.languageCode);
+                                core.setIsCaptionMenuOpen(false);
+                              }}
+                              style={{
+                                background: isSelected ? 'rgba(255, 255, 255, 0.15)' : 'transparent',
+                                    color: isSelected ? 'var(--accent-color)' : '#fff',
+                                    padding: '7px 12px',
+                                    border: 'none',
+                                    borderRadius: '6px',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: isSelected ? 700 : 500,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: '8px',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {c.languageName}
+                                  </span>
+                                  {isSelected && <Check size={14} color="var(--accent-color)" style={{ flexShrink: 0 }} />}
+                                </button>
+                              );
+                            })}
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* Vinyl Toggle in Fullscreen */}
+                {isAlbumArtSong && (
+                  <button
+                    className="btn btn-icon"
+                    onClick={() => {
+                      onToggleVinyl?.();
+                      resetFullscreenTimer();
+                    }}
+                    style={{
+                      background: isVinylEnabled ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.1)',
+                      color: '#fff',
+                      padding: '8px'
+                    }}
+                    title={isVinylEnabled ? "Vinyl Spinning Effect: ON (Click to turn off)" : "Vinyl Spinning Effect: OFF (Click to turn on)"}
+                  >
+                    <Disc size={20} />
+                  </button>
                 )}
 
                 {/* Lyrics Overlay Toggle in Fullscreen */}

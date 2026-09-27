@@ -1,5 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
+
+// Global cache for captions across song transitions and component re-renders
+const globalCaptionsMap = new Map();
 
 export function usePlayerCore({
   currentSong,
@@ -107,7 +110,17 @@ export function usePlayerCore({
   const [streamUrl, setStreamUrl] = useState(null);
   const [isExtractingStream, setIsExtractingStream] = useState(false);
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
-  const [captions, setCaptions] = useState([]);
+  const [captions, setCaptions] = useState(() => (currentSong?.id ? (globalCaptionsMap.get(currentSong.id) || []) : []));
+
+  useEffect(() => {
+    if (currentSong?.id && globalCaptionsMap.has(currentSong.id)) {
+      const cached = globalCaptionsMap.get(currentSong.id);
+      if (cached && cached.length > 0) {
+        setCaptions(cached);
+      }
+    }
+  }, [currentSong?.id]);
+
   const [activeCaptionCode, setActiveCaptionCode] = useState(null);
   const [isVideoHovered, setIsVideoHovered] = useState(false);
   const [isCaptionMenuOpen, setIsCaptionMenuOpen] = useState(false);
@@ -383,9 +396,21 @@ export function usePlayerCore({
     }
   };
 
-  const handleCaptionsReceived = (tracks) => {
-    setCaptions(tracks || []);
-  };
+  const handleCaptionsReceived = useCallback((tracks, vid) => {
+    const targetId = vid || currentSong?.id;
+    if (tracks && tracks.length > 0) {
+      if (targetId) {
+        globalCaptionsMap.set(targetId, tracks);
+      }
+      if (!targetId || targetId === currentSong?.id) {
+        setCaptions(tracks);
+      }
+    } else {
+      if (!targetId || targetId === currentSong?.id) {
+        setCaptions(tracks || []);
+      }
+    }
+  }, [currentSong?.id]);
   
   const selectCaption = (code) => {
     const activePlayer = activeDeck === 0 ? deck0PlayerRef.current : deck1PlayerRef.current;
@@ -454,8 +479,9 @@ export function usePlayerCore({
     if (songId) {
       setStreamUrl(null);
       hasAutoSelectedCaptionRef.current = false;
-      setCaptions([]);
+      setCaptions(globalCaptionsMap.get(songId) || []);
       setActiveCaptionCode(null);
+      setIsCaptionMenuOpen(false);
       setIsExtractingStream(false);
       setIsBuffering(true);
       setIsPlaying(false);

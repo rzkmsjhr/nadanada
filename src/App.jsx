@@ -386,6 +386,25 @@ function App() {
     handleRetry: handleRetryLyrics
   } = useLyrics(currentSong, isAudioPlaying, api);
   const [videoOverlayMode, setVideoOverlayMode] = useState(null); // 'lyrics' | 'chords' | null
+  const [isVinylEnabled, setIsVinylEnabled] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nadanada_vinyl_effect');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (_) {
+      return true;
+    }
+  });
+
+  const handleToggleVinyl = () => {
+    setIsVinylEnabled(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('nadanada_vinyl_effect', JSON.stringify(next));
+      } catch (_) {}
+      return next;
+    });
+  };
+
   const artistFact = useArtistFact(currentSong, albumInfo);
   const {
     repeatMode, setRepeatMode,
@@ -463,7 +482,8 @@ function App() {
     crossfadeDuration, setCrossfadeDuration,
     miniPlayerOpacity, setMiniPlayerOpacity,
     fontScale, setFontScale,
-    closeBehavior, setCloseBehavior
+    closeBehavior, setCloseBehavior,
+    isVinylEnabled, onToggleVinyl: handleToggleVinyl
   };
 
   return (
@@ -656,6 +676,8 @@ function App() {
                 setChordsData(null);
                 setChordsError(null);
               }}
+              isVinylEnabled={isVinylEnabled}
+              onToggleVinyl={handleToggleVinyl}
             />
           </div>
         </div>

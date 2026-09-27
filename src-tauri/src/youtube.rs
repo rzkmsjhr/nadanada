@@ -1131,6 +1131,7 @@ async fn scrape_youtube_mix(video_id: &str) -> Result<Vec<Video>, String> {
                             .to_string();
 
                         if !id.is_empty() && !title.is_empty() {
+                            let is_topic = channel.to_lowercase().ends_with("- topic");
                             videos.push(Video {
                                 id,
                                 title,
@@ -1140,7 +1141,7 @@ async fn scrape_youtube_mix(video_id: &str) -> Result<Vec<Video>, String> {
                                 is_playlist: false,
                                 track_count: None,
                                 first_video_id: None,
-                                item_type: Some("video".to_string()),
+                                item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
                             });
                         }
                     }
@@ -1362,6 +1363,7 @@ async fn scrape_youtube_playlist(
                             .to_string();
 
                         if !id.is_empty() && !title.is_empty() {
+                            let is_topic = channel.to_lowercase().ends_with("- topic");
                             videos.push(Video {
                                 id,
                                 title,
@@ -1371,7 +1373,7 @@ async fn scrape_youtube_playlist(
                                 is_playlist: false,
                                 track_count: None,
                                 first_video_id: None,
-                                item_type: Some("video".to_string()),
+                                item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
                             });
                         }
                     }
@@ -1395,6 +1397,7 @@ async fn scrape_youtube_playlist(
                             let channel = video.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
                             if !id.is_empty() && !title.is_empty() {
+                                let is_topic = channel.to_lowercase().ends_with("- topic");
                                 videos.push(Video {
                                     id,
                                     title,
@@ -1404,7 +1407,7 @@ async fn scrape_youtube_playlist(
                                     is_playlist: false,
                                     track_count: None,
                                     first_video_id: None,
-                                    item_type: Some("video".to_string()),
+                                    item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
                                 });
                             }
                         }

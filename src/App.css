@@ -1,3 +1,38 @@
+/* ── Authentic Vintage Digital LCD Font (DSEG14 Classic) ── */
+@font-face {
+  font-family: 'DSEG14Classic';
+  src: url('./assets/fonts/DSEG14Classic-Italic.woff2') format('woff2');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'DSEG14Classic';
+  src: url('./assets/fonts/DSEG14Classic-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'DSEG14Classic';
+  src: url('./assets/fonts/DSEG14Classic-BoldItalic.woff2') format('woff2');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* LCD Marquee Smooth Continuous Scrolling */
+@keyframes nadanada-lcd-marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
 :root {
   /* Theme 1: Lavender Steel (Default) */
   --bg-color: #FFDBED; /* Blossom Vapor */
@@ -500,6 +535,11 @@ body {
 }
 
 @keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes nadanada-vinyl-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }

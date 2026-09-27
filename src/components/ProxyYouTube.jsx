@@ -3,6 +3,9 @@ import { api } from '../services/api';
 
 const WORKER_EMBED_URL = 'https://nadanada-yt.kdmp.workers.dev';
 
+// Persistent cache so captions are never lost during component re-renders or HMR
+const captionsCache = new Map();
+
 const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptionsReceived, style, iframeClassName }) => {
   const iframeRef = useRef(null);
   const latestTime = useRef(0);
@@ -81,14 +84,27 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
           latestDuration.current = msg.duration || 0;
           break;
         case 'yt-proxy-captions':
-          if (onCaptionsReceived) onCaptionsReceived(msg.data);
+          if (msg.data && msg.data.length > 0) {
+            captionsCache.set(videoId, msg.data);
+          }
+          if (onCaptionsReceived) onCaptionsReceived(msg.data, videoId);
           break;
       }
     };
 
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [onReady, onStateChange, onError, onCaptionsReceived]);
+  }, [onReady, onStateChange, onError, onCaptionsReceived, videoId]);
+
+  // Replay cached captions immediately if already known for this videoId
+  useEffect(() => {
+    if (videoId && captionsCache.has(videoId)) {
+      const cached = captionsCache.get(videoId);
+      if (cached && cached.length > 0) {
+        onCaptionsReceived?.(cached, videoId);
+      }
+    }
+  }, [videoId, onCaptionsReceived]);
 
   const currentLoadedVideoId = useRef(initialVideoId);
   const currentLoadedStart = useRef(startSecs);
