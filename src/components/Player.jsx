@@ -14,7 +14,7 @@ const Player = React.forwardRef(function Player({
   crossfadeDuration, setCrossfadeDuration,
   videoOverlayMode, setVideoOverlayMode,
   lyricsData, lyricsSyncOffset, setLyricsSyncOffset, isFetchingLyrics, lyricsError, onRetryLyrics,
-  chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, isFetchingChords, chordsError, onRetryChords,
+  chordsData, syncOffset, setSyncOffset, transposeOffset, setTransposeOffset, bpmOffset = 0, setBpmOffset, isFetchingChords, chordsError, onRetryChords,
   fontScale,
   lyricsFontScale, chordsFontScale,
   downloadedIds
@@ -739,6 +739,8 @@ const Player = React.forwardRef(function Player({
               onSyncChange={setSyncOffset}
               transposeOffset={transposeOffset}
               onTransposeChange={setTransposeOffset}
+              bpmOffset={bpmOffset}
+              onBpmChange={setBpmOffset}
               isFetchingChords={isFetchingChords}
               chordsError={chordsError}
               onRetryChords={onRetryChords}
@@ -1010,6 +1012,76 @@ const Player = React.forwardRef(function Player({
                       +
                     </button>
                   </div>
+
+                  {/* BPM Capsule */}
+                  {chordsData?.bpm && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: 'rgba(0, 0, 0, 0.4)',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      backdropFilter: 'blur(8px)',
+                      border: '1px solid rgba(255, 255, 255, 0.1)'
+                    }}>
+                      <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>BPM:</span>
+                      <button
+                        onClick={() => {
+                          setBpmOffset?.(b => Math.max(-50, b - 1));
+                          resetFullscreenTimer();
+                        }}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '4px',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          padding: '1px 6px',
+                          fontSize: '0.85rem'
+                        }}
+                        title="Slower / expand beat interval"
+                      >
+                        -
+                      </button>
+                      <span
+                        onClick={() => {
+                          if (bpmOffset !== 0) {
+                            setBpmOffset?.(0);
+                            resetFullscreenTimer();
+                          }
+                        }}
+                        style={{
+                          minWidth: '28px',
+                          textAlign: 'center',
+                          fontWeight: 'bold',
+                          color: bpmOffset !== 0 ? 'var(--accent-color)' : 'inherit',
+                          cursor: bpmOffset !== 0 ? 'pointer' : 'default'
+                        }}
+                        title={bpmOffset !== 0 ? `BPM shifted by ${bpmOffset > 0 ? '+' : ''}${bpmOffset} (click to reset)` : "Song tempo"}
+                      >
+                        {Math.round(chordsData.bpm)}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setBpmOffset?.(b => Math.min(50, b + 1));
+                          resetFullscreenTimer();
+                        }}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.1)',
+                          border: '1px solid rgba(255, 255, 255, 0.2)',
+                          borderRadius: '4px',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          padding: '1px 6px',
+                          fontSize: '0.85rem'
+                        }}
+                        title="Faster / tighten beat interval"
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

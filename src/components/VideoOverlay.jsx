@@ -28,6 +28,8 @@ export default function VideoOverlay({
   onSyncChange,
   transposeOffset = 0,
   onTransposeChange,
+  bpmOffset = 0,
+  onBpmChange,
   isFetchingChords,
   chordsError,
   onRetryChords
@@ -770,6 +772,63 @@ export default function VideoOverlay({
                   +
                 </button>
               </div>
+
+              {/* BPM Capsule */}
+              {chordsData?.bpm && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: 'var(--panel-bg)',
+                  border: '1px solid var(--panel-border)',
+                  borderRadius: '6px',
+                  padding: '2px 6px',
+                  fontSize: '0.75rem'
+                }}>
+                  <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>BPM:</span>
+                  <button
+                    onClick={() => onBpmChange?.(b => Math.max(-50, b - 1))}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                      fontSize: '0.85rem'
+                    }}
+                    title="Slower / expand beat interval"
+                  >
+                    -
+                  </button>
+                  <span
+                    onClick={() => bpmOffset !== 0 && onBpmChange?.(0)}
+                    style={{
+                      minWidth: '24px',
+                      textAlign: 'center',
+                      fontWeight: 'bold',
+                      color: bpmOffset !== 0 ? 'var(--accent-color)' : 'inherit',
+                      cursor: bpmOffset !== 0 ? 'pointer' : 'default'
+                    }}
+                    title={bpmOffset !== 0 ? `BPM shifted by ${bpmOffset > 0 ? '+' : ''}${bpmOffset} (click to reset)` : "Song tempo"}
+                  >
+                    {Math.round(chordsData.bpm)}
+                  </span>
+                  <button
+                    onClick={() => onBpmChange?.(b => Math.min(50, b + 1))}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'inherit',
+                      cursor: 'pointer',
+                      padding: '0 4px',
+                      fontSize: '0.85rem'
+                    }}
+                    title="Faster / tighten beat interval"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

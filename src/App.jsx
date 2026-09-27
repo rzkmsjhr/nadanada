@@ -374,7 +374,8 @@ function App() {
     isFetchingChords, 
     chordsError, setChordsError, 
     syncOffset, setSyncOffset, 
-    transposeOffset, setTransposeOffset 
+    transposeOffset, setTransposeOffset,
+    bpmOffset, setBpmOffset 
   } = useChords(currentSong, isAudioPlaying, api);
   const {
     showLyrics, setShowLyrics,
@@ -554,6 +555,8 @@ function App() {
                 setSyncOffset={setSyncOffset}
                 transposeOffset={transposeOffset}
                 setTransposeOffset={setTransposeOffset}
+                bpmOffset={bpmOffset}
+                setBpmOffset={setBpmOffset}
                 showLyrics={showLyrics}
                 setShowLyrics={setShowLyrics}
                 lyricsData={lyricsData}
@@ -645,6 +648,8 @@ function App() {
               setSyncOffset={setSyncOffset}
               transposeOffset={transposeOffset}
               setTransposeOffset={setTransposeOffset}
+              bpmOffset={bpmOffset}
+              setBpmOffset={setBpmOffset}
               isFetchingChords={isFetchingChords}
               chordsError={chordsError}
               onRetryChords={() => {

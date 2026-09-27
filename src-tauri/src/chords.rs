@@ -449,7 +449,7 @@ pub async fn scrape_chords(
                     try {{
                         let scripts = document.querySelectorAll('script:not([src])');
                         for (let s of scripts) {{
-                            let m = s.textContent.match(/["'](?:bpm|tempo)["']\s*[:=]\s*(\d{{2,3}})/i);
+                            let m = s.textContent.match(/["'](?:bpm|tempo)["']\s*[:=]\s*(\d{{2,3}}(?:\.\d+)?)/i);
                             if (m) {{
                                 bpm = parseFloat(m[1]);
                                 break;
@@ -463,7 +463,7 @@ pub async fn scrape_chords(
                         }}
                     }}
                     if (!bpm) {{
-                        let bpmMatch = document.body.textContent.match(/BPM\s*[:\-]?\s*(\d{{2,3}})/i);
+                        let bpmMatch = document.body.textContent.match(/BPM\s*[:\-]?\s*(\d{{2,3}}(?:\.\d+)?)/i);
                         if (bpmMatch) {{
                             bpm = parseFloat(bpmMatch[1]) || 0;
                         }}

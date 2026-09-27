@@ -18,6 +18,8 @@ export default function PlayerHeader({
   setSyncOffset,
   transposeOffset,
   setTransposeOffset,
+  bpmOffset = 0,
+  setBpmOffset,
   showLyrics,
   setShowLyrics,
   lyricsData,
@@ -263,6 +265,50 @@ export default function PlayerHeader({
                         fontSize: '0.75rem'
                       }} title="Transpose Up">+</button>
                     </div>
+
+                    {/* BPM Capsule */}
+                    {chordsData?.bpm && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        background: 'var(--panel-bg)',
+                        border: '1px solid var(--panel-border)',
+                        borderRadius: '6px',
+                        padding: '1px 5px'
+                      }}>
+                        <span style={{ fontSize: '0.68rem', opacity: 0.8 }}>BPM:</span>
+                        <button onClick={() => setBpmOffset?.(b => Math.max(-50, b - 1))} style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          padding: '0 3px',
+                          fontSize: '0.75rem'
+                        }} title="Slower / expand beat interval">-</button>
+                        <span
+                          onClick={() => bpmOffset !== 0 && setBpmOffset?.(0)}
+                          style={{
+                            minWidth: '22px',
+                            textAlign: 'center',
+                            fontWeight: 'bold',
+                            color: bpmOffset !== 0 ? 'var(--accent-color)' : 'var(--text-main)',
+                            cursor: bpmOffset !== 0 ? 'pointer' : 'default'
+                          }}
+                          title={bpmOffset !== 0 ? `BPM shifted by ${bpmOffset > 0 ? '+' : ''}${bpmOffset} (click to reset)` : "Song tempo"}
+                        >
+                          {Math.round(chordsData.bpm)}
+                        </span>
+                        <button onClick={() => setBpmOffset?.(b => Math.min(50, b + 1))} style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'inherit',
+                          cursor: 'pointer',
+                          padding: '0 3px',
+                          fontSize: '0.75rem'
+                        }} title="Faster / tighten beat interval">+</button>
+                      </div>
+                    )}
 
                     {/* Fullscreen Overlay button next to Key */}
                     <button

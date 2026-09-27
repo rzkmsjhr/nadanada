@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { parseDuration } from "./useMusicDiscovery";
 
 export function useChords(currentSong, isAudioPlaying, api) {
@@ -8,6 +8,7 @@ export function useChords(currentSong, isAudioPlaying, api) {
   const [chordsError, setChordsError] = useState(null);
   const [syncOffset, setSyncOffset] = useState(0);
   const [transposeOffset, setTransposeOffset] = useState(0);
+  const [bpmOffset, setBpmOffset] = useState(0);
   
   useEffect(() => {
     let isCancelled = false;
@@ -16,6 +17,8 @@ export function useChords(currentSong, isAudioPlaying, api) {
       setSyncOffset(savedSync ? parseFloat(savedSync) : 0);
       const savedTranspose = localStorage.getItem(`transpose_${currentSong.id}`);
       setTransposeOffset(savedTranspose ? parseInt(savedTranspose, 10) : 0);
+      const savedBpm = localStorage.getItem(`bpm_${currentSong.id}`);
+      setBpmOffset(savedBpm ? parseFloat(savedBpm) : 0);
       
       if (showChords && isAudioPlaying && (!chordsData || chordsData._songId !== currentSong.id)) {
         const fetchChords = async () => {
@@ -112,6 +115,7 @@ export function useChords(currentSong, isAudioPlaying, api) {
     } else {
       setSyncOffset(0);
       setTransposeOffset(0);
+      setBpmOffset(0);
       setChordsData(null);
       setChordsError(null);
     }
@@ -121,7 +125,7 @@ export function useChords(currentSong, isAudioPlaying, api) {
   const songIdForSaveRef = useRef(currentSong?.id);
   songIdForSaveRef.current = currentSong?.id;
 
-  // Save sync and transpose offsets when changed
+  // Save sync, transpose, and bpm offsets when changed
   useEffect(() => {
     const id = songIdForSaveRef.current;
     if (id) {
@@ -135,15 +139,42 @@ export function useChords(currentSong, isAudioPlaying, api) {
       } else {
         localStorage.removeItem(`transpose_${id}`);
       }
+      if (bpmOffset !== 0) {
+        localStorage.setItem(`bpm_${id}`, bpmOffset.toString());
+      } else {
+        localStorage.removeItem(`bpm_${id}`);
+      }
     }
-  }, [syncOffset, transposeOffset]);
+  }, [syncOffset, transposeOffset, bpmOffset]);
+
+  const effectiveChordsData = useMemo(() => {
+    if (!chordsData || !chordsData.chords) return chordsData;
+    const baseBpm = chordsData.bpm || 120;
+    if (bpmOffset === 0) {
+      return { ...chordsData, baseBpm };
+    }
+    const effectiveBpm = Math.max(30, Math.min(300, baseBpm + bpmOffset));
+    const factor = baseBpm / effectiveBpm;
+    return {
+      ...chordsData,
+      bpm: effectiveBpm,
+      baseBpm,
+      chords: chordsData.chords.map(c => ({
+        ...c,
+        time_sec: c.time_sec * factor
+      }))
+    };
+  }, [chordsData, bpmOffset]);
 
   return {
     showChords, setShowChords,
-    chordsData, setChordsData,
+    chordsData: effectiveChordsData,
+    rawChordsData: chordsData,
+    setChordsData,
     isFetchingChords,
     chordsError, setChordsError,
     syncOffset, setSyncOffset,
-    transposeOffset, setTransposeOffset
+    transposeOffset, setTransposeOffset,
+    bpmOffset, setBpmOffset
   };
 }
