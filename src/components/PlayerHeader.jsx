@@ -41,6 +41,9 @@ export default function PlayerHeader({
   onAddChordifySong
 }) {
   const isViewActive = (showLyrics || showChords) && !videoOverlayMode;
+  const hasValidChords = Boolean(showChords && chordsData && !isFetchingChords && !chordsError && chordsData.chords && chordsData.chords.length > 0);
+  const hasValidLyrics = Boolean(showLyrics && lyricsData && !isFetchingLyrics && !lyricsError && ((lyricsData.lines && lyricsData.lines.length > 0) || lyricsData.plainLyrics));
+  const canShowOverlay = hasValidChords || hasValidLyrics;
   const [showDropdown, setShowDropdown] = useState(false);
   const [menuCoords, setMenuCoords] = useState(null);
   const dropdownRef = useRef(null);
@@ -139,30 +142,32 @@ export default function PlayerHeader({
               gap: '4px',
               zIndex: 10
             }}>
-              {/* Overlay button (visible on hover) */}
-              <button
-                className="card-hover-overlay-btn"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setVideoOverlayMode?.(showChords ? 'chords' : 'lyrics');
-                }}
-                title="Overlay on video"
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  border: '1px solid var(--panel-border)',
-                  background: 'var(--panel-bg)',
-                  color: 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                  padding: 0
-                }}
-              >
-                <Maximize2 size={10} strokeWidth={2.2} />
-              </button>
+              {/* Overlay button (visible on hover only when valid chords/lyrics exist) */}
+              {canShowOverlay && (
+                <button
+                  className="card-hover-overlay-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setVideoOverlayMode?.(showChords ? 'chords' : 'lyrics');
+                  }}
+                  title="Overlay on video"
+                  style={{
+                    width: '20px',
+                    height: '20px',
+                    borderRadius: '50%',
+                    border: '1px solid var(--panel-border)',
+                    background: 'var(--panel-bg)',
+                    color: 'var(--text-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    padding: 0
+                  }}
+                >
+                  <Maximize2 size={10} strokeWidth={2.2} />
+                </button>
+              )}
 
               {/* Close (X) button */}
               <button
@@ -200,7 +205,7 @@ export default function PlayerHeader({
 
             {showChords ? (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minWidth: 0, justifyContent: 'center' }}>
-                <div style={{ minHeight: '36px', height: 'auto', display: 'flex', alignItems: 'center', paddingRight: '48px' }}>
+                <div style={{ minHeight: '36px', height: 'auto', display: 'flex', alignItems: 'center', paddingRight: canShowOverlay ? '48px' : '26px' }}>
                   <ChordDisplay 
                     data={chordsData} 
                     syncOffset={syncOffset} 
