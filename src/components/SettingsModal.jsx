@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow, Type } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -44,6 +44,57 @@ export default function SettingsModal({
   closeBehavior = 'prompt',
   setCloseBehavior
 }) {
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+
+  const handleClearAllData = async () => {
+    setIsClearing(true);
+    try {
+      // Preserve saved playlists (NOT the current "my playlist" queue)
+      const savedPlaylists = localStorage.getItem('nadanada-saved-playlists');
+
+      localStorage.clear();
+      sessionStorage.clear();
+
+      if (savedPlaylists) {
+        localStorage.setItem('nadanada-saved-playlists', savedPlaylists);
+      }
+      
+      if (window.caches) {
+        try {
+          const cacheKeys = await window.caches.keys();
+          await Promise.all(cacheKeys.map(key => window.caches.delete(key)));
+        } catch (err) {
+          console.error('Failed to clear caches', err);
+        }
+      }
+
+      if (window.indexedDB && window.indexedDB.databases) {
+        try {
+          const dbs = await window.indexedDB.databases();
+          dbs.forEach(db => {
+            if (db.name) window.indexedDB.deleteDatabase(db.name);
+          });
+        } catch (err) {
+          console.error('Failed to clear indexedDB', err);
+        }
+      }
+
+      // Clear offline lyrics and chords disk cache
+      try {
+        await api.clearCachedData();
+      } catch (err) {
+        console.error('Failed to clear cached disk data', err);
+      }
+      
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to clear all data:', err);
+      setIsClearing(false);
+      setShowConfirmModal(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose} style={{ zIndex: 10000 }}>
       <div 
@@ -460,48 +511,7 @@ export default function SettingsModal({
           </div>
 
           <button
-            onClick={async () => {
-              if (window.confirm('Are you sure you want to clear app data and cache? Your saved playlists and downloaded songs will be kept.')) {
-                // Preserve saved playlists (NOT the current "my playlist" queue)
-                const savedPlaylists = localStorage.getItem('nadanada-saved-playlists');
-
-                localStorage.clear();
-                sessionStorage.clear();
-
-                if (savedPlaylists) {
-                  localStorage.setItem('nadanada-saved-playlists', savedPlaylists);
-                }
-                
-                if (window.caches) {
-                  try {
-                    const cacheKeys = await window.caches.keys();
-                    await Promise.all(cacheKeys.map(key => window.caches.delete(key)));
-                  } catch (err) {
-                    console.error('Failed to clear caches', err);
-                  }
-                }
-
-                if (window.indexedDB && window.indexedDB.databases) {
-                  try {
-                    const dbs = await window.indexedDB.databases();
-                    dbs.forEach(db => {
-                      if (db.name) window.indexedDB.deleteDatabase(db.name);
-                    });
-                  } catch (err) {
-                    console.error('Failed to clear indexedDB', err);
-                  }
-                }
-
-                // Clear offline lyrics and chords disk cache
-                try {
-                  await api.clearCachedData();
-                } catch (err) {
-                  console.error('Failed to clear cached disk data', err);
-                }
-                
-                window.location.reload();
-              }
-            }}
+            onClick={() => setShowConfirmModal(true)}
             style={{
               width: '100%',
               display: 'flex',
@@ -530,6 +540,59 @@ export default function SettingsModal({
           </button>
         </div>
       </div>
+
+      {showConfirmModal && (
+        <div 
+          className="modal-overlay" 
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isClearing) setShowConfirmModal(false);
+          }}
+          style={{ zIndex: 10005 }}
+        >
+          <div 
+            className="modal-content" 
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '340px', padding: '28px 24px' }}
+          >
+            <div className="modal-icon-container" style={{ background: 'rgba(239, 68, 68, 0.12)', marginBottom: '16px' }}>
+              <AlertTriangle className="modal-icon" style={{ color: '#ef4444', animation: 'none' }} size={28} />
+            </div>
+            <div>
+              <h3 className="modal-title" style={{ fontSize: '1.15rem', marginBottom: '8px' }}>Clear All Data?</h3>
+              <p className="modal-desc" style={{ fontSize: '0.85rem', lineHeight: 1.45, color: 'var(--text-muted)' }}>
+                Are you sure you want to clear app data and cache? Your saved playlists and downloaded songs will be kept.
+              </p>
+            </div>
+            
+            <div className="modal-actions" style={{ display: 'flex', gap: '10px', width: '100%', marginTop: '20px' }}>
+              <button 
+                onClick={handleClearAllData} 
+                disabled={isClearing}
+                className="btn btn-primary btn-large" 
+                style={{
+                  flex: 1,
+                  background: '#ef4444',
+                  borderColor: '#ef4444',
+                  color: '#ffffff',
+                  fontWeight: 600,
+                  opacity: isClearing ? 0.7 : 1
+                }}
+              >
+                {isClearing ? 'Clearing...' : 'Yes'}
+              </button>
+              <button 
+                onClick={() => setShowConfirmModal(false)} 
+                disabled={isClearing}
+                className="btn btn-secondary btn-large"
+                style={{ flex: 1 }}
+              >
+                No
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
