@@ -164,11 +164,60 @@ const ChordDisplay = ({ data, syncOffset, transpose, fontScale, chordsFontScale 
       );
     }
 
+    // Clean up error message to prevent technical / debug output from breaking UI
+    let displayError = (error || '').trim();
+    if (displayError.includes('{') || displayError.toLowerCase().includes('timeout waiting')) {
+      displayError = 'Chords not found for this song.';
+    } else if (displayError.toLowerCase().includes('ribbit') || displayError.includes('404')) {
+      displayError = 'Song not found on Chordify.';
+    } else if (displayError.length > 80) {
+      displayError = displayError.substring(0, 80) + '...';
+    }
+
     return (
-      <div style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: '10px', height: '100%', fontSize: '0.82rem', minWidth: 0, width: '100%' }}>
-        <span style={{ opacity: 0.9 }}>{error}</span>
+      <div style={{ 
+        color: '#ef4444', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        gap: '8px', 
+        height: '100%', 
+        maxHeight: '44px',
+        fontSize: '0.8rem', 
+        minWidth: 0, 
+        width: '100%',
+        overflow: 'hidden'
+      }}>
+        <span 
+          title={typeof error === 'string' ? error : undefined}
+          style={{ 
+            opacity: 0.9,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0,
+            flex: 1
+          }}
+        >
+          {displayError}
+        </span>
         {!isNotFound && (
-          <button onClick={onRetry} style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap', flexShrink: 0 }}>Retry</button>
+          <button 
+            onClick={onRetry} 
+            style={{ 
+              background: 'rgba(239,68,68,0.2)', 
+              border: '1px solid #ef4444', 
+              color: '#ef4444', 
+              borderRadius: '4px', 
+              padding: '2px 8px', 
+              cursor: 'pointer', 
+              fontSize: '0.75rem', 
+              whiteSpace: 'nowrap', 
+              flexShrink: 0 
+            }}
+          >
+            Retry
+          </button>
         )}
       </div>
     );

@@ -104,14 +104,22 @@ export function useChords(currentSong, isAudioPlaying, api) {
                 });
               }
             } else {
-              setChordsError(parsed.error);
+              let err = parsed.error || 'Failed to load chords.';
+              if (err.includes('{') || err.toLowerCase().includes('timeout waiting')) {
+                err = 'Chords not found for this song.';
+              }
+              setChordsError(err);
               setChordsData({
                 _songId: currentSong.id
               });
             }
           } catch (e) {
             if (isCancelled) return;
-            setChordsError(e.toString());
+            let err = e.toString();
+            if (err.includes('{') || err.toLowerCase().includes('timeout waiting')) {
+              err = 'Chords not found for this song.';
+            }
+            setChordsError(err);
             setChordsData({
               _songId: currentSong.id
             });

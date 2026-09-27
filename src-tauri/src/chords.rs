@@ -88,6 +88,7 @@ pub async fn scrape_chords(
     let clean_title_alphanum = clean_title.replace(|c: char| !c.is_alphanumeric() && c != ' ', "");
     let words: Vec<&str> = clean_title_alphanum.split_whitespace().take(8).collect();
     let query_str = words.join("+");
+    let title_words_json = serde_json::to_string(&words).unwrap_or_else(|_| "[]".to_string());
 
     // Primary: Chordify search using the YouTube video URL (most accurate version match)
     let search_url = format!(
@@ -136,6 +137,8 @@ pub async fn scrape_chords(
                     let allLinks = Array.from(document.querySelectorAll('a[href*="chordify.net/chords/"], a[href*="chordify.net%2Fchords%2F"]'));
                     let candidates = [];
                     let seen = new Set();
+                    let titleWords = {title_words_json}.map(w => w.toLowerCase());
+
                     for (let a of allLinks) {{
                         let h = a.href || "";
                         let raw = a.outerHTML || "";
@@ -143,15 +146,42 @@ pub async fn scrape_chords(
                             let match = h.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
                             let cleanUrl = match ? decodeURIComponent(match[1]) : h;
                             cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
+
+                            // Skip artist discography listing pages (e.g., /chords/pitbull-songs)
+                            let path = cleanUrl.replace(/^https?:\/\/[^\/]+/, '');
+                            if (/\/chords\/[^\/]+-songs\/?$/i.test(path)) {{
+                                continue;
+                            }}
+
                             if (cleanUrl.includes("chordify.net/chords/") && !seen.has(cleanUrl)) {{
                                 seen.add(cleanUrl);
                                 let linkText = ((a.innerText || "") + " " + cleanUrl).toLowerCase();
                                 let isAcoustic = linkText.includes("acoustic");
                                 let isLive = linkText.includes("live");
                                 let isCover = linkText.includes("cover");
+                                let isEasy = linkText.includes("easy");
+
+                                let penalty = 0;
+                                if (isAcoustic) penalty += 10;
+                                if (isLive) penalty += 8;
+                                if (isCover) penalty += 8;
+                                if (isEasy) penalty += 4;
+
+                                if (cleanUrl.endsWith("-chords") || cleanUrl.includes("-chords")) {{
+                                    penalty -= 10;
+                                }}
+
+                                let matchCount = 0;
+                                for (let tw of titleWords) {{
+                                    if (tw.length >= 3 && linkText.includes(tw)) {{
+                                        matchCount++;
+                                    }}
+                                }}
+                                penalty -= (matchCount * 5);
+
                                 candidates.push({{
                                     url: cleanUrl,
-                                    penalty: (isAcoustic ? 3 : 0) + (isLive ? 2 : 0) + (isCover ? 2 : 0)
+                                    penalty: penalty
                                 }});
                             }}
                         }}
@@ -174,10 +204,12 @@ pub async fn scrape_chords(
                             ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
                             : target;
                         window.location.replace(targetWithHash);
+                        return;
                     }} else if (googleAttempts > 20) {{ // Timeout after 10 seconds
                         clearInterval(checkGoogle);
-                        let err = encodeURIComponent(JSON.stringify({{success: false, error: "Not found on Chordify", data: null}}));
+                        let err = encodeURIComponent(JSON.stringify({{success: false, error: "Chords not found on Chordify.", data: null}}));
                         window.location.replace("https://chordify.net/?scraper_result=" + err);
+                        return;
                     }}
                 }}, 500);
                 return;
@@ -193,28 +225,57 @@ pub async fn scrape_chords(
                         return h.includes('chordify.net/chords/') || h.includes('chordify.net%2fchords%2f');
                     }});
                     if (allLinks.length > 0) {{
-                        clearInterval(checkSearch);
                         let candidates = [];
                         let seen = new Set();
+                        let titleWords = {title_words_json}.map(w => w.toLowerCase());
+
                         for (let a of allLinks) {{
                             let href = a.href || '';
                             let match = href.match(/(https?%3A%2F%2Fchordify\.net%2Fchords%2F[^&]+)/i);
                             let cleanUrl = match ? decodeURIComponent(match[1]) : href;
                             cleanUrl = cleanUrl.split('/RK=')[0].split('/RS=')[0].split('?')[0];
+
+                            // Skip artist discography listing pages (e.g., /chords/pitbull-songs)
+                            let path = cleanUrl.replace(/^https?:\/\/[^\/]+/, '');
+                            if (/\/chords\/[^\/]+-songs\/?$/i.test(path)) {{
+                                continue;
+                            }}
+
                             if (cleanUrl.includes('chordify.net/chords/') && !seen.has(cleanUrl)) {{
                                 seen.add(cleanUrl);
                                 let linkText = ((a.innerText || '') + ' ' + cleanUrl).toLowerCase();
                                 let isAcoustic = linkText.includes('acoustic');
                                 let isLive = linkText.includes('live');
                                 let isCover = linkText.includes('cover');
+                                let isEasy = linkText.includes('easy');
+
+                                let penalty = 0;
+                                if (isAcoustic) penalty += 10;
+                                if (isLive) penalty += 8;
+                                if (isCover) penalty += 8;
+                                if (isEasy) penalty += 4;
+
+                                if (cleanUrl.endsWith("-chords") || cleanUrl.includes("-chords")) {{
+                                    penalty -= 10;
+                                }}
+
+                                let matchCount = 0;
+                                for (let tw of titleWords) {{
+                                    if (tw.length >= 3 && linkText.includes(tw)) {{
+                                        matchCount++;
+                                    }}
+                                }}
+                                penalty -= (matchCount * 5);
+
                                 candidates.push({{
                                     url: cleanUrl,
-                                    penalty: (isAcoustic ? 3 : 0) + (isLive ? 2 : 0) + (isCover ? 2 : 0)
+                                    penalty: penalty
                                 }});
                             }}
                         }}
                         candidates.sort((a, b) => a.penalty - b.penalty);
                         if (candidates.length > 0) {{
+                            clearInterval(checkSearch);
                             let candidateUrls = candidates.map(c => c.url);
                             let target = candidateUrls.shift();
                             try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
@@ -222,8 +283,11 @@ pub async fn scrape_chords(
                                 ? target + '#candidates=' + encodeURIComponent(JSON.stringify(candidateUrls))
                                 : target;
                             window.location.replace(targetWithHash);
+                            return;
                         }}
-                    }} else if (searchAttempts > 20) {{ // Timeout after 10 seconds
+                    }}
+                    
+                    if (searchAttempts > 20) {{ // Timeout after 10 seconds
                         clearInterval(checkSearch);
                         window.location.replace("https://chordify.net/?scraper_result=GOOGLE_FALLBACK");
                     }}
@@ -242,6 +306,38 @@ pub async fn scrape_chords(
             }}
 
             if (!window.location.hostname.includes("chordify.net")) return;
+
+            function getRemainingCandidates() {{
+                let rem = [];
+                if (window.location.hash.includes('candidates=')) {{
+                    try {{
+                        let raw = decodeURIComponent(window.location.hash.split('candidates=')[1].split('&')[0]);
+                        rem = JSON.parse(raw);
+                    }} catch(e) {{}}
+                }}
+                if (!rem || rem.length === 0) {{
+                    try {{
+                        let s = sessionStorage.getItem('chord_candidates');
+                        if (s) rem = JSON.parse(s);
+                    }} catch(e) {{}}
+                }}
+                return Array.isArray(rem) ? rem : [];
+            }}
+
+            function tryNextCandidate(reason) {{
+                let rem = getRemainingCandidates();
+                if (rem.length > 0) {{
+                    let nextCandidateUrl = rem.shift();
+                    let nextWithHash = rem.length > 0
+                        ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(rem))
+                        : nextCandidateUrl;
+                    try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(rem)); }} catch(e) {{}}
+                    console.log('[NadaNada] ' + (reason || 'Advancing') + ', trying next candidate:', nextCandidateUrl);
+                    window.location.replace(nextWithHash);
+                    return true;
+                }}
+                return false;
+            }}
 
             // Stealth overrides to pass Cloudflare / Turnstile bot detection
             try {{
@@ -267,6 +363,17 @@ pub async fn scrape_chords(
             let checkInterval = setInterval(() => {{
                 attempts++;
                 
+                // ── ARTIST DISCOGRAPHY / SETLIST PAGE DETECTOR ───────────────────
+                // If we land on an artist collection page (e.g. /chords/pitbull-songs), advance to next candidate immediately!
+                let currentPath = window.location.pathname;
+                if (/\/chords\/[^\/]+-songs\/?$/i.test(currentPath)) {{
+                    clearInterval(checkInterval);
+                    if (tryNextCandidate('On artist collection page')) return;
+                    let err = encodeURIComponent(JSON.stringify({{success: false, error: "Chords not found on Chordify.", data: null}}));
+                    window.location.replace("https://chordify.net/?scraper_result=" + err);
+                    return;
+                }}
+
                 // ── CLOUDFLARE CHALLENGE DETECTION ─────────────────────────────────
                 let isCloudflare = false;
                 try {{
@@ -311,16 +418,10 @@ pub async fn scrape_chords(
                 
                 if (attempts > 50) {{
                     clearInterval(checkInterval);
-                    let sampleText = document.body ? document.body.innerText.replace(/\s+/g, ' ').substring(0, 300) : 'no body';
-                    let debugInfo = {{
-                        url: window.location.href,
-                        title: document.title,
-                        chord_el_count: document.querySelectorAll('.chord[data-i], [data-i].chord, [data-i]').length,
-                        sample_body: sampleText
-                    }};
+                    if (tryNextCandidate('Timeout waiting for chords')) return;
                     let err = encodeURIComponent(JSON.stringify({{
                         success: false, 
-                        error: "Timeout waiting for chords: " + JSON.stringify(debugInfo), 
+                        error: "Chords not found on Chordify.", 
                         data: null
                     }}));
                     window.location.replace("https://chordify.net/?scraper_result=" + err);
@@ -329,30 +430,8 @@ pub async fn scrape_chords(
                 
                 if (document.body && document.body.textContent && (document.body.textContent.includes("Ribbit! Nothing here") || document.querySelectorAll('img[src*="404"]').length > 0)) {{
                     clearInterval(checkInterval);
-                    let remCandidates = [];
-                    if (window.location.hash.includes('candidates=')) {{
-                        try {{
-                            let raw = decodeURIComponent(window.location.hash.split('candidates=')[1].split('&')[0]);
-                            remCandidates = JSON.parse(raw);
-                        }} catch(e) {{}}
-                    }}
-                    if (!remCandidates || remCandidates.length === 0) {{
-                        try {{
-                            let s = sessionStorage.getItem('chord_candidates');
-                            if (s) remCandidates = JSON.parse(s);
-                        }} catch(e) {{}}
-                    }}
-                    if (Array.isArray(remCandidates) && remCandidates.length > 0) {{
-                        let nextCandidateUrl = remCandidates.shift();
-                        let nextWithHash = remCandidates.length > 0
-                            ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
-                            : nextCandidateUrl;
-                        try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
-                        console.log('[NadaNada] 404 on current candidate, trying next candidate:', nextCandidateUrl);
-                        window.location.replace(nextWithHash);
-                        return;
-                    }}
-                    let err = encodeURIComponent(JSON.stringify({{success: false, error: "Song not found or IP blocked by Chordify (404)", data: null}}));
+                    if (tryNextCandidate('404 on current candidate')) return;
+                    let err = encodeURIComponent(JSON.stringify({{success: false, error: "Song not found on Chordify.", data: null}}));
                     window.location.replace("https://chordify.net/?scraper_result=" + err);
                     return;
                 }}
@@ -362,11 +441,17 @@ pub async fn scrape_chords(
                     let chordLinks = Array.from(document.querySelectorAll('a[href^="/chords/"]'));
                     let allLinks = document.querySelectorAll('a[href^="/search/"]');
                     if (chordLinks.length > 0) {{
-                        clearInterval(checkInterval);
                         let candidates = [];
                         let seen = new Set();
+                        let titleWords = {title_words_json}.map(w => w.toLowerCase());
+
                         for (let a of chordLinks) {{
                             let cleanUrl = a.href || '';
+                            let path = cleanUrl.replace(/^https?:\/\/[^\/]+/, '');
+                            if (/\/chords\/[^\/]+-songs\/?$/i.test(path)) {{
+                                continue;
+                            }}
+
                             if (cleanUrl.includes('/chords/') && !seen.has(cleanUrl)) {{
                                 seen.add(cleanUrl);
                                 let linkText = ((a.innerText || '') + ' ' + cleanUrl).toLowerCase();
@@ -374,14 +459,34 @@ pub async fn scrape_chords(
                                 let isLive = linkText.includes('live');
                                 let isCover = linkText.includes('cover');
                                 let isEasy = linkText.includes('easy');
+
+                                let penalty = 0;
+                                if (isAcoustic) penalty += 10;
+                                if (isLive) penalty += 8;
+                                if (isCover) penalty += 8;
+                                if (isEasy) penalty += 4;
+
+                                if (cleanUrl.endsWith("-chords") || cleanUrl.includes("-chords")) {{
+                                    penalty -= 10;
+                                }}
+
+                                let matchCount = 0;
+                                for (let tw of titleWords) {{
+                                    if (tw.length >= 3 && linkText.includes(tw)) {{
+                                        matchCount++;
+                                    }}
+                                }}
+                                penalty -= (matchCount * 5);
+
                                 candidates.push({{
                                     url: cleanUrl,
-                                    penalty: (isAcoustic ? 4 : 0) + (isLive ? 3 : 0) + (isCover ? 3 : 0) + (isEasy ? 2 : 0)
+                                    penalty: penalty
                                 }});
                             }}
                         }}
+                        candidates.sort((a, b) => a.penalty - b.penalty);
                         if (candidates.length > 0) {{
-                            candidates.sort((a, b) => a.penalty - b.penalty);
+                            clearInterval(checkInterval);
                             let candidateUrls = candidates.map(c => c.url);
                             let target = candidateUrls.shift();
                             try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(candidateUrls)); }} catch(e) {{}}
@@ -394,7 +499,8 @@ pub async fn scrape_chords(
                             }}, 1500 + Math.random() * 1500);
                             return;
                         }}
-                    }} else if (document.body.textContent.includes("No results found")) {{
+                    }}
+                    if (document.body.textContent.includes("No results found")) {{
                         // Chordify search yielded nothing – signal Rust to open fresh Yahoo window
                         clearInterval(checkInterval);
                         console.log('[NadaNada] Chordify search found no results – signalling Yahoo fallback');
@@ -756,35 +862,15 @@ pub async fn scrape_chords(
 
                         let chordifyThumbnail = chordifyVideoId ? ('https://i.ytimg.com/vi/' + chordifyVideoId + '/hqdefault.jpg') : null;
 
-                        let remCandidates = [];
-                        if (window.location.hash.includes('candidates=')) {{
-                            try {{
-                                let raw = decodeURIComponent(window.location.hash.split('candidates=')[1].split('&')[0]);
-                                remCandidates = JSON.parse(raw);
-                            }} catch(e) {{}}
-                        }}
-                        if (!remCandidates || remCandidates.length === 0) {{
-                            try {{
-                                let s = sessionStorage.getItem('chord_candidates');
-                                if (s) remCandidates = JSON.parse(s);
-                            }} catch(e) {{}}
-                        }}
-                        if (!Array.isArray(remCandidates)) remCandidates = [];
-
                         // Check if extracted chords are incomplete (< 55% of song duration)
                         let finalTargetDur = targetDur > 0 ? targetDur : chordifyDurSec;
                         let isIncomplete = finalTargetDur > 60 && lastChordTime < (finalTargetDur * 0.55);
 
                         // Switch to next candidate if chords failed to extract (< 5 chords) OR if transcription is cut short
-                        if ((chords.length < 5 || isIncomplete) && remCandidates.length > 0) {{
-                            let nextCandidateUrl = remCandidates.shift();
-                            let nextWithHash = remCandidates.length > 0
-                                ? nextCandidateUrl + '#candidates=' + encodeURIComponent(JSON.stringify(remCandidates))
-                                : nextCandidateUrl;
-                            try {{ sessionStorage.setItem('chord_candidates', JSON.stringify(remCandidates)); }} catch(e) {{}}
-                            console.log('[NadaNada] Candidate rejected (too few chords or incomplete: ' + lastChordTime.toFixed(1) + 's of ' + finalTargetDur + 's). Trying next candidate:', nextCandidateUrl);
-                            window.location.replace(nextWithHash);
-                            return;
+                        if (chords.length < 5 || isIncomplete) {{
+                            if (tryNextCandidate('Candidate rejected (too few chords or incomplete: ' + lastChordTime.toFixed(1) + 's of ' + finalTargetDur + 's)')) {{
+                                return;
+                            }}
                         }}
 
                         let result = {{
