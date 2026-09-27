@@ -655,6 +655,24 @@ body {
   pointer-events: auto;
 }
 
+.card-hover-overlay-btn {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.9);
+  transition: opacity 0.2s ease, transform 0.2s ease, color 0.15s ease, border-color 0.15s ease !important;
+}
+
+.card-hover-container:hover .card-hover-overlay-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.card-hover-container:hover .card-hover-overlay-btn:hover {
+  transform: scale(1.1);
+  color: var(--text-main) !important;
+}
+
 /* Button hover variable default */
 :root {
   --button-hover: rgba(128, 128, 128, 0.15);

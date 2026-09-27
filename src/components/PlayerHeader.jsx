@@ -139,8 +139,9 @@ export default function PlayerHeader({
               gap: '4px',
               zIndex: 10
             }}>
-              {/* Overlay button */}
+              {/* Overlay button (visible on hover) */}
               <button
+                className="card-hover-overlay-btn"
                 onClick={(e) => {
                   e.stopPropagation();
                   setVideoOverlayMode?.(showChords ? 'chords' : 'lyrics');
@@ -157,16 +158,7 @@ export default function PlayerHeader({
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: 'pointer',
-                  padding: 0,
-                  transition: 'all 0.15s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = 'var(--text-main)';
-                  e.currentTarget.style.transform = 'scale(1.1)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = 'var(--text-muted)';
-                  e.currentTarget.style.transform = 'scale(1)';
+                  padding: 0
                 }}
               >
                 <Maximize2 size={10} strokeWidth={2.2} />
