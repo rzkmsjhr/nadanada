@@ -670,30 +670,87 @@ pub async fn scrape_chords(
                             }}
                         }}
 
-                        // Extract duration
-                        let metaDur = document.querySelector('meta[itemprop="duration"]');
-                        if (metaDur && metaDur.content) {{
-                            let m = metaDur.content.match(/PT(?:(\d+)M)?(?:(\d+)S)?/);
-                            if (m) {{
-                                let mins = parseInt(m[1] || '0');
-                                let secs = parseInt(m[2] || '0');
-                                chordifyDuration = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+                        // Extract duration accurately with sanity check against lastChordTime
+                        let lastChordTime = chords.length > 0 ? chords[chords.length - 1].time_sec : 0;
+                        let chordifyDurSec = 0;
+
+                        // 1. Try JSON-LD schema scripts
+                        try {{
+                            let ldScripts = document.querySelectorAll('script[type="application/ld+json"]');
+                            for (let s of ldScripts) {{
+                                let json = JSON.parse(s.textContent || '{{}}');
+                                let d = json.duration || (json.video && json.video.duration) || (json.audio && json.audio.duration);
+                                if (d && typeof d === 'string') {{
+                                    let m = d.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                                    if (m) {{
+                                        let hours = parseInt(m[1] || '0');
+                                        let mins = parseInt(m[2] || '0');
+                                        let secs = parseInt(m[3] || '0');
+                                        let totalSec = hours * 3600 + mins * 60 + secs;
+                                        if (totalSec >= lastChordTime - 5) {{
+                                            let totM = Math.floor(totalSec / 60);
+                                            let totS = totalSec % 60;
+                                            chordifyDuration = (totM < 10 ? '0' : '') + totM + ':' + (totS < 10 ? '0' : '') + totS;
+                                            chordifyDurSec = totalSec;
+                                            break;
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }} catch(e) {{}}
+
+                        // 2. Try meta itemprop="duration"
+                        if (!chordifyDuration) {{
+                            let metaDur = document.querySelector('meta[itemprop="duration"]');
+                            if (metaDur && metaDur.content) {{
+                                let m = metaDur.content.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+                                if (m) {{
+                                    let hours = parseInt(m[1] || '0');
+                                    let mins = parseInt(m[2] || '0');
+                                    let secs = parseInt(m[3] || '0');
+                                    let totalSec = hours * 3600 + mins * 60 + secs;
+                                    if (totalSec >= lastChordTime - 5) {{
+                                        let totM = Math.floor(totalSec / 60);
+                                        let totS = totalSec % 60;
+                                        chordifyDuration = (totM < 10 ? '0' : '') + totM + ':' + (totS < 10 ? '0' : '') + totS;
+                                        chordifyDurSec = totalSec;
+                                    }}
+                                }}
                             }}
                         }}
+
+                        // 3. Try player-specific time elements
                         if (!chordifyDuration) {{
-                            let timeEls = Array.from(document.querySelectorAll('span, div, time')).filter(el => {{
+                            let playerTimeEls = Array.from(document.querySelectorAll('[class*="player"] [class*="time"], [class*="controls"] [class*="time"], [data-testid*="duration"], [class*="total-time"]')).filter(el => {{
                                 let txt = (el.innerText || '').trim();
                                 return /^\d{{1,2}}:\d{{2}}$/.test(txt) && txt !== '00:00' && txt !== '0:00';
                             }});
-                            if (timeEls.length > 0) {{
-                                chordifyDuration = timeEls[timeEls.length - 1].innerText.trim();
+                            for (let el of playerTimeEls) {{
+                                let txt = el.innerText.trim();
+                                let dp = txt.split(':').map(Number);
+                                let secVal = dp[0] * 60 + dp[1];
+                                if (secVal >= lastChordTime - 5) {{
+                                    chordifyDuration = txt;
+                                    chordifyDurSec = secVal;
+                                    break;
+                                }}
                             }}
                         }}
-                        if (!chordifyDuration) {{
-                            let durMatches = (document.body.innerText || '').match(/(\d{{1,2}}:\d{{2}})/g);
-                            if (durMatches) {{
-                                let nonZero = durMatches.filter(d => d !== '00:00' && d !== '0:00');
-                                if (nonZero.length > 0) chordifyDuration = nonZero[nonZero.length - 1];
+
+                        // 4. Fallback: if no valid duration found or duration < lastChordTime - 5,
+                        // derive it intelligently from targetDur or lastChordTime
+                        if (!chordifyDuration || chordifyDurSec < lastChordTime - 5) {{
+                            if (targetDur > 0 && Math.abs(targetDur - lastChordTime) <= 15) {{
+                                let m = Math.floor(targetDur / 60);
+                                let s = Math.floor(targetDur % 60);
+                                chordifyDuration = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+                                chordifyDurSec = targetDur;
+                            }} else if (lastChordTime > 0) {{
+                                let estSec = Math.round(lastChordTime + 5);
+                                let m = Math.floor(estSec / 60);
+                                let s = estSec % 60;
+                                chordifyDuration = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+                                chordifyDurSec = estSec;
                             }}
                         }}
 
@@ -715,13 +772,6 @@ pub async fn scrape_chords(
                         if (!Array.isArray(remCandidates)) remCandidates = [];
 
                         // Check if extracted chords are incomplete (< 55% of song duration)
-                        let lastChordTime = chords.length > 0 ? chords[chords.length - 1].time_sec : 0;
-                        let chordifyDurSec = 0;
-                        if (chordifyDuration) {{
-                            let dp = chordifyDuration.split(':').map(Number);
-                            if (dp.length === 2) chordifyDurSec = dp[0] * 60 + dp[1];
-                            else if (dp.length === 3) chordifyDurSec = dp[0] * 3600 + dp[1] * 60 + dp[2];
-                        }}
                         let finalTargetDur = targetDur > 0 ? targetDur : chordifyDurSec;
                         let isIncomplete = finalTargetDur > 60 && lastChordTime < (finalTargetDur * 0.55);
 

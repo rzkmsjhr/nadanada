@@ -49,19 +49,30 @@ export function useChords(currentSong, isAudioPlaying, api) {
 
                 const chordifyDurationSec = parseDuration(parsed.data.chordify_duration);
 
+                // Sanity check: if chordifyDurationSec is significantly shorter than lastChordTime, it is bogus
+                const effectiveChordifyDurSec = (chordifyDurationSec > 0 && chordifyDurationSec >= lastChordTime - 5)
+                  ? chordifyDurationSec
+                  : (lastChordTime > 0 ? Math.round(lastChordTime + 5) : 0);
+
+                const displayChordifyDuration = (chordifyDurationSec > 0 && chordifyDurationSec >= lastChordTime - 5)
+                  ? parsed.data.chordify_duration
+                  : (effectiveChordifyDurSec > 0 
+                      ? `${Math.floor(effectiveChordifyDurSec / 60)}:${String(effectiveChordifyDurSec % 60).padStart(2, '0')}` 
+                      : parsed.data.chordify_duration);
+
                 // Mismatch heuristics
-                // 1. Chords extend past video end by > 5s (e.g. video version with long intro storytelling/dialogue)
-                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 5;
+                // 1. Chords extend past video end by > 12s (e.g. video version with long intro storytelling/dialogue)
+                const isTooLong = videoDuration > 0 && lastChordTime > videoDuration + 12;
 
                 // 2. Chords stop way too early (< 55% of song length), meaning transcription cut short / incomplete
                 // Applies even on exact video match so stuck/truncated chords are not silently played
-                const effectiveSongDuration = videoDuration > 0 ? videoDuration : chordifyDurationSec;
+                const effectiveSongDuration = videoDuration > 0 ? videoDuration : effectiveChordifyDurSec;
                 const isTooShort = effectiveSongDuration > 60 && lastChordTime < effectiveSongDuration * 0.55;
 
-                // 3. If Chordify's actual video duration is known, check if it differs by > 5s (e.g. 5:54 audio vs 6:04 music video)
-                // NOTE: We compare chordifyDurationSec to videoDuration, NOT lastChordTime, because many songs have instrument-free outros!
+                // 3. If Chordify's actual video duration is known, check if it differs by > 12s (e.g. 3:30 radio edit vs 5:13 album version)
+                // Differences <= 12s (e.g. 5:13 audio vs 5:16 music video) are the same song with minor silence/logos
                 const isDurationMismatch = Boolean(
-                  videoDuration > 0 && chordifyDurationSec > 0 && Math.abs(chordifyDurationSec - videoDuration) > 5
+                  videoDuration > 0 && effectiveChordifyDurSec > 0 && Math.abs(effectiveChordifyDurSec - videoDuration) > 12
                 );
 
                 const isMismatch = isTooShort || (!isExactVideoMatch && (isTooLong || isDurationMismatch));
@@ -77,11 +88,12 @@ export function useChords(currentSong, isAudioPlaying, api) {
                     chordify_title: parsed.data.chordify_title || null,
                     chordify_channel: parsed.data.chordify_channel || null,
                     chordify_thumbnail: parsed.data.chordify_thumbnail || null,
-                    chordify_duration: parsed.data.chordify_duration || null
+                    chordify_duration: displayChordifyDuration || null
                   });
                 } else {
                   setChordsData({
                     ...parsed.data,
+                    chordify_duration: displayChordifyDuration || parsed.data.chordify_duration,
                     _songId: currentSong.id
                   });
                 }
