@@ -1013,19 +1013,10 @@ const Player = React.forwardRef(function Player({
                     </button>
                   </div>
 
-                  {/* BPM Capsule */}
+                  {/* BPM Controls */}
                   {chordsData?.bpm && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      background: 'rgba(0, 0, 0, 0.4)',
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                      backdropFilter: 'blur(8px)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)'
-                    }}>
-                      <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>BPM:</span>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '10px' }}>
+                      <span style={{ fontSize: '0.75rem', opacity: 0.85 }}>BPM:</span>
                       <button
                         onClick={() => {
                           setBpmOffset?.(b => Math.max(-50, b - 1));

@@ -773,18 +773,9 @@ export default function VideoOverlay({
                 </button>
               </div>
 
-              {/* BPM Capsule */}
+              {/* BPM Controls */}
               {chordsData?.bpm && (
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  background: 'var(--panel-bg)',
-                  border: '1px solid var(--panel-border)',
-                  borderRadius: '6px',
-                  padding: '2px 6px',
-                  fontSize: '0.75rem'
-                }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '8px' }}>
                   <span style={{ fontSize: '0.72rem', opacity: 0.8 }}>BPM:</span>
                   <button
                     onClick={() => onBpmChange?.(b => Math.max(-50, b - 1))}
