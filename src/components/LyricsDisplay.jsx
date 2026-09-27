@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
-import { Maximize2 } from 'lucide-react';
 
 const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, fontScale, lyricsFontScale = 100, isLoading, error, onRetry }) => {
   const effectiveFontScale = fontScale ?? lyricsFontScale ?? 100;
@@ -351,41 +350,6 @@ const LyricsDisplay = ({ data, syncOffset = 0, onSyncChange, onSwitchToOverlay, 
               +
             </button>
           </div>
-
-          {onSwitchToOverlay && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onSwitchToOverlay();
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background: 'var(--panel-bg)',
-                border: '1px solid var(--panel-border)',
-                borderRadius: '6px',
-                padding: '2px 5px',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                fontSize: '0.75rem',
-                lineHeight: 1,
-                height: '18px',
-                transition: 'all 0.15s ease'
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = 'var(--text-main)';
-                e.currentTarget.style.borderColor = 'var(--accent-color)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = 'var(--text-muted)';
-                e.currentTarget.style.borderColor = 'var(--panel-border)';
-              }}
-              title="Overlay on video"
-            >
-              <Maximize2 size={11} strokeWidth={2.2} />
-            </button>
-          )}
 
           {syncOffset !== 0 && (
             <button
