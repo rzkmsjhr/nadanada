@@ -58,7 +58,7 @@ const Player = React.forwardRef(function Player({
 
   const currentVinylSong = activeSong || currentSong;
   const nextVinylSong = core.isCrossfading ? (core.activeDeck === 0 ? core.deck1Song : core.deck0Song) : nextSong;
-  const isVinylVisible = isVinylEnabled && (isAlbumArtTrack(currentVinylSong) || (core.isCrossfading && isAlbumArtTrack(nextVinylSong)));
+  const isVinylVisible = isVinylEnabled && isAlbumArtTrack(currentVinylSong);
 
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
   const fullscreenTimerRef = useRef(null);

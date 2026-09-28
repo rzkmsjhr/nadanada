@@ -75,6 +75,18 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         .unwrap_or("")
         .to_string();
 
+    let title_lower = title.to_lowercase();
+    let channel_lower = artist.to_lowercase();
+    let is_video = title_lower.contains("official music video")
+        || title_lower.contains("official video")
+        || title_lower.contains("music video")
+        || title_lower.contains("lyric video")
+        || title_lower.contains("visualizer")
+        || title_lower.contains("[mv]")
+        || title_lower.contains("(mv)")
+        || channel_lower.contains("vevo")
+        || default_type == "video";
+
     Some(Video {
         id: video_id,
         title,
@@ -84,7 +96,7 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         is_playlist: false,
         track_count: None,
         first_video_id: None,
-        item_type: Some(default_type.to_string()),
+        item_type: Some(if is_video { "video".to_string() } else { default_type.to_string() }),
     })
 }
 
@@ -1043,6 +1055,17 @@ async fn get_ytm_mix_internal(video_id: &str) -> Result<Vec<Video>, String> {
                     .to_string();
 
                 if !id.is_empty() && !title.is_empty() {
+                    let title_lower = title.to_lowercase();
+                    let channel_lower = channel.to_lowercase();
+                    let is_video = title_lower.contains("official music video")
+                        || title_lower.contains("official video")
+                        || title_lower.contains("music video")
+                        || title_lower.contains("lyric video")
+                        || title_lower.contains("visualizer")
+                        || title_lower.contains("[mv]")
+                        || title_lower.contains("(mv)")
+                        || channel_lower.contains("vevo");
+
                     videos.push(Video {
                         id,
                         title,
@@ -1052,7 +1075,7 @@ async fn get_ytm_mix_internal(video_id: &str) -> Result<Vec<Video>, String> {
                         is_playlist: false,
                         track_count: None,
                         first_video_id: None,
-                        item_type: Some("song".to_string()),
+                        item_type: Some(if is_video { "video".to_string() } else { "song".to_string() }),
                     });
                 }
             }

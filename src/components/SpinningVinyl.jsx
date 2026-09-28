@@ -13,27 +13,20 @@ export function isAlbumArtTrack(song) {
 
   const channel = (song.channel || '').toLowerCase().trim();
   const title = (song.title || '').toLowerCase().trim();
+  const itemType = (song.item_type || '').toLowerCase().trim();
 
-  // 2. YouTube Topic channels are auto-generated audio releases with static album art
-  if (channel.endsWith('- topic') || channel === 'topic') {
-    return true;
-  }
-
-  // 3. Explicit video type must NEVER spin (user constraint: "be careful to not mistakenly make video type spin")
-  if (song.item_type === 'video') {
+  // 2. Explicit video type must NEVER spin or show turntable
+  if (itemType === 'video') {
     return false;
   }
 
-  // 4. YouTube Music official song releases
-  if (song.item_type === 'song') {
-    return true;
-  }
-
-  // 5. If item_type is undefined / not set, inspect title & channel for video markers
+  // 3. Inspect title & channel for video markers FIRST
+  // Even if tagged as 'song' from a mix or playlist, if it's an official music video it is a VIDEO!
   const videoKeywords = [
     'official music video',
     'official video',
     'music video',
+    'official audio video',
     'lyric video',
     'lyrics video',
     'visualizer',
@@ -41,27 +34,52 @@ export function isAlbumArtTrack(song) {
     'performance video',
     'live performance',
     'dance practice',
-    'mv',
-    '[mv]',
-    '(mv)',
     'live at',
     'live in',
     'live from',
     'live concert',
     'full concert',
     'trailer',
-    'teaser'
+    'teaser',
+    '[mv]',
+    '(mv)',
+    '[m/v]',
+    '(m/v)',
+    '[official video]',
+    '(official video)',
+    '[official music video]',
+    '(official music video)',
+    '(video)',
+    '[video]'
   ];
 
   if (videoKeywords.some(keyword => title.includes(keyword))) {
     return false;
   }
 
+  // Standalone MV / M/V with word boundary check
+  if (/\b(mv|m\/v)\b/i.test(title)) {
+    return false;
+  }
+
+  // VEVO channels host official music videos, never static album art
   if (channel.includes('vevo')) {
     return false;
   }
 
-  // Default to false for unknown types to strictly prevent mistakenly spinning videos
+  // 4. YouTube Topic channels are auto-generated audio releases with static album art
+  if (channel.endsWith('- topic') || channel === 'topic') {
+    return true;
+  }
+
+  // 5. Explicit "song" items from YouTube Music (that passed video checks above)
+  if (itemType === 'song') {
+    return true;
+  }
+
+  // 6. User constraint: "if the track is video, and not 'song' or '- topic' one",
+  // both the turntable and trigger option MUST be hidden.
+  // Any regular YouTube video, upload, or non-song release defaults to false.
   return false;
 }
 
@@ -372,14 +390,14 @@ export default function SpinningVinyl({
   const marqueeDuration = Math.max(12, Math.min(28, Math.round(displayTitle.length * 0.55)));
 
   const lcdTextStyle = {
-    fontFamily: '"DSEG14Classic", "Digital-7", monospace',
-    fontSize: '19px',
+    fontFamily: '"Doto", monospace',
+    fontSize: '22px',
     fontWeight: 400,
-    fontStyle: 'italic',
-    letterSpacing: '1.6px',
+    fontVariationSettings: '"ROND" 100, "wght" 400',
+    letterSpacing: '2px',
     color: '#ffffff',
     textTransform: 'uppercase',
-    textShadow: '0 0 2px rgba(255, 255, 255, 0.6), 0 0 6px rgba(59, 130, 246, 0.35)',
+    textShadow: '0 0 2px rgba(255, 255, 255, 0.7), 0 0 8px rgba(59, 130, 246, 0.45)',
     lineHeight: 1
   };
 
