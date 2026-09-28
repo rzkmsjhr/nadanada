@@ -44,6 +44,22 @@ const Player = React.forwardRef(function Player({
   const activeSong = core.activeDeck === 0 ? core.deck0Song : core.deck1Song;
   const isAlbumArtSong = isAlbumArtTrack(activeSong || currentSong);
 
+  const [transitionDirection, setTransitionDirection] = useState('forward');
+
+  const handleNextTrack = useCallback(() => {
+    setTransitionDirection('forward');
+    if (onNext) onNext();
+  }, [onNext]);
+
+  const handlePreviousTrack = useCallback(() => {
+    setTransitionDirection('backward');
+    if (onPrevious) onPrevious();
+  }, [onPrevious]);
+
+  const currentVinylSong = activeSong || currentSong;
+  const nextVinylSong = core.isCrossfading ? (core.activeDeck === 0 ? core.deck1Song : core.deck0Song) : nextSong;
+  const isVinylVisible = isVinylEnabled && (isAlbumArtTrack(currentVinylSong) || (core.isCrossfading && isAlbumArtTrack(nextVinylSong)));
+
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
   const fullscreenTimerRef = useRef(null);
   const lastMousePosRef = useRef({ x: -1, y: -1 });
@@ -356,12 +372,7 @@ const Player = React.forwardRef(function Player({
                     iframeClassName="youtube-iframe"
                   />
                 </div>
-                {isVinylEnabled && isAlbumArtTrack(core.deck0Song) && (
-                  <SpinningVinyl
-                    song={core.deck0Song}
-                    isPlaying={core.isPlaying && core.activeDeck === 0}
-                  />
-                )}
+
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
                   onClick={() => core.togglePlay()}
@@ -452,12 +463,7 @@ const Player = React.forwardRef(function Player({
                     iframeClassName="youtube-iframe"
                   />
                 </div>
-                {isVinylEnabled && isAlbumArtTrack(core.deck1Song) && (
-                  <SpinningVinyl
-                    song={core.deck1Song}
-                    isPlaying={core.isPlaying && core.activeDeck === 1}
-                  />
-                )}
+
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
                   onClick={() => core.togglePlay()}
@@ -647,13 +653,7 @@ const Player = React.forwardRef(function Player({
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                {isVinylEnabled && isAlbumArtTrack(core.deck0Song) ? (
-                  <SpinningVinyl
-                    song={core.deck0Song}
-                    isPlaying={core.isPlaying && core.activeDeck === 0}
-                    subtext={core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}
-                  />
-                ) : (
+                {isVinylEnabled && isAlbumArtTrack(core.deck0Song) ? null : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                     <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                       ♪
@@ -729,13 +729,7 @@ const Player = React.forwardRef(function Player({
                 alignItems: 'center',
                 justifyContent: 'center'
               }}>
-                {isVinylEnabled && isAlbumArtTrack(core.deck1Song) ? (
-                  <SpinningVinyl
-                    song={core.deck1Song}
-                    isPlaying={core.isPlaying && core.activeDeck === 1}
-                    subtext={core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}
-                  />
-                ) : (
+                {isVinylEnabled && isAlbumArtTrack(core.deck1Song) ? null : (
                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
                     <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                       ♪
@@ -798,6 +792,25 @@ const Player = React.forwardRef(function Player({
               </div>
             )}
           </div>
+
+          {/* Unified Photorealistic Direct Drive Turntable Plinth */}
+          {isVinylVisible && (
+            <>
+              <SpinningVinyl
+                song={currentVinylSong}
+                nextSong={nextVinylSong}
+                isPlaying={core.isPlaying}
+                isCrossfading={core.isCrossfading}
+                direction={transitionDirection}
+                subtext={currentVinylSong?.is_local ? 'Playing Offline' : (core.streamUrl ? 'Audio Stream Fallback' : null)}
+              />
+              <div 
+                style={{ position: 'absolute', inset: 0, zIndex: 12, cursor: 'pointer' }}
+                onClick={() => core.togglePlay()}
+                onDoubleClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+              />
+            </>
+          )}
 
           {!currentSong && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255, 255, 255, 0.6)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
@@ -868,7 +881,7 @@ const Player = React.forwardRef(function Player({
               >
                 <button 
                   className="btn btn-icon" 
-                  onClick={onPrevious} 
+                  onClick={handlePreviousTrack} 
                   disabled={!hasPrevious} 
                   style={{ 
                     zIndex: 25, 
@@ -910,7 +923,7 @@ const Player = React.forwardRef(function Player({
                 </button>
                 <button 
                   className="btn btn-icon" 
-                  onClick={onNext} 
+                  onClick={handleNextTrack} 
                   disabled={!hasNext} 
                   style={{ 
                     zIndex: 25, 
@@ -1337,7 +1350,7 @@ const Player = React.forwardRef(function Player({
                 >
                   <Shuffle size={20} />
                 </button>
-                <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Previous">
+                <button className="btn btn-icon" onClick={handlePreviousTrack} disabled={!hasPrevious} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Previous">
                   <SkipBack size={22} />
                 </button>
                 <button 
@@ -1349,7 +1362,7 @@ const Player = React.forwardRef(function Player({
                 >
                   {core.isBuffering ? <Loader2 size={24} className="animate-spin" /> : (core.isPlaying ? <Pause size={24} /> : <Play size={24} />)}
                 </button>
-                <button className="btn btn-icon" onClick={onNext} disabled={!hasNext} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Next">
+                <button className="btn btn-icon" onClick={handleNextTrack} disabled={!hasNext} style={{ color: '#fff', background: 'rgba(255,255,255,0.1)', padding: '8px' }} title="Next">
                   <SkipForward size={22} />
                 </button>
                 <button 
@@ -1611,9 +1624,9 @@ const Player = React.forwardRef(function Player({
           handleSeekMouseDown={core.handleSeekMouseDown}
           handleSeekMouseUp={core.handleSeekMouseUp}
           onToggleShuffle={onToggleShuffle}
-          onPrevious={onPrevious}
+          onPrevious={handlePreviousTrack}
           togglePlay={core.togglePlay}
-          onNext={onNext}
+          onNext={handleNextTrack}
           onToggleRepeat={onToggleRepeat}
           handleVolumeChange={core.handleVolumeChange}
           toggleMute={core.toggleMute}

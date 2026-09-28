@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Disc } from 'lucide-react';
 
 /**
@@ -77,16 +77,168 @@ export function getOptimizedThumbnail(thumbnail) {
   return thumbnail;
 }
 
-export default function SpinningVinyl({ song, isPlaying = false, subtext = null }) {
-  const [imgError, setImgError] = useState(false);
+export default function SpinningVinyl({
+  song,
+  nextSong = null,
+  isPlaying = false,
+  isCrossfading = false,
+  direction = 'forward',
+  subtext = null,
+  onTogglePlay = null
+}) {
+  const [displayedSong, setDisplayedSong] = useState(song || null);
+  const [outgoingSong, setOutgoingSong] = useState(null);
+  const [incomingSong, setIncomingSong] = useState(null);
+  const [transitionPhase, setTransitionPhase] = useState('idle'); // 'idle' | 'docking' | 'swapping' | 'undocking'
+  const [transitionDirection, setTransitionDirection] = useState(direction || 'forward');
+
+  const [tonearmAngle, setTonearmAngle] = useState(isPlaying ? 54 : 0);
+  const [armTransitionDuration, setArmTransitionDuration] = useState(0.85);
+  const [armEasing, setArmEasing] = useState('0.25, 1, 0.5, 1');
+
+  const [imgErrors, setImgErrors] = useState({});
+  const transitionTimersRef = useRef([]);
+  const prevSongIdRef = useRef(song?.id || null);
+  const prevCrossfadeRef = useRef(false);
+  const displayedSongRef = useRef(displayedSong);
+  displayedSongRef.current = displayedSong;
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
+  const tonearmAngleRef = useRef(tonearmAngle);
+  tonearmAngleRef.current = tonearmAngle;
+
+  const handleImgError = (songId) => {
+    if (!songId) return;
+    setImgErrors(prev => ({ ...prev, [songId]: true }));
+  };
+
+  const getFinalThumbnail = (s) => {
+    if (!s) return null;
+    if (imgErrors[s.id]) return null;
+    const raw = s.thumbnail;
+    return getOptimizedThumbnail(raw) || raw;
+  };
+
+  const clearTimers = () => {
+    transitionTimersRef.current.forEach(t => clearTimeout(t));
+    transitionTimersRef.current = [];
+  };
 
   useEffect(() => {
-    setImgError(false);
-  }, [song?.id, song?.thumbnail]);
+    return () => clearTimers();
+  }, []);
 
-  const rawThumbnail = song?.thumbnail;
-  const optimizedThumbnail = !imgError ? getOptimizedThumbnail(rawThumbnail) : null;
-  const finalThumbnail = optimizedThumbnail || (!imgError ? rawThumbnail : null);
+  const triggerTransition = useCallback((fromSong, toSong, dir = 'forward') => {
+    if (!toSong || fromSong?.id === toSong?.id) return;
+
+    clearTimers();
+
+    setTransitionDirection(dir);
+    setOutgoingSong(fromSong);
+    setIncomingSong(toSong);
+
+    // Preload incoming thumbnail
+    if (toSong?.thumbnail) {
+      const img = new Image();
+      img.src = getOptimizedThumbnail(toSong.thumbnail) || toSong.thumbnail;
+    }
+
+    const currentAngle = tonearmAngleRef.current;
+    const isArmCurrentlyOverRecord = isPlayingRef.current && currentAngle > 10;
+
+    // ── Continuous fluid transition (No pauses or stops) ──
+    setTransitionPhase('swapping');
+
+    if (isArmCurrentlyOverRecord) {
+      // 1. Arm begins lifting & swinging towards dock at t=0
+      setTonearmAngle(0);
+      setArmTransitionDuration(0.36);
+      setArmEasing('0.3, 0, 0.25, 1');
+
+      // 2. At t=350ms (needle has cleared vinyl and arm reached dock apex):
+      // Without stopping, arm immediately reverses and glides back towards incoming record!
+      const returnArmTimer = setTimeout(() => {
+        if (isPlayingRef.current) {
+          setTonearmAngle(54);
+          setArmTransitionDuration(0.55);
+          setArmEasing('0.22, 1, 0.36, 1');
+        }
+      }, 350);
+      transitionTimersRef.current.push(returnArmTimer);
+
+      // 3. At t=820ms: Circular revolver animation completes its 180° sweep.
+      // Incoming disc is smoothly brought to rest on the platter spindle.
+      // Atomically commit displayedSong and return to idle with zero freeze or flash.
+      const finishTimer = setTimeout(() => {
+        setDisplayedSong(toSong);
+        setOutgoingSong(null);
+        setIncomingSong(null);
+        setTransitionPhase('idle');
+      }, 820);
+      transitionTimersRef.current.push(finishTimer);
+    } else {
+      // Tonearm is already parked at dock (paused). Circular carousel runs smoothly.
+      setTonearmAngle(0);
+
+      const finishTimer = setTimeout(() => {
+        setDisplayedSong(toSong);
+        setOutgoingSong(null);
+        setIncomingSong(null);
+        setTransitionPhase('idle');
+      }, 820);
+      transitionTimersRef.current.push(finishTimer);
+    }
+  }, []);
+
+  // Monitor song changes and crossfade transitions
+  useEffect(() => {
+    const currentId = song?.id;
+    const targetDir = direction || 'forward';
+
+    // Auto-crossfade start detection
+    if (isCrossfading && !prevCrossfadeRef.current && nextSong && nextSong.id !== displayedSongRef.current?.id) {
+      prevCrossfadeRef.current = true;
+      triggerTransition(displayedSongRef.current || song, nextSong, targetDir);
+      prevSongIdRef.current = nextSong.id;
+      return;
+    }
+    prevCrossfadeRef.current = isCrossfading;
+
+    // Normal song change or manual skip detection
+    if (currentId && currentId !== prevSongIdRef.current) {
+      const prevId = prevSongIdRef.current;
+      prevSongIdRef.current = currentId;
+
+      if (!prevId) {
+        // First song load ever: initial appearance
+        setDisplayedSong(song);
+        if (isPlaying) {
+          setTonearmAngle(54);
+        }
+        return;
+      }
+
+      if (currentId !== displayedSongRef.current?.id) {
+        triggerTransition(displayedSongRef.current, song, targetDir);
+      }
+    } else if (!currentId && prevSongIdRef.current) {
+      prevSongIdRef.current = null;
+      setDisplayedSong(null);
+      setTonearmAngle(0);
+      setTransitionPhase('idle');
+    }
+  }, [song?.id, isCrossfading, nextSong?.id, direction, triggerTransition, isPlaying]);
+
+  // Handle play/pause toggles during steady playback
+  useEffect(() => {
+    if (transitionPhase === 'idle') {
+      setTonearmAngle(isPlaying ? 54 : 0);
+      setArmTransitionDuration(0.75);
+      setArmEasing('0.25, 1, 0.5, 1');
+    }
+  }, [isPlaying, transitionPhase]);
+
+  const activeThumbnail = getFinalThumbnail(displayedSong || song);
 
   // 10 vertical LED meter levels: green (-20 to -2), amber (0 to +2), red (+4 to +8)
   const VU_STEPS = [
@@ -174,7 +326,7 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
           animRef.current.peakL = Math.max(1, animRef.current.peakL - dt * 6);
         }
 
-        if (animRef.current.r >= animRef.current.peakR) {
+        if (targetR > animRef.current.r) {
           animRef.current.peakR = Math.round(animRef.current.r);
           animRef.current.peakHoldR = now + 420;
         } else if (now > animRef.current.peakHoldR) {
@@ -199,7 +351,10 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
   // ── Vintage Digital LCD Title Display State ──
   const lcdContainerRef = useRef(null);
   const [isMarquee, setIsMarquee] = useState(false);
-  const displayTitle = (song?.title || 'NO DISC LOADED').trim();
+  
+  // Show incoming song title as soon as swapping begins
+  const activeTitleSong = transitionPhase === 'swapping' ? (incomingSong || displayedSong || song) : (displayedSong || song);
+  const displayTitle = (activeTitleSong?.title || 'NO DISC LOADED').trim();
 
   useEffect(() => {
     // If title has more than 15 characters, auto-marquee smoothly
@@ -228,6 +383,179 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
     lineHeight: 1
   };
 
+  /**
+   * Helper to render a photorealistic vinyl disc.
+   */
+  const renderVinylDisc = (discSong, customStyle = {}, isSpinning = false, keyId = 'active') => {
+    const thumb = getFinalThumbnail(discSong);
+
+    return (
+      <div
+        key={keyId}
+        className="vinyl-record-wrapper"
+        style={{
+          position: 'absolute',
+          width: '96%',
+          height: '96%',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.85))',
+          ...customStyle
+        }}
+      >
+        {/* Rotating Vinyl Disc */}
+        <div
+          className="vinyl-disc"
+          style={{
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            borderRadius: '50%',
+            animation: isSpinning ? 'nadanada-vinyl-spin 20s linear infinite' : 'none',
+            animationPlayState: isPlaying ? 'running' : 'paused',
+            willChange: 'transform',
+            background: `
+              radial-gradient(circle at center,
+                #0d0d0f 0%,
+                #141417 87%,
+                #1c1c1f 89%,
+                #101012 90%,
+                #18181b 92%,
+                #242429 94%,
+                #121214 96%,
+                #222226 98%,
+                #0b0b0d 100%
+              )
+            `,
+            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12), inset 0 0 14px rgba(0,0,0,0.95)'
+          }}
+        >
+          {/* Concentric micro-groove texture */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              borderRadius: '50%',
+              background: 'repeating-radial-gradient(circle at center, transparent 0px, transparent 2px, rgba(255, 255, 255, 0.022) 2.5px, transparent 3px)',
+              pointerEvents: 'none'
+            }}
+          />
+
+          {/* Center Label (Album Art - 90% of disc) */}
+          <div
+            className="vinyl-center-label"
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '90%',
+              height: '90%',
+              borderRadius: '50%',
+              overflow: 'hidden',
+              boxShadow: '0 0 0 2px #0a0a0c, 0 0 0 3px rgba(255,255,255,0.14), inset 0 0 10px rgba(0,0,0,0.7)',
+              background: '#18181b',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            {thumb ? (
+              <img
+                src={thumb}
+                alt={discSong?.title || 'Album Art'}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block'
+                }}
+                onError={() => discSong?.id && handleImgError(discSong.id)}
+              />
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'rgba(255,255,255,0.75)',
+                  textAlign: 'center',
+                  padding: '8px'
+                }}
+              >
+                <Disc size={32} style={{ color: 'var(--accent-color)', marginBottom: '4px' }} />
+                <span
+                  style={{
+                    fontSize: '0.65rem',
+                    fontWeight: 600,
+                    maxWidth: '85%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {discSong?.title || 'Track'}
+                </span>
+              </div>
+            )}
+
+            {/* Inner rim groove of the label */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                boxShadow: 'inset 0 0 0 1.5px rgba(255, 255, 255, 0.2)',
+                pointerEvents: 'none'
+              }}
+            />
+
+            {/* Center Spindle Hole */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '7%',
+                height: '7%',
+                borderRadius: '50%',
+                background: '#070708',
+                border: '2px solid rgba(220, 220, 235, 0.7)',
+                boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.85)'
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Stationary physical light sheen overlay */}
+        <div
+          className="vinyl-reflection-sheen"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            background: `conic-gradient(
+              from 42deg at 50% 50%,
+              rgba(255, 255, 255, 0.08) 0deg,
+              transparent 35deg,
+              transparent 145deg,
+              rgba(255, 255, 255, 0.08) 180deg,
+              transparent 215deg,
+              transparent 325deg,
+              rgba(255, 255, 255, 0.08) 360deg
+            )`,
+            pointerEvents: 'none',
+            mixBlendMode: 'screen'
+          }}
+        />
+      </div>
+    );
+  };
+
   return (
     <div
       className="spinning-vinyl-container"
@@ -244,17 +572,18 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
       }}
     >
       {/* Ambient background with album art blur aura */}
-      {finalThumbnail && (
+      {activeThumbnail && (
         <div
           style={{
             position: 'absolute',
             inset: '-20%',
-            backgroundImage: `url(${finalThumbnail})`,
+            backgroundImage: `url(${activeThumbnail})`,
             backgroundPosition: 'center',
             backgroundSize: 'cover',
             filter: 'blur(50px) brightness(0.2) saturate(1.3)',
             transform: 'scale(1.2)',
             opacity: 0.6,
+            transition: 'opacity 0.6s ease',
             pointerEvents: 'none'
           }}
         />
@@ -369,7 +698,7 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
             }}
           />
 
-          {/* ── Turntable Platter (Left side) ── */}
+          {/* ── Turntable Platter Bed (Stationary metallic platter rim and rubber mat) ── */}
           <div
             className="turntable-platter-bed"
             style={{
@@ -380,205 +709,141 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
               height: '88%',
               aspectRatio: '1 / 1',
               borderRadius: '50%',
-              // Clean dark metallic platter rim (NO outer coil dashes)
+              // Clean dark metallic platter rim
               background: 'linear-gradient(135deg, #2b2c32 0%, #151619 50%, #222328 100%)',
               border: '3px solid rgba(255, 255, 255, 0.14)',
               boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.8), 0 12px 32px rgba(0, 0, 0, 0.95)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              overflow: 'hidden'
+              overflow: 'visible'
             }}
           >
-            {/* Anti-static rubber platter mat with subtle concentric rings */}
+            {/* Anti-static rubber platter mat with concentric traction ridges */}
             <div
               style={{
                 position: 'absolute',
                 inset: '5px',
                 borderRadius: '50%',
-                background: 'radial-gradient(circle, #16171a 0%, #0c0d0f 100%)',
-                boxShadow: 'inset 0 0 12px rgba(0, 0, 0, 0.85)'
+                background: 'radial-gradient(circle at center, #0e0f11 0%, #18191d 60%, #121316 100%)',
+                boxShadow: 'inset 0 0 16px rgba(0, 0, 0, 0.95)',
+                pointerEvents: 'none'
+              }}
+            >
+              {/* Concentric anti-static rubber ridges */}
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: '14%',
+                  borderRadius: '50%',
+                  border: '1.5px solid rgba(255, 255, 255, 0.04)',
+                  boxShadow: 'inset 0 0 0 3px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(0, 0, 0, 0.6)'
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: '30%',
+                  borderRadius: '50%',
+                  border: '1.5px solid rgba(255, 255, 255, 0.04)',
+                  boxShadow: 'inset 0 0 0 3px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(0, 0, 0, 0.6)'
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: '46%',
+                  borderRadius: '50%',
+                  border: '1.5px solid rgba(255, 255, 255, 0.04)',
+                  boxShadow: 'inset 0 0 0 2px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(0, 0, 0, 0.6)'
+                }}
+              />
+            </div>
+
+            {/* Silver Center Spindle Pin (Fixed to platter center, always visible) */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '3.6%',
+                height: '3.6%',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle at 35% 35%, #ffffff 0%, #d4d4d8 30%, #71717a 70%, #27272a 100%)',
+                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.8)',
+                zIndex: 6,
+                pointerEvents: 'none'
               }}
             />
 
-            {/* ── Spinning Vinyl Record ── */}
+            {/* ── Vinyl Stage: active, outgoing, and incoming vinyl records ── */}
             <div
-              className="vinyl-record-wrapper"
+              className="turntable-vinyl-stage"
               style={{
-                position: 'relative',
-                width: '96%',
-                height: '96%',
-                borderRadius: '50%',
+                position: 'absolute',
+                inset: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.85))'
+                zIndex: 3,
+                pointerEvents: 'none'
               }}
             >
-              {/* Rotating Vinyl Disc */}
-              <div
-                className="vinyl-disc"
-                style={{
-                  position: 'relative',
-                  width: '100%',
-                  height: '100%',
-                  borderRadius: '50%',
-                  animation: 'nadanada-vinyl-spin 20s linear infinite',
-                  animationPlayState: isPlaying ? 'running' : 'paused',
-                  willChange: 'transform',
-                  background: `
-                    radial-gradient(circle at center,
-                      #0d0d0f 0%,
-                      #141417 87%,
-                      #1c1c1f 89%,
-                      #101012 90%,
-                      #18181b 92%,
-                      #242429 94%,
-                      #121214 96%,
-                      #222226 98%,
-                      #0b0b0d 100%
-                    )
-                  `,
-                  boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.12), inset 0 0 14px rgba(0,0,0,0.95)'
-                }}
-              >
-                {/* Concentric micro-groove texture */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: '50%',
-                    background: 'repeating-radial-gradient(circle at center, transparent 0px, transparent 2px, rgba(255, 255, 255, 0.022) 2.5px, transparent 3px)',
-                    pointerEvents: 'none'
-                  }}
-                />
-
-                {/* Center Label (Album Art - 90% of disc) */}
-                <div
-                  className="vinyl-center-label"
-                  style={{
-                    position: 'absolute',
-                    top: '50%',
-                    left: '50%',
-                    transform: 'translate(-50%, -50%)',
-                    width: '90%',
-                    height: '90%',
-                    borderRadius: '50%',
-                    overflow: 'hidden',
-                    boxShadow: '0 0 0 2px #0a0a0c, 0 0 0 3px rgba(255,255,255,0.14), inset 0 0 10px rgba(0,0,0,0.7)',
-                    background: '#18181b',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {finalThumbnail ? (
-                    <img
-                      src={finalThumbnail}
-                      alt={song?.title || 'Album Art'}
-                      style={{
-                        width: '100%',
-                        height: '100%',
-                        objectFit: 'cover',
-                        display: 'block'
-                      }}
-                      onError={() => setImgError(true)}
-                    />
-                  ) : (
+              {transitionPhase === 'swapping' ? (
+                <>
+                  {/* Outgoing Vinyl Record (Slides/spins out along revolver arc: 6PM to 12AM) */}
+                  {outgoingSong && (
                     <div
+                      key={`orbit-out-${outgoingSong.id}`}
                       style={{
+                        position: 'absolute',
+                        inset: 0,
                         display: 'flex',
-                        flexDirection: 'column',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        color: 'rgba(255,255,255,0.75)',
-                        textAlign: 'center',
-                        padding: '8px'
+                        transformOrigin: '50% -5%',
+                        animation: `${transitionDirection === 'backward' ? 'nadanada-revolver-slide-out-reverse' : 'nadanada-revolver-slide-out'} 0.82s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        willChange: 'transform, opacity',
+                        zIndex: 1
                       }}
                     >
-                      <Disc size={32} style={{ color: 'var(--accent-color)', marginBottom: '4px' }} />
-                      <span
-                        style={{
-                          fontSize: '0.65rem',
-                          fontWeight: 600,
-                          maxWidth: '85%',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {song?.title || 'Track'}
-                      </span>
+                      {renderVinylDisc(outgoingSong, {}, false, `outgoing-${outgoingSong.id}`)}
                     </div>
                   )}
 
-                  {/* Inner rim groove of the label */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      borderRadius: '50%',
-                      boxShadow: 'inset 0 0 0 1.5px rgba(255, 255, 255, 0.2)',
-                      pointerEvents: 'none'
-                    }}
-                  />
-
-                  {/* Center Spindle Hole */}
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: '7%',
-                      height: '7%',
-                      borderRadius: '50%',
-                      background: '#070708',
-                      border: '2px solid rgba(220, 220, 235, 0.7)',
-                      boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.95), 0 0 2px rgba(0,0,0,0.85)'
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Stationary physical light sheen overlay */}
-              <div
-                className="vinyl-reflection-sheen"
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: '50%',
-                  background: `conic-gradient(
-                    from 42deg at 50% 50%,
-                    rgba(255, 255, 255, 0.08) 0deg,
-                    transparent 35deg,
-                    transparent 145deg,
-                    rgba(255, 255, 255, 0.08) 180deg,
-                    transparent 215deg,
-                    transparent 325deg,
-                    rgba(255, 255, 255, 0.08) 360deg
-                  )`,
-                  pointerEvents: 'none',
-                  mixBlendMode: 'screen'
-                }}
-              />
-
-              {/* Silver Center Spindle Pin */}
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: '3.5%',
-                  height: '3.5%',
-                  borderRadius: '50%',
-                  background: 'radial-gradient(circle, #ffffff 0%, #a1a1aa 60%, #3f3f46 100%)',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                  zIndex: 2,
-                  pointerEvents: 'none'
-                }}
-              />
+                  {/* Incoming Vinyl Record (Slides/spins in along revolver arc: 12PM to 6PM) */}
+                  {incomingSong && (
+                    <div
+                      key={`orbit-in-${incomingSong.id}`}
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transformOrigin: '50% -5%',
+                        animation: `${transitionDirection === 'backward' ? 'nadanada-revolver-slide-in-reverse' : 'nadanada-revolver-slide-in'} 0.82s cubic-bezier(0.25, 1, 0.5, 1) forwards`,
+                        willChange: 'transform, opacity',
+                        zIndex: 2
+                      }}
+                    >
+                      {renderVinylDisc(incomingSong, {}, false, `incoming-${incomingSong.id}`)}
+                    </div>
+                  )}
+                </>
+              ) : (
+                /* Normal Active Vinyl Record */
+                displayedSong && renderVinylDisc(
+                  displayedSong,
+                  {
+                    transform: 'translate3d(0, 0, 0)',
+                    zIndex: 2
+                  },
+                  true,
+                  `active-${displayedSong.id}`
+                )
+              )}
             </div>
           </div>
 
@@ -859,16 +1124,16 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
 
             {/* ── Rotating Tonearm Assembly ──
                 Pivot center: (690, 120)
-                When paused (isPlaying=false): rests at 0deg in the arm clasp at (690, 415).
-                When playing (isPlaying=true): swings +54deg to the left deeply onto the vinyl record,
+                When paused / docked: rests at 0deg in the arm clasp at (690, 415).
+                When playing: swings +54deg to the left deeply onto the vinyl record,
                 positioning the stylus at (411.7, 322.2) squarely over the spinning vinyl record grooves.
             */}
             <g
               id="tonearm"
               style={{
                 transformOrigin: '690px 120px',
-                transform: isPlaying ? 'rotate(54deg)' : 'rotate(0deg)',
-                transition: 'transform 0.85s cubic-bezier(0.25, 1, 0.5, 1)'
+                transform: `rotate(${tonearmAngle}deg)`,
+                transition: `transform ${armTransitionDuration}s cubic-bezier(${armEasing})`
               }}
             >
               {/* Counterweight (extends up/back from pivot) */}
@@ -943,7 +1208,7 @@ export default function SpinningVinyl({ song, isPlaying = false, subtext = null 
                 strokeWidth="0.8"
               />
 
-              {/* Precision Machined Brushed Aluminum Faceplate Bezel (rx=4 matches NADANADA badge) */}
+              {/* Precision Machined Brushed Aluminum Faceplate Bezel */}
               <rect
                 x="590"
                 y="466"
