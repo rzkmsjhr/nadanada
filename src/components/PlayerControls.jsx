@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Maximize2, Minimize2 } from 'lucide-react';
+import { parseArtists } from '../utils/artistUtils';
 
 export default function PlayerControls({
   currentSong,
@@ -30,6 +31,7 @@ export default function PlayerControls({
   albumInfo,
   isLoadingAlbum,
   onAlbumClick,
+  onArtistClick,
   isMaximized,
   isFullscreen,
   onToggleFullscreen
@@ -50,7 +52,7 @@ export default function PlayerControls({
     setShouldScrollSubtitle(false);
   };
 
-  // Build the subtitle string: "Artist · Album"
+  // Build the subtitle parts: [{ type: 'artist', value: '...' }, { type: 'album', value: '...' }]
   const getSubtitle = () => {
     if (!currentSong) return null;
     
@@ -62,8 +64,8 @@ export default function PlayerControls({
     if (!artist && !album) return null;
     
     const parts = [];
-    if (artist) parts.push(artist);
-    if (album) parts.push(album);
+    if (artist) parts.push({ type: 'artist', value: artist });
+    if (album) parts.push({ type: 'album', value: album });
     return parts;
   };
 
@@ -96,16 +98,32 @@ export default function PlayerControls({
                   {subtitleParts.map((part, i) => (
                     <React.Fragment key={i}>
                       {i > 0 && <span style={{ margin: '0 6px', opacity: 0.5 }}>·</span>}
-                      {i === subtitleParts.length - 1 && albumInfo?.album && part === albumInfo.album ? (
+                      {part.type === 'album' ? (
                         <span 
                           onClick={(e) => { e.stopPropagation(); if (onAlbumClick) onAlbumClick(albumInfo); }}
                           className="album-link"
-                          title={`Browse "${albumInfo.album}" album`}
+                          title={`Browse "${albumInfo?.album}" album`}
                         >
-                          {part}
+                          {part.value}
                         </span>
                       ) : (
-                        <span>{part}</span>
+                        <span>
+                          {parseArtists(part.value).map((a, aIdx) => (
+                            <React.Fragment key={aIdx}>
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onArtistClick) onArtistClick(a.name);
+                                }}
+                                className="artist-link"
+                                title={`View ${a.name}'s page`}
+                              >
+                                {a.name}
+                              </span>
+                              {a.separator && <span style={{ opacity: 0.6 }}>{a.separator}</span>}
+                            </React.Fragment>
+                          ))}
+                        </span>
                       )}
                     </React.Fragment>
                   ))}

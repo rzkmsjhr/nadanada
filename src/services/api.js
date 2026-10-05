@@ -28,6 +28,8 @@ export const api = {
   saveLyrics: (videoId, title, artist, syncedLyrics) => invoke('save_lyrics', { videoId, title, artist, syncedLyrics }),
   getStreamUrl: (videoId) => invoke('get_stream_url', { videoId }),
   getVideoAlbumInfo: (videoId) => invoke('get_video_album_info', { videoId }),
+  getArtistDetails: (artistName, artistBrowseId = null) => invoke('get_artist_details', { artistName, artistBrowseId }),
+  getArtistTopSongs: (playlistId) => invoke('get_artist_top_songs', { playlistId }),
   getEmbedPort: async () => {
     if (cachedEmbedPort) return cachedEmbedPort;
     try {

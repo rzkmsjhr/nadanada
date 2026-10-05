@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
 import VideoOverlay from './VideoOverlay';
 import SpinningVinyl, { isAlbumArtTrack } from './SpinningVinyl';
+import ArtistHeroVisualizer from './ArtistHeroVisualizer';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
@@ -21,7 +22,15 @@ const Player = React.forwardRef(function Player({
   lyricsFontScale, chordsFontScale,
   downloadedIds,
   isVinylEnabled = true,
-  onToggleVinyl
+  onToggleVinyl,
+  selectedArtist,
+  artistDetails,
+  isLoadingArtist,
+  onArtistClick,
+  onCloseArtistPage,
+  onPlayArtistTopSongs,
+  onShuffleArtistTopSongs,
+  onAddArtistTopSongs
 }, ref) {
   
   const core = usePlayerCore({
@@ -473,7 +482,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Vinyl Effect Toggle Button - Bottom Left */}
-            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && isAlbumArtSong && (
+            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && !selectedArtist && isAlbumArtSong && (
               <button
                 className="btn btn-icon"
                 onClick={(e) => {
@@ -507,7 +516,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Captions button - Top Right */}
-            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && currentSong && !currentSong.is_local && core.captions?.length > 0 && (
+            {!isMiniPlayer && !isFullscreen && !videoOverlayMode && !selectedArtist && currentSong && !currentSong.is_local && core.captions?.length > 0 && (
               <div
                 style={{
                   position: 'absolute',
@@ -793,8 +802,18 @@ const Player = React.forwardRef(function Player({
             )}
           </div>
 
-          {/* Unified Photorealistic Direct Drive Turntable Plinth */}
-          {isVinylVisible && (
+          {/* Unified Photorealistic Direct Drive Turntable Plinth OR Artist Background Image */}
+          {selectedArtist ? (
+            <ArtistHeroVisualizer
+              artistName={selectedArtist}
+              artistDetails={artistDetails}
+              isLoading={isLoadingArtist}
+              onPlayAll={onPlayArtistTopSongs}
+              onShuffleAll={onShuffleArtistTopSongs}
+              onAddAll={onAddArtistTopSongs}
+              onClose={onCloseArtistPage}
+            />
+          ) : isVinylVisible && (
             <>
               <SpinningVinyl
                 song={currentVinylSong}
@@ -812,7 +831,7 @@ const Player = React.forwardRef(function Player({
             </>
           )}
 
-          {!currentSong && (
+          {!currentSong && !selectedArtist && (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255, 255, 255, 0.6)', textAlign: 'center', padding: '20px', zIndex: 10 }}>
               No song playing.<br/>Search for music to get started!
             </div>
@@ -948,7 +967,7 @@ const Player = React.forwardRef(function Player({
           )}
 
           {/* Invisible overlay */}
-          {!isMiniPlayer && !isFullscreen && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
+          {!isMiniPlayer && !isFullscreen && !selectedArtist && currentSong && <div data-tauri-drag-region style={{ position: 'absolute', inset: 0, background: 'transparent', zIndex: 5 }} />}
 
           {/* Video Overlay (Lyrics / Chords) */}
           {videoOverlayMode && (
@@ -1634,6 +1653,7 @@ const Player = React.forwardRef(function Player({
           albumInfo={albumInfo}
           isLoadingAlbum={isLoadingAlbum}
           onAlbumClick={onAlbumClick}
+          onArtistClick={onArtistClick}
           isMaximized={isMaximized}
           isFullscreen={isFullscreen}
           onToggleFullscreen={onToggleFullscreen}

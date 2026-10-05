@@ -1,4 +1,4 @@
-use crate::models::{AlbumInfo, KworbTrack, SpotifyTrack, Video};
+use crate::models::{AlbumInfo, ArtistDetails, ArtistSong, KworbTrack, SpotifyTrack, Video};
 use regex::Regex;
 
 const YTM_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -1722,6 +1722,353 @@ pub async fn get_video_album_info(video_id: String) -> Result<AlbumInfo, String>
     })
 }
 
+fn parse_artist_song(c: &serde_json::Value, default_artist: &str) -> Option<ArtistSong> {
+    let r = c.get("musicResponsiveListItemRenderer")?;
+    let id = r.pointer("/playlistItemData/videoId")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/videoId")
+                .and_then(|v| v.as_str())
+        })
+        .or_else(|| {
+            r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/watchEndpoint/videoId")
+                .and_then(|v| v.as_str())
+        })?
+        .to_string();
+
+    if id.is_empty() {
+        return None;
+    }
+
+    let title = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
+        .or_else(|| r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/title/runs/0/text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    if title.is_empty() {
+        return None;
+    }
+
+    let col1_runs = r.pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(|v| v.as_array());
+    let mut artist = String::new();
+    if let Some(runs) = col1_runs {
+        let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
+        artist = texts.concat();
+    }
+    if artist.is_empty() {
+        artist = default_artist.to_string();
+    }
+
+    let col2_runs = r.pointer("/flexColumns/2/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(|v| v.as_array());
+    let mut col2_text = String::new();
+    if let Some(runs) = col2_runs {
+        let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
+        col2_text = texts.concat();
+    }
+
+    let col3_runs = r.pointer("/flexColumns/3/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(|v| v.as_array());
+    let mut col3_text = String::new();
+    if let Some(runs) = col3_runs {
+        let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
+        col3_text = texts.concat();
+    }
+
+    let mut plays = None;
+    let mut album = None;
+
+    let col2_lower = col2_text.to_lowercase();
+    let col3_lower = col3_text.to_lowercase();
+
+    if col2_lower.contains("play") || col2_lower.contains("view") {
+        plays = Some(col2_text.trim().to_string());
+        if !col3_text.is_empty() && !col3_lower.contains("play") && !col3_lower.contains("view") {
+            album = Some(col3_text.trim().to_string());
+        }
+    } else if col3_lower.contains("play") || col3_lower.contains("view") {
+        plays = Some(col3_text.trim().to_string());
+        if !col2_text.is_empty() {
+            album = Some(col2_text.trim().to_string());
+        }
+    } else {
+        if !col2_text.is_empty() {
+            album = Some(col2_text.trim().to_string());
+        }
+    }
+
+    let duration = r.pointer("/fixedColumns/0/musicResponsiveListItemFixedColumnRenderer/text/runs/0/text")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let thumbnail = r.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last().or_else(|| arr.first()))
+        .and_then(|thumb| thumb.get("url").and_then(|u| u.as_str()))
+        .unwrap_or("")
+        .to_string();
+
+    Some(ArtistSong {
+        id,
+        title,
+        artist,
+        plays,
+        album,
+        duration,
+        thumbnail,
+    })
+}
+
+#[tauri::command]
+pub async fn get_artist_details(
+    artist_name: String,
+    artist_browse_id: Option<String>,
+) -> Result<ArtistDetails, String> {
+    let client = get_ytm_client();
+    let mut target_browse_id = artist_browse_id.unwrap_or_default().trim().to_string();
+    let mut search_avatar: Option<String> = None;
+
+    if target_browse_id.is_empty() {
+        let body = serde_json::json!({
+            "context": {
+                "client": {
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20240101.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                }
+            },
+            "query": artist_name,
+            "params": "EgWKAQIgAWoOEAQQAxAFEAkQEBAKEBU%3D"
+        });
+
+        let res = client.post("https://music.youtube.com/youtubei/v1/search")
+            .header("User-Agent", YTM_USER_AGENT)
+            .header("Referer", "https://music.youtube.com/")
+            .header("Origin", "https://music.youtube.com")
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to search artist: {}", e))?;
+
+        let json: serde_json::Value = res.json().await.map_err(|e| format!("Failed to parse artist search JSON: {}", e))?;
+        let shelf = json.pointer("/contents/tabbedSearchResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicShelfRenderer");
+        let items = shelf.and_then(|s| s.get("contents")).and_then(|c| c.as_array());
+
+        if let Some(items_arr) = items {
+            let mut best_item: Option<&serde_json::Value> = None;
+            for item in items_arr {
+                let title = item.pointer("/musicResponsiveListItemRenderer/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/text")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("");
+                if title.eq_ignore_ascii_case(&artist_name) {
+                    best_item = Some(item);
+                    break;
+                }
+            }
+            if best_item.is_none() {
+                best_item = items_arr.first();
+            }
+
+            if let Some(item) = best_item {
+                let r = item.get("musicResponsiveListItemRenderer");
+                target_browse_id = r.and_then(|x| x.pointer("/navigationEndpoint/browseEndpoint/browseId"))
+                    .or_else(|| r.and_then(|x| x.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/browseEndpoint/browseId")))
+                    .and_then(|b| b.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                search_avatar = r.and_then(|x| x.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails"))
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.last())
+                    .and_then(|t| t.get("url").and_then(|u| u.as_str()))
+                    .map(|s| s.to_string());
+            }
+        }
+    }
+
+    if target_browse_id.is_empty() {
+        return Err(format!("Could not find artist page for '{}'", artist_name));
+    }
+
+    // Browse artist endpoint
+    let browse_body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "browseId": target_browse_id
+    });
+
+    let browse_res = client.post("https://music.youtube.com/youtubei/v1/browse")
+        .header("User-Agent", YTM_USER_AGENT)
+        .header("Referer", "https://music.youtube.com/")
+        .header("Origin", "https://music.youtube.com")
+        .header("Content-Type", "application/json")
+        .json(&browse_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to browse artist: {}", e))?;
+
+    let browse_json: serde_json::Value = browse_res.json().await.map_err(|e| format!("Failed to parse browse JSON: {}", e))?;
+
+    let header = browse_json.pointer("/header/musicImmersiveHeaderRenderer")
+        .or_else(|| browse_json.pointer("/header/musicVisualHeaderRenderer"))
+        .or_else(|| browse_json.pointer("/header/musicHeaderRenderer"));
+
+    let resolved_name = header.and_then(|h| h.pointer("/title/runs/0/text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or(&artist_name)
+        .to_string();
+
+    let bg_img = header.and_then(|h| h.pointer("/thumbnail/musicThumbnailRenderer/thumbnail/thumbnails"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.last())
+        .and_then(|t| t.get("url").and_then(|u| u.as_str()))
+        .map(|s| s.to_string())
+        .or_else(|| search_avatar.clone());
+
+    let subscribers = header.and_then(|h| h.pointer("/subscriptionButton/subscribeButtonRenderer/subscriberCountText/runs/0/text"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+
+    let monthly_audience = header.and_then(|h| h.pointer("/monthlyListenerCount/runs/0/text"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+
+    let description = header.and_then(|h| h.pointer("/description/runs/0/text"))
+        .and_then(|s| s.as_str())
+        .map(|s| s.to_string());
+
+    let mut top_songs = Vec::new();
+    let mut top_songs_playlist_id = None;
+
+    if let Some(sections) = browse_json.pointer("/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents").and_then(|v| v.as_array()) {
+        for s in sections {
+            if let Some(shelf) = s.get("musicShelfRenderer") {
+                let shelf_title = shelf.pointer("/title/runs/0/text").and_then(|t| t.as_str()).unwrap_or("").to_lowercase();
+                if shelf_title.contains("song") || shelf_title.contains("top") {
+                    top_songs_playlist_id = shelf.pointer("/bottomEndpoint/browseEndpoint/browseId")
+                        .and_then(|b| b.as_str())
+                        .map(|s| s.to_string());
+
+                    if let Some(contents) = shelf.get("contents").and_then(|c| c.as_array()) {
+                        for item in contents {
+                            if let Some(song) = parse_artist_song(item, &resolved_name) {
+                                top_songs.push(song);
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    // Fallback: If no top songs in shelf, search for songs by this artist
+    if top_songs.is_empty() {
+        if let Ok(videos) = search_youtube_music(&resolved_name, Some("song")).await {
+            for v in videos.into_iter().take(10) {
+                top_songs.push(ArtistSong {
+                    id: v.id,
+                    title: v.title,
+                    artist: v.channel,
+                    plays: None,
+                    album: None,
+                    duration: Some(v.duration),
+                    thumbnail: v.thumbnail,
+                });
+            }
+        }
+    }
+
+    Ok(ArtistDetails {
+        name: resolved_name,
+        browse_id: target_browse_id,
+        background_image: bg_img,
+        avatar: search_avatar,
+        subscribers,
+        monthly_audience,
+        description,
+        top_songs,
+        top_songs_playlist_id,
+    })
+}
+
+#[tauri::command]
+pub async fn get_artist_top_songs(playlist_id: String) -> Result<Vec<ArtistSong>, String> {
+    let client = get_ytm_client();
+    let browse_id = if playlist_id.starts_with("VL") {
+        playlist_id.clone()
+    } else {
+        format!("VL{}", playlist_id)
+    };
+
+    let browse_body = serde_json::json!({
+        "context": {
+            "client": {
+                "clientName": "WEB_REMIX",
+                "clientVersion": "1.20240101.01.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        },
+        "browseId": browse_id
+    });
+
+    let browse_res = client.post("https://music.youtube.com/youtubei/v1/browse")
+        .header("User-Agent", YTM_USER_AGENT)
+        .header("Referer", "https://music.youtube.com/")
+        .header("Origin", "https://music.youtube.com")
+        .header("Content-Type", "application/json")
+        .json(&browse_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to browse top songs playlist: {}", e))?;
+
+    let browse_json: serde_json::Value = browse_res.json().await.map_err(|e| format!("Failed to parse playlist JSON: {}", e))?;
+
+    let contents = browse_json.pointer("/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/contents")
+        .or_else(|| browse_json.pointer("/contents/twoColumnBrowseResultsRenderer/secondaryContents/sectionListRenderer/contents/0/musicShelfRenderer/contents"))
+        .or_else(|| browse_json.pointer("/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicPlaylistShelfRenderer/contents"))
+        .or_else(|| browse_json.pointer("/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents/0/musicShelfRenderer/contents"))
+        .and_then(|v| v.as_array());
+
+    let mut songs = Vec::new();
+    if let Some(items) = contents {
+        for item in items {
+            if let Some(song) = parse_artist_song(item, "") {
+                songs.push(song);
+            }
+        }
+    }
+
+    if songs.is_empty() {
+        // Fallback: use get_youtube_playlist
+        let fallback_tracks = get_youtube_playlist(playlist_id.replace("VL", ""), String::new()).await?;
+        for t in fallback_tracks {
+            songs.push(ArtistSong {
+                id: t.id,
+                title: t.title,
+                artist: t.channel,
+                plays: None,
+                album: None,
+                duration: Some(t.duration),
+                thumbnail: t.thumbnail,
+            });
+        }
+    }
+
+    Ok(songs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2013,6 +2360,28 @@ mod tests {
             assert_eq!(results_breakbot[0].channel, "Breakbot");
             assert!(results_breakbot[0].title.contains("Baby I'm Yours"));
             assert_eq!(results_breakbot[0].item_type.as_deref(), Some("song"));
+        });
+    }
+
+    #[test]
+    fn test_artist_details() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let details = get_artist_details("Adele".to_string(), None).await;
+            assert!(details.is_ok(), "Should fetch artist details for Adele: {:?}", details.err());
+            let d = details.unwrap();
+            println!("Artist: {}, Top Songs count: {}, Bg: {:?}", d.name, d.top_songs.len(), d.background_image);
+            assert!(d.name.to_lowercase().contains("adele"));
+            assert!(!d.top_songs.is_empty(), "Should return top songs for Adele");
+            assert!(d.background_image.is_some() || d.avatar.is_some(), "Should have background or avatar image");
+
+            if let Some(playlist_id) = d.top_songs_playlist_id {
+                let full_top_songs = get_artist_top_songs(playlist_id).await;
+                assert!(full_top_songs.is_ok(), "Should fetch full top songs playlist: {:?}", full_top_songs.err());
+                let songs = full_top_songs.unwrap();
+                println!("Full top songs count: {}", songs.len());
+                assert!(songs.len() >= d.top_songs.len(), "Full top songs should have at least as many songs as shelf");
+            }
         });
     }
 }

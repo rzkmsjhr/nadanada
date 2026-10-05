@@ -71,7 +71,9 @@ pub fn run() {
             playlists::load_playlists,
             playlists::save_playlists,
             lyrics::get_lyrics,
-            lyrics::save_lyrics
+            lyrics::save_lyrics,
+            youtube::get_artist_details,
+            youtube::get_artist_top_songs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

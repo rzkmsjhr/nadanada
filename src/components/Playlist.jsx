@@ -1,7 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { Trash2, GripVertical, Plus, Check, Download, Loader2, ListPlus } from 'lucide-react';
+import { parseArtists } from '../utils/artistUtils';
 
-const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist, albumInfo, onAlbumClick }) => {
+const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist, albumInfo, onAlbumClick, onArtistClick }) => {
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
@@ -63,9 +64,26 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
                 let artist = (albumInfo?.artist) || cleanChannel;
                 artist = artist.replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
                 let album = (albumInfo?.album || '').replace(/Elley\s+Duh[\uFFFD\?]/gi, 'Elley Duhé');
+                const parsedArtists = parseArtists(artist);
                 return (
                   <>
-                    <span>{artist}</span>
+                    <span>
+                      {parsedArtists.map((a, aIdx) => (
+                        <React.Fragment key={aIdx}>
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onArtistClick) onArtistClick(a.name);
+                            }}
+                            className="artist-link"
+                            title={`View ${a.name}'s page`}
+                          >
+                            {a.name}
+                          </span>
+                          {a.separator && <span style={{ opacity: 0.6 }}>{a.separator}</span>}
+                        </React.Fragment>
+                      ))}
+                    </span>
                     {album && (
                       <>
                         <span style={{ margin: '0 4px', opacity: 0.5 }}>·</span>
@@ -176,7 +194,7 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
   );
 });
 
-export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone, albumInfo, albumCache, onAlbumClick }) {
+export default React.memo(function Playlist({ playlist, currentIndex, onSelectIndex, onRemove, onReorder, isTrendingMode, onAddSong, isDownloadedView, onDownloadSong, downloadingSongId, downloadedIds, onAddToSavedPlaylist, shouldScrollToBottom, onScrollToBottomDone, albumInfo, albumCache, onAlbumClick, onArtistClick }) {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [addedSongs, setAddedSongs] = useState(new Set());
   const containerRef = useRef(null);
@@ -271,6 +289,7 @@ export default React.memo(function Playlist({ playlist, currentIndex, onSelectIn
                onAddToSavedPlaylist={onAddToSavedPlaylist}
                albumInfo={isActive ? albumInfo : (albumCache?.[song.id] || null)}
                onAlbumClick={onAlbumClick}
+               onArtistClick={onArtistClick}
             />
           );
         })}

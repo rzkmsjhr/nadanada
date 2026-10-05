@@ -48,3 +48,27 @@ pub struct DownloadedSong {
     pub is_local: bool,
     pub file_path: String,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ArtistSong {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub plays: Option<String>,
+    pub album: Option<String>,
+    pub duration: Option<String>,
+    pub thumbnail: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ArtistDetails {
+    pub name: String,
+    pub browse_id: String,
+    pub background_image: Option<String>,
+    pub avatar: Option<String>,
+    pub subscribers: Option<String>,
+    pub monthly_audience: Option<String>,
+    pub description: Option<String>,
+    pub top_songs: Vec<ArtistSong>,
+    pub top_songs_playlist_id: Option<String>,
+}

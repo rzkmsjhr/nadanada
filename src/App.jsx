@@ -1,5 +1,5 @@
 import { useMusicDiscovery, parseDuration } from "./hooks/useMusicDiscovery";
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Player from './components/Player';
 import { Music2, Sun, Moon, Palette, Search as SearchIcon, X, Minus, Square, Infinity, Disc, Trash2, Save, FolderOpen, FolderPlus, AlertTriangle, ListMusic, TrendingUp, Globe, ArrowLeft, Loader2, Download, CheckCircle, ListPlus, Pencil, Check } from 'lucide-react';
 import { SavedPlaylistItem, SavedPlaylistButtonItem } from "./components/SavedPlaylists";
@@ -21,6 +21,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { usePlaylistManager } from "./hooks/usePlaylistManager";
 import { useSystemIntegration } from "./hooks/useSystemIntegration";
 import { useAlbumInfo } from "./hooks/useAlbumInfo";
+import { useArtistPage } from "./hooks/useArtistPage";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -209,6 +210,97 @@ function App() {
     isAudioPlaying,
     setIsAudioPlaying
   });
+  const {
+    selectedArtist,
+    artistDetails,
+    isLoadingArtist,
+    artistError,
+    isLoadingMoreSongs,
+    openArtistPage,
+    closeArtistPage,
+    loadMoreTopSongs
+  } = useArtistPage();
+
+  const handleOpenArtistPage = useCallback((artistName, artistBrowseId = null) => {
+    setShowSearch(false);
+    setShowDownloadedList(false);
+    openArtistPage(artistName, artistBrowseId);
+  }, [openArtistPage]);
+
+  const handlePlayArtistTopSongs = useCallback((tracksToPlay = null) => {
+    const songs = tracksToPlay || artistDetails?.top_songs;
+    if (!songs || songs.length === 0) return;
+
+    if (!savedPlaylist) {
+      setSavedPlaylist([...playlist]);
+    }
+    const timestamp = Date.now();
+    const newPlaylist = songs.map((t, i) => ({
+      id: t.id,
+      title: t.title,
+      channel: t.artist || selectedArtist,
+      thumbnail: t.thumbnail,
+      duration: t.duration || '',
+      album: t.album || '',
+      queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+
+    setPlaylist(newPlaylist);
+    setCurrentIndex(0);
+    setIsAudioPlaying(true);
+  }, [artistDetails, selectedArtist, savedPlaylist, playlist, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+
+  const handleShuffleArtistTopSongs = useCallback(() => {
+    const songs = artistDetails?.top_songs;
+    if (!songs || songs.length === 0) return;
+
+    const shuffled = [...songs].sort(() => Math.random() - 0.5);
+    handlePlayArtistTopSongs(shuffled);
+  }, [artistDetails, handlePlayArtistTopSongs]);
+
+  const handleAddArtistTopSongs = useCallback(() => {
+    const songs = artistDetails?.top_songs;
+    if (!songs || songs.length === 0) return;
+
+    const timestamp = Date.now();
+    const newTracks = songs.map((t, i) => ({
+      id: t.id,
+      title: t.title,
+      channel: t.artist || selectedArtist,
+      thumbnail: t.thumbnail,
+      duration: t.duration || '',
+      album: t.album || '',
+      queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+
+    handleAddMultiple(newTracks);
+    setSuccessMessage(`Added ${newTracks.length} songs by ${selectedArtist} to queue`);
+  }, [artistDetails, selectedArtist, handleAddMultiple]);
+
+  const handlePlayArtistSong = useCallback((song) => {
+    if (!song) return;
+    const songs = artistDetails?.top_songs || [song];
+    if (!savedPlaylist) {
+      setSavedPlaylist([...playlist]);
+    }
+
+    const timestamp = Date.now();
+    const newPlaylist = songs.map((t, i) => ({
+      id: t.id,
+      title: t.title,
+      channel: t.artist || selectedArtist,
+      thumbnail: t.thumbnail,
+      duration: t.duration || '',
+      album: t.album || '',
+      queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
+    }));
+
+    setPlaylist(newPlaylist);
+    const clickedIdx = newPlaylist.findIndex(t => t.id === song.id);
+    setCurrentIndex(clickedIdx !== -1 ? clickedIdx : 0);
+    setIsAudioPlaying(true);
+  }, [artistDetails, selectedArtist, savedPlaylist, playlist, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+
   const handleToggleSearch = () => {
     console.log("Toggle Search. hasAdded:", hasAddedSongInSearchRef.current, "showSearch:", showSearch);
     if (showSearch) {
@@ -226,6 +318,7 @@ function App() {
       // Opening search view
       hasAddedSongInSearchRef.current = false;
       setShowDownloadedList(false);
+      closeArtistPage();
       setShowSearch(true);
     }
   };
@@ -450,6 +543,15 @@ function App() {
   const contextValue = {
     showSearch, setShowSearch,
     showDownloadedList, setShowDownloadedList,
+    selectedArtist,
+    artistDetails,
+    isLoadingArtist,
+    artistError,
+    isLoadingMoreSongs,
+    openArtistPage: handleOpenArtistPage,
+    closeArtistPage,
+    loadMoreTopSongs,
+    handlePlayArtistSong,
     playlist, setPlaylist,
     downloadedSongs, setDownloadedSongs,
     currentSong,
@@ -555,7 +657,7 @@ function App() {
       } : isMiniPlayer ? { flex: 1, display: 'flex', flexDirection: 'column' } : topPanelStyle}>
           <div style={{
           display: 'grid',
-          gridTemplateRows: (showSearch && !isMaximized) || isMiniPlayer || isFullscreen ? '0fr' : '1fr',
+          gridTemplateRows: ((showSearch || Boolean(selectedArtist)) && !isMaximized) || isMiniPlayer || isFullscreen ? '0fr' : '1fr',
           transition: 'grid-template-rows 0.35s cubic-bezier(0.4, 0, 0.2, 1)'
         }}>
             <div style={{
@@ -624,7 +726,7 @@ function App() {
             <Player 
               ref={playerRef} 
               currentSong={currentSong} 
-              isSearchExpanded={showSearch && !isMaximized} 
+              isSearchExpanded={(showSearch || Boolean(selectedArtist)) && !isMaximized} 
               nextSong={trueNextSong} 
               onNext={handleNext} 
               onPrevious={handlePrevious} 
@@ -678,6 +780,14 @@ function App() {
               }}
               isVinylEnabled={isVinylEnabled}
               onToggleVinyl={handleToggleVinyl}
+              selectedArtist={selectedArtist}
+              artistDetails={artistDetails}
+              isLoadingArtist={isLoadingArtist}
+              onArtistClick={handleOpenArtistPage}
+              onCloseArtistPage={closeArtistPage}
+              onPlayArtistTopSongs={handlePlayArtistTopSongs}
+              onShuffleArtistTopSongs={handleShuffleArtistTopSongs}
+              onAddArtistTopSongs={handleAddArtistTopSongs}
             />
           </div>
         </div>
@@ -724,6 +834,8 @@ function App() {
             setShouldScrollPlaylistToBottom={setShouldScrollPlaylistToBottom}
             setShowSearch={setShowSearch}
             handleToggleSearch={handleToggleSearch}
+            selectedArtist={selectedArtist}
+            onCloseArtistPage={closeArtistPage}
             api={api}
             loadDownloadedSongs={loadDownloadedSongs}
             setGlobalError={setGlobalError}

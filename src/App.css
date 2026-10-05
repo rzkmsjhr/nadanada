@@ -691,14 +691,16 @@ body {
   animation: spin 1s linear infinite;
 }
 
-.album-link {
+.album-link,
+.artist-link {
   color: inherit;
   cursor: pointer;
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
-.album-link:hover {
+.album-link:hover,
+.artist-link:hover {
   color: var(--accent-color);
   text-decoration: underline;
   text-underline-offset: 2px;

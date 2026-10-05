@@ -31,6 +31,8 @@ export default function PlaylistHeader({
   setShouldScrollPlaylistToBottom,
   setShowSearch,
   handleToggleSearch,
+  selectedArtist,
+  onCloseArtistPage,
   api,
   loadDownloadedSongs,
   currentIndex,
@@ -53,7 +55,26 @@ export default function PlaylistHeader({
   return (
     <div style={staticStyles.headerBar}>
       <div style={staticStyles.headerTitle}>
-        {showSearch ? 'Search YouTube' : showDownloadedList ? (
+        {selectedArtist ? (
+          <button onClick={() => {
+            onCloseArtistPage?.();
+            handleRestoreSavedPlaylist();
+          }} style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-main)',
+            fontWeight: 'inherit',
+            fontSize: 'inherit',
+            fontFamily: 'inherit',
+            cursor: 'pointer',
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }} title="Return to your original playlist">
+            <ArrowLeft size={18} style={{ marginTop: '2px' }} /> Back to My Playlist
+          </button>
+        ) : showSearch ? 'Search YouTube' : showDownloadedList ? (
           <button onClick={() => {
             setShowDownloadedList(false);
             handleRestoreSavedPlaylist();
@@ -107,7 +128,7 @@ export default function PlaylistHeader({
         )}
       </div>
       <div style={staticStyles.headerIcons}>
-        {!showSearch && !showDownloadedList && (
+        {!showSearch && !showDownloadedList && !selectedArtist && (
           <>
             {!savedPlaylist && (
               <button className="btn btn-icon" onClick={() => setShowLoadPrompt(true)} title="Load Playlist" style={staticStyles.iconBtn}>
@@ -184,51 +205,62 @@ export default function PlaylistHeader({
             </div>
           </>
         )}
-        <button className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`} onClick={() => {
-          if (previewSavedStateRef.current || previewSong) {
-            handleStopPreview();
-          }
-          if (showSearch && hasAddedSongInSearchRef.current) {
-            setShouldScrollPlaylistToBottom(true);
-            hasAddedSongInSearchRef.current = false;
-          }
-          if (showDownloadedList && savedPlaylist) {
+        {selectedArtist ? (
+          <button className="btn btn-icon" onClick={() => {
+            onCloseArtistPage?.();
             handleRestoreSavedPlaylist();
-          }
-          setShowDownloadedList(!showDownloadedList);
-          setShowSearch(false);
-        }} title="Downloaded Songs" style={{
-          padding: '6px',
-          color: showDownloadedList ? 'var(--accent-color)' : 'inherit'
-        }}>
-          <Download size={18} />
-        </button>
-        {showDownloadedList && (
-          <button className="btn btn-icon" onClick={async () => {
-            try {
-              const filePath = await open({
-                multiple: false,
-                filters: [{
-                  name: 'Audio',
-                  extensions: ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm']
-                }]
-              });
-              if (filePath) {
-                await api.addLocalSong(filePath);
-                loadDownloadedSongs();
+          }} title="Close Artist Page" style={{ padding: '6px' }}>
+            <X size={18} />
+          </button>
+        ) : (
+          <>
+            <button className={`btn btn-icon ${showDownloadedList ? 'active' : ''}`} onClick={() => {
+              if (previewSavedStateRef.current || previewSong) {
+                handleStopPreview();
               }
-            } catch (e) {
-              console.error('Failed to add local song:', e);
-              setGlobalError(`Failed to add local song: ${e.message || e}`);
-            }
-          }} title="Add Local Audio File" style={{ padding: '6px' }}>
-            <FolderPlus size={18} />
-          </button>
-        )}
-        {!savedPlaylist && !showDownloadedList && (
-          <button className="btn btn-icon" onClick={handleToggleSearch} title={showSearch ? 'Close Search' : 'Search Music'} style={{ padding: '6px' }}>
-            {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
-          </button>
+              if (showSearch && hasAddedSongInSearchRef.current) {
+                setShouldScrollPlaylistToBottom(true);
+                hasAddedSongInSearchRef.current = false;
+              }
+              if (showDownloadedList && savedPlaylist) {
+                handleRestoreSavedPlaylist();
+              }
+              setShowDownloadedList(!showDownloadedList);
+              setShowSearch(false);
+            }} title="Downloaded Songs" style={{
+              padding: '6px',
+              color: showDownloadedList ? 'var(--accent-color)' : 'inherit'
+            }}>
+              <Download size={18} />
+            </button>
+            {showDownloadedList && (
+              <button className="btn btn-icon" onClick={async () => {
+                try {
+                  const filePath = await open({
+                    multiple: false,
+                    filters: [{
+                      name: 'Audio',
+                      extensions: ['mp3', 'm4a', 'wav', 'ogg', 'flac', 'webm']
+                    }]
+                  });
+                  if (filePath) {
+                    await api.addLocalSong(filePath);
+                    loadDownloadedSongs();
+                  }
+                } catch (e) {
+                  console.error('Failed to add local song:', e);
+                  setGlobalError(`Failed to add local song: ${e.message || e}`);
+                }
+              }} title="Add Local Audio File" style={{ padding: '6px' }}>
+                <FolderPlus size={18} />
+              </button>
+            )}
+            {!savedPlaylist && !showDownloadedList && (
+              <button className="btn btn-icon" onClick={handleToggleSearch} title={showSearch ? 'Close Search' : 'Search Music'} style={{ padding: '6px' }}>
+                {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

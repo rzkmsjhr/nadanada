@@ -1,12 +1,22 @@
 import React from 'react';
 import Search from './Search';
 import Playlist from './Playlist';
+import ArtistPage from './ArtistPage';
 import { useAppContext } from '../context/AppContext';
 
 export default function PlaylistViews() {
   const {
     showSearch,
     showDownloadedList,
+    selectedArtist,
+    artistDetails,
+    isLoadingArtist,
+    artistError,
+    isLoadingMoreSongs,
+    openArtistPage,
+    loadMoreTopSongs,
+    handlePlayArtistSong,
+    isAudioPlaying,
     playlist,
     downloadedSongs,
     currentSong,
@@ -37,6 +47,34 @@ export default function PlaylistViews() {
     albumCache,
     onAlbumClick
   } = useAppContext();
+
+  if (selectedArtist) {
+    return (
+      <ArtistPage
+        artistName={selectedArtist}
+        artistDetails={artistDetails}
+        isLoading={isLoadingArtist}
+        error={artistError}
+        onRetry={() => openArtistPage(selectedArtist)}
+        onPlaySong={handlePlayArtistSong}
+        onAddSong={handleAddSong}
+        onPlayPreview={handlePlayPreview}
+        onStopPreview={handleStopPreview}
+        previewSongId={previewSong?.id}
+        currentSongId={currentSong?.id}
+        isPlaying={isAudioPlaying}
+        playlist={playlist}
+        downloadedIds={downloadedIds}
+        downloadingSongId={downloadingSongId}
+        onDownloadSong={handleDownloadSong}
+        onAlbumClick={onAlbumClick}
+        onArtistClick={openArtistPage}
+        onLoadMoreTopSongs={loadMoreTopSongs}
+        isLoadingMoreSongs={isLoadingMoreSongs}
+      />
+    );
+  }
+
   if (showSearch) {
     return (
       <div style={{ padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }}>
@@ -95,6 +133,7 @@ export default function PlaylistViews() {
         isDownloadedView={true} 
         onAddSong={() => {}} 
         albumCache={albumCache}
+        onArtistClick={openArtistPage}
       />
     );
   }
@@ -121,6 +160,7 @@ export default function PlaylistViews() {
       albumInfo={albumInfo}
       albumCache={albumCache}
       onAlbumClick={onAlbumClick}
+      onArtistClick={openArtistPage}
     />
   );
 }
