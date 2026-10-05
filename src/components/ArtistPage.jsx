@@ -16,6 +16,265 @@ import {
 } from 'lucide-react';
 import { parseArtists } from '../utils/artistUtils';
 
+const ArtistSongItem = React.memo(({
+  song,
+  idx,
+  artistName,
+  isCurrentTrack,
+  isPreviewing,
+  isAdded,
+  isDownloaded,
+  isDownloading,
+  onPlaySong,
+  onPlayPreview,
+  onStopPreview,
+  onAddSong,
+  onDownloadSong,
+  onAlbumClick,
+  onArtistClick
+}) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [shouldScroll, setShouldScroll] = useState(false);
+  const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
+  const textRef = useRef(null);
+  const subtitleRef = useRef(null);
+
+  const handleMouseEnter = () => {
+    if (textRef.current) {
+      setShouldScroll(textRef.current.scrollWidth > textRef.current.clientWidth);
+    }
+    if (subtitleRef.current) {
+      setShouldScrollSubtitle(subtitleRef.current.scrollWidth > subtitleRef.current.clientWidth);
+    }
+    setIsHovered(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovered(false);
+    setShouldScroll(false);
+    setShouldScrollSubtitle(false);
+  };
+
+  const parsedArtists = parseArtists(song.artist || artistName);
+
+  return (
+    <div
+      className={`song-item ${isCurrentTrack ? 'active' : ''}`}
+      onClick={() => onPlaySong?.(song)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '7px 8px',
+        borderRadius: '8px',
+        gap: '10px',
+        cursor: 'pointer',
+        borderBottom: 'none',
+        transition: 'background 0.15s ease'
+      }}
+    >
+      {/* Rank Index */}
+      <div style={{
+        width: '24px',
+        textAlign: 'center',
+        fontSize: '0.85rem',
+        fontWeight: 600,
+        color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-muted)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0
+      }}>
+        {idx + 1}
+      </div>
+
+      {/* Song Thumbnail */}
+      <img
+        src={song.thumbnail}
+        alt=""
+        style={{
+          width: '42px',
+          height: '42px',
+          borderRadius: '5px',
+          objectFit: 'cover',
+          flexShrink: 0
+        }}
+      />
+
+      {/* Song Info (Title & Subtitle with marquee animation on hover) */}
+      <div className="song-info">
+        <div className="song-title-wrapper">
+          <div
+            ref={textRef}
+            className={`song-title ${isHovered && shouldScroll ? 'scrolling' : ''}`}
+            style={{
+              fontSize: '0.88rem',
+              fontWeight: 600,
+              color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-main)'
+            }}
+          >
+            {song.title}
+          </div>
+        </div>
+
+        <div className="song-title-wrapper" style={{ marginTop: '2px' }}>
+          <div
+            ref={subtitleRef}
+            className={`song-title ${isHovered && shouldScrollSubtitle ? 'scrolling' : ''}`}
+            style={{
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              fontWeight: 400,
+              paddingBottom: 0
+            }}
+          >
+            {/* Multiple Artists Clickable Links */}
+            <span>
+              {parsedArtists.map((a, i) => (
+                <React.Fragment key={i}>
+                  <span
+                    className="artist-link"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onArtistClick) onArtistClick(a.name);
+                    }}
+                    title={`View ${a.name}'s page`}
+                  >
+                    {a.name}
+                  </span>
+                  {a.separator && <span style={{ opacity: 0.6 }}>{a.separator}</span>}
+                </React.Fragment>
+              ))}
+            </span>
+
+            {/* Plays count (e.g. 664M plays) */}
+            {song.plays && (
+              <>
+                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
+                <span style={{ color: 'var(--text-main)', opacity: 0.85 }}>{song.plays}</span>
+              </>
+            )}
+
+            {/* Album (clickable) */}
+            {song.album && (
+              <>
+                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
+                <span
+                  className="album-link"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onAlbumClick) {
+                      onAlbumClick({ album: song.album, artist: song.artist || artistName }, song.id);
+                    }
+                  }}
+                  title={`Browse album "${song.album}"`}
+                >
+                  {song.album}
+                </span>
+              </>
+            )}
+
+            {/* Duration fallback */}
+            {!song.plays && song.duration && (
+              <>
+                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
+                <span>{song.duration}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div 
+        style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Preview button */}
+        {onPlayPreview && (
+          <button
+            className="btn btn-icon"
+            onClick={() => {
+              if (isPreviewing) {
+                onStopPreview?.();
+              } else {
+                onPlayPreview({
+                  id: song.id,
+                  title: song.title,
+                  channel: song.artist || artistName,
+                  thumbnail: song.thumbnail,
+                  duration: song.duration
+                });
+              }
+            }}
+            title={isPreviewing ? "Stop Preview" : "Preview song"}
+            style={{
+              padding: '6px',
+              color: isPreviewing ? 'var(--accent-color)' : 'var(--text-muted)'
+            }}
+          >
+            {isPreviewing ? <Square size={15} fill="currentColor" /> : <Sparkles size={15} />}
+          </button>
+        )}
+
+        {/* Add to Playlist button */}
+        {onAddSong && (
+          <button
+            className="btn btn-icon"
+            onClick={() => {
+              if (!isAdded) {
+                onAddSong({
+                  id: song.id,
+                  title: song.title,
+                  channel: song.artist || artistName,
+                  thumbnail: song.thumbnail,
+                  duration: song.duration || '',
+                  album: song.album
+                });
+              }
+            }}
+            disabled={isAdded}
+            title={isAdded ? "Already in playlist" : "Add to playlist"}
+            style={{
+              padding: '6px',
+              color: isAdded ? 'var(--accent-color)' : 'var(--text-muted)'
+            }}
+          >
+            {isAdded ? <Check size={16} /> : <Plus size={16} />}
+          </button>
+        )}
+
+        {/* Download button */}
+        {onDownloadSong && (
+          isDownloading ? (
+            <button className="btn btn-icon" disabled style={{ padding: '6px' }}>
+              <Loader2 size={15} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
+            </button>
+          ) : isDownloaded ? (
+            <button className="btn btn-icon" disabled style={{ padding: '6px' }} title="Downloaded">
+              <Check size={15} style={{ color: 'var(--accent-color)' }} />
+            </button>
+          ) : (
+            <button
+              className="btn btn-icon"
+              onClick={() => onDownloadSong({
+                id: song.id,
+                title: song.title,
+                channel: song.artist || artistName
+              })}
+              title="Download for offline"
+              style={{ padding: '6px', color: 'var(--text-muted)' }}
+            >
+              <Download size={15} />
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+});
+
 export default function ArtistPage({
   artistName,
   artistDetails,
@@ -128,225 +387,26 @@ export default function ArtistPage({
 
         {/* Songs List */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {topSongs.map((song, idx) => {
-            const isCurrentTrack = currentSongId === song.id;
-            const isPreviewing = previewSongId === song.id;
-            const isAdded = playlist.some(s => s.id === song.id);
-            const isDownloaded = downloadedIds?.has(song.id);
-            const isDownloading = downloadingSongId === song.id;
-
-            return (
-              <div
-                key={song.id || idx}
-                className={`song-item ${isCurrentTrack ? 'active' : ''}`}
-                onClick={() => onPlaySong?.(song)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '7px 8px',
-                  borderRadius: '8px',
-                  gap: '10px',
-                  cursor: 'pointer',
-                  borderBottom: 'none',
-                  transition: 'background 0.15s ease'
-                }}
-              >
-                {/* Rank Index */}
-                <div style={{
-                  width: '24px',
-                  textAlign: 'center',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-muted)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0
-                }}>
-                  {idx + 1}
-                </div>
-
-                {/* Song Thumbnail */}
-                <img
-                  src={song.thumbnail}
-                  alt=""
-                  style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '5px',
-                    objectFit: 'cover',
-                    flexShrink: 0
-                  }}
-                />
-
-                {/* Song Info (Title, Artists, Plays, Album) */}
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  <div style={{
-                    fontSize: '0.88rem',
-                    fontWeight: 600,
-                    color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-main)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}>
-                    {song.title}
-                  </div>
-
-                  <div style={{
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis'
-                  }}>
-                    {/* Multiple Artists Clickable Links */}
-                    {(() => {
-                      const artists = parseArtists(song.artist || artistName);
-                      return artists.map((a, i) => (
-                        <React.Fragment key={i}>
-                          <span
-                            className="artist-link"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (onArtistClick) onArtistClick(a.name);
-                            }}
-                            title={`View ${a.name}`}
-                          >
-                            {a.name}
-                          </span>
-                          {a.separator && <span style={{ opacity: 0.6 }}>{a.separator}</span>}
-                        </React.Fragment>
-                      ));
-                    })()}
-
-                    {/* Plays count (e.g. 664M plays) */}
-                    {song.plays && (
-                      <>
-                        <span style={{ opacity: 0.4 }}>•</span>
-                        <span style={{ color: 'var(--text-main)', opacity: 0.85 }}>{song.plays}</span>
-                      </>
-                    )}
-
-                    {/* Album (clickable) */}
-                    {song.album && (
-                      <>
-                        <span style={{ opacity: 0.4 }}>•</span>
-                        <span
-                          className="album-link"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onAlbumClick) {
-                              onAlbumClick({ album: song.album, artist: song.artist || artistName }, song.id);
-                            }
-                          }}
-                          title={`Browse album "${song.album}"`}
-                        >
-                          {song.album}
-                        </span>
-                      </>
-                    )}
-
-                    {/* Duration fallback */}
-                    {!song.plays && song.duration && (
-                      <>
-                        <span style={{ opacity: 0.4 }}>•</span>
-                        <span>{song.duration}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div 
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Preview button */}
-                  {onPlayPreview && (
-                    <button
-                      className="btn btn-icon"
-                      onClick={() => {
-                        if (isPreviewing) {
-                          onStopPreview?.();
-                        } else {
-                          onPlayPreview({
-                            id: song.id,
-                            title: song.title,
-                            channel: song.artist || artistName,
-                            thumbnail: song.thumbnail,
-                            duration: song.duration
-                          });
-                        }
-                      }}
-                      title={isPreviewing ? "Stop Preview" : "Preview song"}
-                      style={{
-                        padding: '6px',
-                        color: isPreviewing ? 'var(--accent-color)' : 'var(--text-muted)'
-                      }}
-                    >
-                      {isPreviewing ? <Square size={15} fill="currentColor" /> : <Sparkles size={15} />}
-                    </button>
-                  )}
-
-                  {/* Add to Playlist button */}
-                  {onAddSong && (
-                    <button
-                      className="btn btn-icon"
-                      onClick={() => {
-                        if (!isAdded) {
-                          onAddSong({
-                            id: song.id,
-                            title: song.title,
-                            channel: song.artist || artistName,
-                            thumbnail: song.thumbnail,
-                            duration: song.duration || '',
-                            album: song.album
-                          });
-                        }
-                      }}
-                      disabled={isAdded}
-                      title={isAdded ? "Already in playlist" : "Add to playlist"}
-                      style={{
-                        padding: '6px',
-                        color: isAdded ? 'var(--accent-color)' : 'var(--text-muted)'
-                      }}
-                    >
-                      {isAdded ? <Check size={16} /> : <Plus size={16} />}
-                    </button>
-                  )}
-
-                  {/* Download button */}
-                  {onDownloadSong && (
-                    isDownloading ? (
-                      <button className="btn btn-icon" disabled style={{ padding: '6px' }}>
-                        <Loader2 size={15} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
-                      </button>
-                    ) : isDownloaded ? (
-                      <button className="btn btn-icon" disabled style={{ padding: '6px' }} title="Downloaded">
-                        <Check size={15} style={{ color: 'var(--accent-color)' }} />
-                      </button>
-                    ) : (
-                      <button
-                        className="btn btn-icon"
-                        onClick={() => onDownloadSong({
-                          id: song.id,
-                          title: song.title,
-                          channel: song.artist || artistName
-                        })}
-                        title="Download for offline"
-                        style={{ padding: '6px', color: 'var(--text-muted)' }}
-                      >
-                        <Download size={15} />
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {topSongs.map((song, idx) => (
+            <ArtistSongItem
+              key={song.id || idx}
+              song={song}
+              idx={idx}
+              artistName={artistName}
+              isCurrentTrack={currentSongId === song.id}
+              isPreviewing={previewSongId === song.id}
+              isAdded={playlist.some(s => s.id === song.id)}
+              isDownloaded={downloadedIds?.has(song.id)}
+              isDownloading={downloadingSongId === song.id}
+              onPlaySong={onPlaySong}
+              onPlayPreview={onPlayPreview}
+              onStopPreview={onStopPreview}
+              onAddSong={onAddSong}
+              onDownloadSong={onDownloadSong}
+              onAlbumClick={onAlbumClick}
+              onArtistClick={onArtistClick}
+            />
+          ))}
         </div>
 
         {/* Load More Top Songs button */}
