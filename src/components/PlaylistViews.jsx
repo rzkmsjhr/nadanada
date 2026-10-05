@@ -16,6 +16,7 @@ export default function PlaylistViews() {
     openArtistPage,
     loadMoreTopSongs,
     handlePlayArtistSong,
+    handleAddSongToMainPlaylist,
     isAudioPlaying,
     playlist,
     downloadedSongs,
@@ -57,13 +58,14 @@ export default function PlaylistViews() {
         error={artistError}
         onRetry={() => openArtistPage(selectedArtist)}
         onPlaySong={handlePlayArtistSong}
-        onAddSong={handleAddSong}
+        onAddSong={handleAddSongToMainPlaylist}
         onPlayPreview={handlePlayPreview}
         onStopPreview={handleStopPreview}
         previewSongId={previewSong?.id}
         currentSongId={currentSong?.id}
         isPlaying={isAudioPlaying}
         playlist={playlist}
+        mainPlaylist={savedPlaylist || playlist}
         downloadedIds={downloadedIds}
         downloadingSongId={downloadingSongId}
         onDownloadSong={handleDownloadSong}

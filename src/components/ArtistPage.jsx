@@ -289,6 +289,7 @@ export default function ArtistPage({
   currentSongId,
   isPlaying,
   playlist,
+  mainPlaylist,
   downloadedIds,
   downloadingSongId,
   onDownloadSong,
@@ -302,6 +303,7 @@ export default function ArtistPage({
   const topSongs = artistDetails?.top_songs || [];
   const description = artistDetails?.description;
   const hasMore = Boolean(artistDetails?.top_songs_playlist_id && !artistDetails?.has_loaded_all);
+  const targetPlaylist = mainPlaylist || playlist || [];
 
   if (isLoading && !artistDetails) {
     return (
@@ -395,7 +397,7 @@ export default function ArtistPage({
               artistName={artistName}
               isCurrentTrack={currentSongId === song.id}
               isPreviewing={previewSongId === song.id}
-              isAdded={playlist.some(s => s.id === song.id)}
+              isAdded={targetPlaylist.some(s => s.id === song.id)}
               isDownloaded={downloadedIds?.has(song.id)}
               isDownloading={downloadingSongId === song.id}
               onPlaySong={onPlaySong}

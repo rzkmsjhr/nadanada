@@ -227,9 +227,27 @@ function App() {
     openArtistPage(artistName, artistBrowseId);
   }, [openArtistPage]);
 
+  const handleCloseArtistPage = useCallback(() => {
+    closeArtistPage();
+    if (savedPlaylist) {
+      const targetIdx = currentSong?.id
+        ? savedPlaylist.findIndex(s => s.id === currentSong.id)
+        : -1;
+      setPlaylist(savedPlaylist);
+      setSavedPlaylist(null);
+      if (setCurrentIndex) {
+        setCurrentIndex(targetIdx !== -1 ? targetIdx : 0);
+      }
+    }
+  }, [closeArtistPage, savedPlaylist, currentSong, setPlaylist, setSavedPlaylist, setCurrentIndex]);
+
   const handlePlayArtistTopSongs = useCallback((tracksToPlay = null) => {
     const songs = tracksToPlay || artistDetails?.top_songs;
     if (!songs || songs.length === 0) return;
+
+    if (previewSavedStateRef.current || previewSong) {
+      handleStopPreview();
+    }
 
     if (!savedPlaylist) {
       setSavedPlaylist([...playlist]);
@@ -248,7 +266,7 @@ function App() {
     setPlaylist(newPlaylist);
     setCurrentIndex(0);
     setIsAudioPlaying(true);
-  }, [artistDetails, selectedArtist, savedPlaylist, playlist, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+  }, [artistDetails, selectedArtist, savedPlaylist, playlist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
 
   const handleAddArtistTopSongs = useCallback(() => {
     const songs = artistDetails?.top_songs;
@@ -265,9 +283,41 @@ function App() {
       queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
     }));
 
-    handleAddMultiple(newTracks);
-    setSuccessMessage(`Added ${newTracks.length} songs by ${selectedArtist} to queue`);
-  }, [artistDetails, selectedArtist, handleAddMultiple]);
+    if (savedPlaylist) {
+      const existingIds = new Set(savedPlaylist.map(t => t.id));
+      const toAdd = newTracks.filter(t => !existingIds.has(t.id));
+      if (toAdd.length > 0) {
+        setSavedPlaylist(prev => [...prev, ...toAdd]);
+      }
+      setSuccessMessage(`Added ${toAdd.length} songs by ${selectedArtist} to playlist`);
+    } else {
+      handleAddMultiple(newTracks);
+      setSuccessMessage(`Added ${newTracks.length} songs by ${selectedArtist} to playlist`);
+    }
+  }, [artistDetails, selectedArtist, savedPlaylist, handleAddMultiple, setSavedPlaylist, setSuccessMessage]);
+
+  const handleAddSongToMainPlaylist = useCallback((song) => {
+    if (!song) return;
+    const timestamp = Date.now();
+    const newTrack = {
+      id: song.id,
+      title: song.title,
+      channel: song.channel || song.artist || selectedArtist,
+      thumbnail: song.thumbnail,
+      duration: song.duration || '',
+      album: song.album || '',
+      queueId: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`
+    };
+
+    if (savedPlaylist) {
+      if (savedPlaylist.some(t => t.id === newTrack.id)) return;
+      setSavedPlaylist(prev => [...prev, newTrack]);
+    } else {
+      if (playlist.some(t => t.id === newTrack.id)) return;
+      handleAddSong(newTrack);
+    }
+    setSuccessMessage(`Added "${newTrack.title}" to playlist`);
+  }, [savedPlaylist, playlist, selectedArtist, handleAddSong, setSavedPlaylist, setSuccessMessage]);
 
   const handlePlayArtistSong = useCallback((song) => {
     if (!song) return;
@@ -276,50 +326,47 @@ function App() {
       handleStopPreview();
     }
 
-    // Check if song is already in the current playlist
-    const existingIndex = playlist.findIndex(t => t.id === song.id);
-    if (existingIndex !== -1) {
-      setCurrentIndex(existingIndex);
-      setIsAudioPlaying(true);
-      return;
+    const songs = artistDetails?.top_songs;
+    // Check if the current playlist is already this artist's top songs
+    const isAlreadyPlayingArtistQueue = playlist.length > 0 &&
+      songs &&
+      playlist.length === songs.length &&
+      songs.every(s => playlist.some(t => t.id === s.id));
+
+    if (isAlreadyPlayingArtistQueue) {
+      const existingIndex = playlist.findIndex(t => t.id === song.id);
+      if (existingIndex !== -1) {
+        if (currentIndex === existingIndex) {
+          setIsAudioPlaying(prev => !prev);
+        } else {
+          setCurrentIndex(existingIndex);
+          setIsAudioPlaying(true);
+        }
+        return;
+      }
     }
 
-    // Add only this single song to the playlist
+    if (!savedPlaylist) {
+      setSavedPlaylist([...playlist]);
+    }
+
+    const allSongs = (songs && songs.length > 0) ? songs : [song];
     const timestamp = Date.now();
-    const newTrack = {
-      id: song.id,
-      title: song.title,
-      channel: song.artist || selectedArtist,
-      thumbnail: song.thumbnail,
-      duration: song.duration || '',
-      album: song.album || '',
-      queueId: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`
-    };
+    const newPlaylist = allSongs.map((t, i) => ({
+      id: t.id,
+      title: t.title,
+      channel: t.artist || selectedArtist,
+      thumbnail: t.thumbnail,
+      duration: t.duration || '',
+      album: t.album || '',
+      queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
+    }));
 
-    if (playlist.length === 0) {
-      setPlaylist([newTrack]);
-      setCurrentIndex(0);
-      setIsAudioPlaying(true);
-      return;
-    }
-
-    // Insert right after current track and switch to it
-    const insertIdx = currentIndex >= 0 && currentIndex < playlist.length ? currentIndex + 1 : playlist.length;
-    const nextPlaylist = [...playlist];
-    nextPlaylist.splice(insertIdx, 0, newTrack);
-
-    if (savedPlaylist) {
-      setSavedPlaylist(prev => {
-        const next = [...prev];
-        next.splice(insertIdx, 0, newTrack);
-        return next;
-      });
-    }
-
-    setPlaylist(nextPlaylist);
-    setCurrentIndex(insertIdx);
+    const targetIndex = newPlaylist.findIndex(t => t.id === song.id);
+    setPlaylist(newPlaylist);
+    setCurrentIndex(targetIndex !== -1 ? targetIndex : 0);
     setIsAudioPlaying(true);
-  }, [playlist, currentIndex, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+  }, [artistDetails, playlist, currentIndex, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
 
   const handleToggleSearch = () => {
     console.log("Toggle Search. hasAdded:", hasAddedSongInSearchRef.current, "showSearch:", showSearch);
@@ -460,6 +507,7 @@ function App() {
       }
 
       if (tracks && tracks.length > 0) {
+        closeArtistPage();
         if (!savedPlaylist) {
           setSavedPlaylist([...playlist]);
         }
@@ -587,9 +635,10 @@ function App() {
     artistError,
     isLoadingMoreSongs,
     openArtistPage: handleOpenArtistPage,
-    closeArtistPage,
+    closeArtistPage: handleCloseArtistPage,
     loadMoreTopSongs,
     handlePlayArtistSong,
+    handleAddSongToMainPlaylist,
     playlist, setPlaylist,
     downloadedSongs, setDownloadedSongs,
     currentSong,
@@ -822,7 +871,7 @@ function App() {
               artistDetails={artistDetails}
               isLoadingArtist={isLoadingArtist}
               onArtistClick={handleOpenArtistPage}
-              onCloseArtistPage={closeArtistPage}
+              onCloseArtistPage={handleCloseArtistPage}
               onPlayArtistTopSongs={handlePlayArtistTopSongs}
               onShuffleArtistTopSongs={handleShuffleArtistTopSongs}
               onAddArtistTopSongs={handleAddArtistTopSongs}
@@ -873,7 +922,7 @@ function App() {
             setShowSearch={setShowSearch}
             handleToggleSearch={handleToggleSearch}
             selectedArtist={selectedArtist}
-            onCloseArtistPage={closeArtistPage}
+            onCloseArtistPage={handleCloseArtistPage}
             api={api}
             loadDownloadedSongs={loadDownloadedSongs}
             setGlobalError={setGlobalError}
