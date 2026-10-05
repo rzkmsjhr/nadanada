@@ -250,14 +250,6 @@ function App() {
     setIsAudioPlaying(true);
   }, [artistDetails, selectedArtist, savedPlaylist, playlist, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
 
-  const handleShuffleArtistTopSongs = useCallback(() => {
-    const songs = artistDetails?.top_songs;
-    if (!songs || songs.length === 0) return;
-
-    const shuffled = [...songs].sort(() => Math.random() - 0.5);
-    handlePlayArtistTopSongs(shuffled);
-  }, [artistDetails, handlePlayArtistTopSongs]);
-
   const handleAddArtistTopSongs = useCallback(() => {
     const songs = artistDetails?.top_songs;
     if (!songs || songs.length === 0) return;
@@ -546,6 +538,24 @@ function App() {
 
   const trueNextSongIndex = isShuffle ? upcomingShuffleIndex : currentIndex + 1;
   const trueNextSong = trueNextSongIndex !== null && trueNextSongIndex < playlist.length ? playlist[trueNextSongIndex] : null;
+
+  const handleShuffleArtistTopSongs = useCallback(() => {
+    const songs = artistDetails?.top_songs;
+    if (!songs || songs.length === 0) return;
+
+    const isPlayingCurrentArtist = playlist.length > 0 && 
+      playlist.some(t => t.channel === selectedArtist || songs.some(s => s.id === t.id));
+
+    if (isPlayingCurrentArtist && isShuffle) {
+      setIsShuffle(false);
+      return;
+    }
+
+    setIsShuffle(true);
+    setIsEndlessPlay(false);
+    const shuffled = [...songs].sort(() => Math.random() - 0.5);
+    handlePlayArtistTopSongs(shuffled);
+  }, [artistDetails, selectedArtist, playlist, isShuffle, handlePlayArtistTopSongs, setIsShuffle, setIsEndlessPlay]);
 
 
 

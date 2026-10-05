@@ -7,6 +7,7 @@ export default function ArtistHeroVisualizer({
   isLoading,
   isFullscreen = false,
   isMaximized = false,
+  isShuffle = false,
   onPlayAll,
   onShuffleAll,
   onAddAll,
@@ -164,7 +165,7 @@ export default function ArtistHeroVisualizer({
                 </button>
 
                 <button
-                  className="btn"
+                  className={`btn ${isShuffle ? 'btn-primary' : ''}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onShuffleAll?.();
@@ -177,15 +178,32 @@ export default function ArtistHeroVisualizer({
                     borderRadius: '20px',
                     fontSize: isFullscreen ? '0.88rem' : '0.82rem',
                     fontWeight: 600,
-                    background: 'rgba(255, 255, 255, 0.15)',
+                    background: isShuffle ? 'var(--accent-color)' : 'rgba(255, 255, 255, 0.15)',
                     backdropFilter: 'blur(8px)',
                     color: '#ffffff',
-                    border: '1px solid rgba(255, 255, 255, 0.25)',
-                    cursor: 'pointer'
+                    border: isShuffle ? '1px solid var(--accent-color)' : '1px solid rgba(255, 255, 255, 0.25)',
+                    boxShadow: isShuffle ? '0 2px 14px rgba(0,0,0,0.45)' : 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
                   }}
-                  title="Shuffle artist top songs"
+                  title={isShuffle ? "Shuffle is ON (Click to toggle)" : "Shuffle artist top songs"}
                 >
-                  <Shuffle size={isFullscreen ? 16 : 14} /> Shuffle
+                  <Shuffle size={isFullscreen ? 16 : 14} />
+                  <span>Shuffle</span>
+                  {isShuffle && (
+                    <span 
+                      style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        background: '#ffffff',
+                        display: 'inline-block',
+                        marginLeft: '1px',
+                        boxShadow: '0 0 6px rgba(255,255,255,0.9)'
+                      }} 
+                      title="Active"
+                    />
+                  )}
                 </button>
 
                 <button
