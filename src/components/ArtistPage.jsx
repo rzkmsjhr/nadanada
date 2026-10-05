@@ -39,7 +39,6 @@ export default function ArtistPage({
   isLoadingMoreSongs
 }) {
   const [showFullBio, setShowFullBio] = useState(false);
-  const [hoveredSongId, setHoveredSongId] = useState(null);
 
   const topSongs = artistDetails?.top_songs || [];
   const description = artistDetails?.description;
@@ -135,15 +134,12 @@ export default function ArtistPage({
             const isAdded = playlist.some(s => s.id === song.id);
             const isDownloaded = downloadedIds?.has(song.id);
             const isDownloading = downloadingSongId === song.id;
-            const isHovered = hoveredSongId === song.id;
 
             return (
               <div
                 key={song.id || idx}
-                className="song-item"
-                onMouseEnter={() => setHoveredSongId(song.id)}
-                onMouseLeave={() => setHoveredSongId(null)}
-                onClick={() => onPlaySong(song)}
+                className={`song-item ${isCurrentTrack ? 'active' : ''}`}
+                onClick={() => onPlaySong?.(song)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -151,16 +147,15 @@ export default function ArtistPage({
                   borderRadius: '8px',
                   gap: '10px',
                   cursor: 'pointer',
-                  background: isCurrentTrack ? 'var(--item-active-bg, rgba(255,255,255,0.08))' : (isHovered ? 'var(--item-hover-bg, rgba(255,255,255,0.04))' : 'transparent'),
-                  borderLeft: isCurrentTrack ? '3px solid var(--accent-color)' : '3px solid transparent',
+                  borderBottom: 'none',
                   transition: 'background 0.15s ease'
                 }}
               >
-                {/* Index / Play Indicator */}
+                {/* Rank Index */}
                 <div style={{
-                  width: '22px',
+                  width: '24px',
                   textAlign: 'center',
-                  fontSize: '0.82rem',
+                  fontSize: '0.85rem',
                   fontWeight: 600,
                   color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-muted)',
                   display: 'flex',
@@ -168,11 +163,7 @@ export default function ArtistPage({
                   justifyContent: 'center',
                   flexShrink: 0
                 }}>
-                  {isHovered ? (
-                    <Play size={13} fill="currentColor" style={{ color: 'var(--accent-color)' }} />
-                  ) : (
-                    idx + 1
-                  )}
+                  {idx + 1}
                 </div>
 
                 {/* Song Thumbnail */}

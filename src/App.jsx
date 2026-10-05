@@ -279,27 +279,55 @@ function App() {
 
   const handlePlayArtistSong = useCallback((song) => {
     if (!song) return;
-    const songs = artistDetails?.top_songs || [song];
-    if (!savedPlaylist) {
-      setSavedPlaylist([...playlist]);
+
+    if (previewSavedStateRef.current || previewSong) {
+      handleStopPreview();
     }
 
-    const timestamp = Date.now();
-    const newPlaylist = songs.map((t, i) => ({
-      id: t.id,
-      title: t.title,
-      channel: t.artist || selectedArtist,
-      thumbnail: t.thumbnail,
-      duration: t.duration || '',
-      album: t.album || '',
-      queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
-    }));
+    // Check if song is already in the current playlist
+    const existingIndex = playlist.findIndex(t => t.id === song.id);
+    if (existingIndex !== -1) {
+      setCurrentIndex(existingIndex);
+      setIsAudioPlaying(true);
+      return;
+    }
 
-    setPlaylist(newPlaylist);
-    const clickedIdx = newPlaylist.findIndex(t => t.id === song.id);
-    setCurrentIndex(clickedIdx !== -1 ? clickedIdx : 0);
+    // Add only this single song to the playlist
+    const timestamp = Date.now();
+    const newTrack = {
+      id: song.id,
+      title: song.title,
+      channel: song.artist || selectedArtist,
+      thumbnail: song.thumbnail,
+      duration: song.duration || '',
+      album: song.album || '',
+      queueId: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`
+    };
+
+    if (playlist.length === 0) {
+      setPlaylist([newTrack]);
+      setCurrentIndex(0);
+      setIsAudioPlaying(true);
+      return;
+    }
+
+    // Insert right after current track and switch to it
+    const insertIdx = currentIndex >= 0 && currentIndex < playlist.length ? currentIndex + 1 : playlist.length;
+    const nextPlaylist = [...playlist];
+    nextPlaylist.splice(insertIdx, 0, newTrack);
+
+    if (savedPlaylist) {
+      setSavedPlaylist(prev => {
+        const next = [...prev];
+        next.splice(insertIdx, 0, newTrack);
+        return next;
+      });
+    }
+
+    setPlaylist(nextPlaylist);
+    setCurrentIndex(insertIdx);
     setIsAudioPlaying(true);
-  }, [artistDetails, selectedArtist, savedPlaylist, playlist, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+  }, [playlist, currentIndex, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
 
   const handleToggleSearch = () => {
     console.log("Toggle Search. hasAdded:", hasAddedSongInSearchRef.current, "showSearch:", showSearch);
