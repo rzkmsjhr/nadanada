@@ -808,6 +808,8 @@ const Player = React.forwardRef(function Player({
               artistName={selectedArtist}
               artistDetails={artistDetails}
               isLoading={isLoadingArtist}
+              isFullscreen={isFullscreen}
+              isMaximized={isMaximized}
               onPlayAll={onPlayArtistTopSongs}
               onShuffleAll={onShuffleArtistTopSongs}
               onAddAll={onAddArtistTopSongs}
@@ -1055,8 +1057,14 @@ const Player = React.forwardRef(function Player({
 
           {/* Center clickable zone */}
           <div 
-            style={{ flex: 1, cursor: (showFullscreenControls || core.isDragging) ? 'pointer' : 'none' }}
-            onClick={() => core.togglePlay()}
+            style={{ 
+              flex: 1, 
+              cursor: (!selectedArtist && (showFullscreenControls || core.isDragging)) ? 'pointer' : 'default',
+              pointerEvents: selectedArtist ? 'none' : ((showFullscreenControls || core.isDragging) ? 'auto' : 'none')
+            }}
+            onClick={() => {
+              if (!selectedArtist) core.togglePlay();
+            }}
           />
 
           {/* Bottom Bar HUD */}

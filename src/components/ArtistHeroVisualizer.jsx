@@ -5,6 +5,8 @@ export default function ArtistHeroVisualizer({
   artistName,
   artistDetails,
   isLoading,
+  isFullscreen = false,
+  isMaximized = false,
   onPlayAll,
   onShuffleAll,
   onAddAll,
@@ -23,7 +25,7 @@ export default function ArtistHeroVisualizer({
         zIndex: 15,
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
+        justifyContent: isFullscreen ? 'flex-end' : 'space-between',
         background: '#111116',
         overflow: 'hidden',
         userSelect: 'none'
@@ -53,81 +55,86 @@ export default function ArtistHeroVisualizer({
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(to top, rgba(14, 14, 18, 0.95) 0%, rgba(14, 14, 18, 0.5) 45%, rgba(0, 0, 0, 0.2) 100%), linear-gradient(to right, rgba(14, 14, 18, 0.7) 0%, transparent 60%)',
+          background: isFullscreen 
+            ? 'linear-gradient(to top, rgba(14, 14, 18, 0.95) 0%, rgba(14, 14, 18, 0.6) 35%, rgba(0, 0, 0, 0.25) 100%), linear-gradient(to right, rgba(14, 14, 18, 0.75) 0%, transparent 65%)'
+            : 'linear-gradient(to top, rgba(14, 14, 18, 0.95) 0%, rgba(14, 14, 18, 0.5) 45%, rgba(0, 0, 0, 0.2) 100%), linear-gradient(to right, rgba(14, 14, 18, 0.7) 0%, transparent 60%)',
           pointerEvents: 'none'
         }}
       />
 
-      {/* Top Header Row (Close Button) */}
-      <div style={{
-        position: 'relative',
-        zIndex: 5,
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '12px 14px'
-      }}>
+      {/* Top Header Row (Close Button) - Hide in fullscreen to prevent collision with fullscreen player HUD */}
+      {!isFullscreen && (
         <div style={{
-          display: 'inline-flex',
+          position: 'relative',
+          zIndex: 5,
+          display: 'flex',
+          justifyContent: 'space-between',
           alignItems: 'center',
-          gap: '6px',
-          background: 'rgba(0, 0, 0, 0.5)',
-          backdropFilter: 'blur(8px)',
-          border: '1px solid rgba(255, 255, 255, 0.12)',
-          borderRadius: '20px',
-          padding: '4px 10px',
-          fontSize: '0.75rem',
-          color: '#ffffff',
-          fontWeight: 600,
-          letterSpacing: '0.5px'
+          padding: '12px 14px'
         }}>
-          <Disc size={13} style={{ color: 'var(--accent-color)' }} />
-          <span>ARTIST</span>
-        </div>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            background: 'rgba(0, 0, 0, 0.5)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            borderRadius: '20px',
+            padding: '4px 10px',
+            fontSize: '0.75rem',
+            color: '#ffffff',
+            fontWeight: 600,
+            letterSpacing: '0.5px'
+          }}>
+            <Disc size={13} style={{ color: 'var(--accent-color)' }} />
+            <span>ARTIST</span>
+          </div>
 
-        {onClose && (
-          <button 
-            className="btn btn-icon"
-            onClick={onClose}
-            title="Back to Turntable / Playlist"
-            style={{
-              background: 'rgba(0, 0, 0, 0.5)',
-              backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              borderRadius: '50%',
-              padding: '6px',
-              color: '#fff',
-              cursor: 'pointer'
-            }}
-          >
-            <X size={16} />
-          </button>
-        )}
-      </div>
+          {onClose && (
+            <button 
+              className="btn btn-icon"
+              onClick={onClose}
+              title="Back to Turntable / Playlist"
+              style={{
+                background: 'rgba(0, 0, 0, 0.5)',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '50%',
+                padding: '6px',
+                color: '#fff',
+                cursor: 'pointer'
+              }}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Bottom Content Row: Artist Name, Audience, Action Buttons */}
       <div style={{
         position: 'relative',
         zIndex: 5,
-        padding: '16px 20px',
+        padding: isFullscreen ? '0 36px 156px 36px' : '16px 20px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '10px'
+        gap: isFullscreen ? '14px' : '10px',
+        pointerEvents: 'auto'
       }}>
         {isLoading && !artistDetails ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#fff' }}>
-            <Loader2 size={24} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
-            <span style={{ fontSize: '1.2rem', fontWeight: 600 }}>Loading {artistName}…</span>
+            <Loader2 size={isFullscreen ? 28 : 24} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
+            <span style={{ fontSize: isFullscreen ? '1.4rem' : '1.2rem', fontWeight: 600 }}>Loading {artistName}…</span>
           </div>
         ) : (
           <>
             <div>
               <h1 style={{
                 margin: 0,
-                fontSize: '1.65rem',
+                fontSize: isFullscreen ? '2.5rem' : '1.65rem',
                 fontWeight: 800,
                 color: '#ffffff',
-                textShadow: '0 2px 10px rgba(0,0,0,0.8)',
+                textShadow: '0 2px 14px rgba(0,0,0,0.85)',
                 letterSpacing: '-0.02em',
                 lineHeight: 1.15
               }}>
@@ -139,13 +146,13 @@ export default function ArtistHeroVisualizer({
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  marginTop: '4px',
-                  fontSize: '0.82rem',
-                  color: 'rgba(255, 255, 255, 0.8)',
+                  marginTop: isFullscreen ? '6px' : '4px',
+                  fontSize: isFullscreen ? '0.95rem' : '0.82rem',
+                  color: 'rgba(255, 255, 255, 0.85)',
                   textShadow: '0 1px 4px rgba(0,0,0,0.7)',
                   fontWeight: 500
                 }}>
-                  <Users size={14} style={{ opacity: 0.8 }} />
+                  <Users size={isFullscreen ? 16 : 14} style={{ opacity: 0.85 }} />
                   <span>{audience}</span>
                 </div>
               )}
@@ -153,65 +160,77 @@ export default function ArtistHeroVisualizer({
 
             {/* Quick Action Buttons */}
             {artistDetails?.top_songs?.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: isFullscreen ? '4px' : '2px' }}>
                 <button
                   className="btn btn-primary"
-                  onClick={onPlayAll}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlayAll?.();
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '7px 14px',
+                    padding: isFullscreen ? '9px 18px' : '7px 14px',
                     borderRadius: '20px',
-                    fontSize: '0.82rem',
+                    fontSize: isFullscreen ? '0.88rem' : '0.82rem',
                     fontWeight: 600,
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.4)'
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
+                    cursor: 'pointer'
                   }}
                   title="Play artist top songs"
                 >
-                  <Play size={14} fill="currentColor" /> Play
+                  <Play size={isFullscreen ? 16 : 14} fill="currentColor" /> Play
                 </button>
 
                 <button
                   className="btn"
-                  onClick={onShuffleAll}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShuffleAll?.();
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '7px 14px',
+                    padding: isFullscreen ? '9px 18px' : '7px 14px',
                     borderRadius: '20px',
-                    fontSize: '0.82rem',
+                    fontSize: isFullscreen ? '0.88rem' : '0.82rem',
                     fontWeight: 600,
                     background: 'rgba(255, 255, 255, 0.15)',
                     backdropFilter: 'blur(8px)',
                     color: '#ffffff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)'
+                    border: '1px solid rgba(255, 255, 255, 0.25)',
+                    cursor: 'pointer'
                   }}
                   title="Shuffle artist top songs"
                 >
-                  <Shuffle size={14} /> Shuffle
+                  <Shuffle size={isFullscreen ? 16 : 14} /> Shuffle
                 </button>
 
                 <button
                   className="btn"
-                  onClick={onAddAll}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onAddAll?.();
+                  }}
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
-                    padding: '7px 14px',
+                    padding: isFullscreen ? '9px 18px' : '7px 14px',
                     borderRadius: '20px',
-                    fontSize: '0.82rem',
+                    fontSize: isFullscreen ? '0.88rem' : '0.82rem',
                     fontWeight: 600,
                     background: 'rgba(255, 255, 255, 0.1)',
                     backdropFilter: 'blur(8px)',
-                    color: 'rgba(255, 255, 255, 0.9)',
-                    border: '1px solid rgba(255, 255, 255, 0.15)'
+                    color: 'rgba(255, 255, 255, 0.95)',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    cursor: 'pointer'
                   }}
                   title="Add all top songs to queue"
                 >
-                  <ListPlus size={14} /> Add All
+                  <ListPlus size={isFullscreen ? 16 : 14} /> Add All
                 </button>
               </div>
             )}
