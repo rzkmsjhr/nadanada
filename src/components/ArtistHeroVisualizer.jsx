@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Shuffle, ListPlus, Loader2, X, Users, Disc } from 'lucide-react';
+import { Play, Shuffle, ListPlus, Loader2, X, Users } from 'lucide-react';
 
 export default function ArtistHeroVisualizer({
   artistName,
@@ -63,51 +63,31 @@ export default function ArtistHeroVisualizer({
       />
 
       {/* Top Header Row (Close Button) - Hide in fullscreen to prevent collision with fullscreen player HUD */}
-      {!isFullscreen && (
+      {!isFullscreen && onClose && (
         <div style={{
           position: 'relative',
           zIndex: 5,
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           padding: '12px 14px'
         }}>
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'rgba(0, 0, 0, 0.5)',
-            backdropFilter: 'blur(8px)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            borderRadius: '20px',
-            padding: '4px 10px',
-            fontSize: '0.75rem',
-            color: '#ffffff',
-            fontWeight: 600,
-            letterSpacing: '0.5px'
-          }}>
-            <Disc size={13} style={{ color: 'var(--accent-color)' }} />
-            <span>ARTIST</span>
-          </div>
-
-          {onClose && (
-            <button 
-              className="btn btn-icon"
-              onClick={onClose}
-              title="Back to Turntable / Playlist"
-              style={{
-                background: 'rgba(0, 0, 0, 0.5)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '50%',
-                padding: '6px',
-                color: '#fff',
-                cursor: 'pointer'
-              }}
-            >
-              <X size={16} />
-            </button>
-          )}
+          <button 
+            className="btn btn-icon"
+            onClick={onClose}
+            title="Back to Turntable / Playlist"
+            style={{
+              background: 'rgba(0, 0, 0, 0.5)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: '50%',
+              padding: '6px',
+              color: '#fff',
+              cursor: 'pointer'
+            }}
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
