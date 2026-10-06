@@ -96,7 +96,11 @@ export default function ArtistHeroVisualizer({
       <div style={{
         position: 'relative',
         zIndex: 5,
-        padding: isFullscreen ? '0 36px 156px 36px' : '16px 20px',
+        padding: isFullscreen 
+          ? '0 36px 156px 36px' 
+          : isMaximized 
+            ? '18px 24px 30px 24px' 
+            : '12px 20px 26px 20px',
         display: 'flex',
         flexDirection: 'column',
         gap: isFullscreen ? '14px' : '10px',
@@ -226,7 +230,7 @@ export default function ArtistHeroVisualizer({
                     border: '1px solid rgba(255, 255, 255, 0.2)',
                     cursor: 'pointer'
                   }}
-                  title="Add all top songs to queue"
+                  title="Add all top songs to playlist"
                 >
                   <ListPlus size={isFullscreen ? 16 : 14} /> Add All
                 </button>
