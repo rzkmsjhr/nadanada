@@ -1,5 +1,5 @@
 import React from 'react';
-import { Play, Shuffle, ListPlus, Loader2, X, Users } from 'lucide-react';
+import { Play, Pause, Shuffle, ListPlus, Loader2, X, Users } from 'lucide-react';
 
 export default function ArtistHeroVisualizer({
   artistName,
@@ -9,6 +9,7 @@ export default function ArtistHeroVisualizer({
   isMaximized = false,
   isMiniPlayer = false,
   isShuffle = false,
+  isPlaying = false,
   onPlayAll,
   onShuffleAll,
   onAddAll,
@@ -166,9 +167,17 @@ export default function ArtistHeroVisualizer({
                     boxShadow: '0 2px 12px rgba(0,0,0,0.5)',
                     cursor: 'pointer'
                   }}
-                  title="Play artist top songs"
+                  title={isPlaying ? "Pause artist top songs" : "Play artist top songs"}
                 >
-                  <Play size={isFullscreen ? 16 : 14} fill="currentColor" /> Play
+                  {isPlaying ? (
+                    <>
+                      <Pause size={isFullscreen ? 16 : 14} fill="currentColor" /> Pause
+                    </>
+                  ) : (
+                    <>
+                      <Play size={isFullscreen ? 16 : 14} fill="currentColor" /> Play
+                    </>
+                  )}
                 </button>
 
                 <button

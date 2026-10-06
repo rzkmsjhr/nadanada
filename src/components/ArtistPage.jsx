@@ -20,6 +20,7 @@ const ArtistSongItem = React.memo(({
   idx,
   artistName,
   isCurrentTrack,
+  isPlaying,
   isAdded,
   isDownloaded,
   isDownloading,
@@ -99,7 +100,7 @@ const ArtistSongItem = React.memo(({
         transition: 'background 0.15s ease'
       }}
     >
-      {/* Rank Index */}
+      {/* Rank Index / Play-Pause Icon */}
       <div style={{
         width: '24px',
         textAlign: 'center',
@@ -111,7 +112,17 @@ const ArtistSongItem = React.memo(({
         justifyContent: 'center',
         flexShrink: 0
       }}>
-        {idx + 1}
+        {isCurrentTrack ? (
+          isPlaying ? (
+            <Pause size={13} fill="currentColor" />
+          ) : (
+            <Play size={13} fill="currentColor" />
+          )
+        ) : isHovered ? (
+          <Play size={13} fill="currentColor" />
+        ) : (
+          idx + 1
+        )}
       </div>
 
       {/* Song Thumbnail */}
@@ -417,6 +428,7 @@ export default function ArtistPage({
               idx={idx}
               artistName={artistName}
               isCurrentTrack={currentSongId === song.id}
+              isPlaying={isPlaying}
               isAdded={targetPlaylist.some(s => s.id === song.id)}
               isDownloaded={downloadedIds?.has(song.id)}
               isDownloading={downloadingSongId === song.id}

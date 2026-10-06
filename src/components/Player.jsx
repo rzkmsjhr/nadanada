@@ -26,6 +26,7 @@ const Player = React.forwardRef(function Player({
   selectedArtist,
   artistDetails,
   isLoadingArtist,
+  isPlayingArtist,
   onArtistClick,
   onCloseArtistPage,
   onPlayArtistTopSongs,
@@ -812,6 +813,7 @@ const Player = React.forwardRef(function Player({
               isMaximized={isMaximized}
               isMiniPlayer={isMiniPlayer}
               isShuffle={isShuffle}
+              isPlaying={isPlayingArtist}
               onPlayAll={onPlayArtistTopSongs}
               onShuffleAll={onShuffleArtistTopSongs}
               onAddAll={onAddArtistTopSongs}
