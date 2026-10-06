@@ -244,7 +244,6 @@ function App() {
       // Opening search view
       hasAddedSongInSearchRef.current = false;
       setShowDownloadedList(false);
-      closeArtistPage();
       setShowSearch(true);
     }
   };

@@ -49,6 +49,22 @@ export default function PlaylistViews() {
     onAlbumClick
   } = useAppContext();
 
+  if (showSearch) {
+    return (
+      <div style={{ padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }}>
+        <Search 
+          onAdd={handleAddSong} 
+          onAddMultiple={handleAddMultiple} 
+          playlist={playlist} 
+          onError={setGlobalError} 
+          onPlayPreview={handlePlayPreview} 
+          onStopPreview={handleStopPreview} 
+          previewSongId={previewSong?.id} 
+        />
+      </div>
+    );
+  }
+
   if (selectedArtist) {
     return (
       <ArtistPage
@@ -74,22 +90,6 @@ export default function PlaylistViews() {
         onLoadMoreTopSongs={loadMoreTopSongs}
         isLoadingMoreSongs={isLoadingMoreSongs}
       />
-    );
-  }
-
-  if (showSearch) {
-    return (
-      <div style={{ padding: '16px', height: '100%', display: 'flex', flex: 1, minHeight: 0 }}>
-        <Search 
-          onAdd={handleAddSong} 
-          onAddMultiple={handleAddMultiple} 
-          playlist={playlist} 
-          onError={setGlobalError} 
-          onPlayPreview={handlePlayPreview} 
-          onStopPreview={handleStopPreview} 
-          previewSongId={previewSong?.id} 
-        />
-      </div>
     );
   }
 

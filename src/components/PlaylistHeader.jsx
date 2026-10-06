@@ -55,7 +55,7 @@ export default function PlaylistHeader({
   return (
     <div style={staticStyles.headerBar}>
       <div style={staticStyles.headerTitle}>
-        {selectedArtist ? (
+        {showSearch ? 'Search YouTube' : selectedArtist ? (
           <button onClick={() => {
             onCloseArtistPage?.();
             handleRestoreSavedPlaylist();
@@ -74,7 +74,7 @@ export default function PlaylistHeader({
           }} title="Return to your original playlist">
             <ArrowLeft size={18} style={{ marginTop: '2px' }} /> Back to My Playlist
           </button>
-        ) : showSearch ? 'Search YouTube' : showDownloadedList ? (
+        ) : showDownloadedList ? (
           <button onClick={() => {
             setShowDownloadedList(false);
             handleRestoreSavedPlaylist();
@@ -205,7 +205,7 @@ export default function PlaylistHeader({
             </div>
           </>
         )}
-        {selectedArtist ? (
+        {selectedArtist && !showSearch ? (
           <button className="btn btn-icon" onClick={() => {
             onCloseArtistPage?.();
             handleRestoreSavedPlaylist();
@@ -255,7 +255,7 @@ export default function PlaylistHeader({
                 <FolderPlus size={18} />
               </button>
             )}
-            {!savedPlaylist && !showDownloadedList && (
+            {(showSearch || !showDownloadedList) && (
               <button className="btn btn-icon" onClick={handleToggleSearch} title={showSearch ? 'Close Search' : 'Search Music'} style={{ padding: '6px' }}>
                 {showSearch ? <X size={18} /> : <SearchIcon size={18} />}
               </button>
