@@ -351,18 +351,44 @@ function App() {
       let tracks = null;
       const targetVideoId = clickedVideoId || currentSong?.id || '';
 
-      if (info.albumPlaylistId) {
-        // Use the OLAK5uy_ playlist ID scraped from the video page (correct YouTube Music album)
-        tracks = await api.getYouTubePlaylist(info.albumPlaylistId, targetVideoId);
+      // 1. Direct albumPlaylistId (from song or info) or cached album playlist ID
+      const directPlaylistId = info.albumPlaylistId || (targetVideoId ? albumCache?.[targetVideoId]?.albumPlaylistId : null);
+      if (directPlaylistId) {
+        try {
+          tracks = await api.getYouTubePlaylist(directPlaylistId, targetVideoId);
+        } catch (e) {
+          console.warn('Direct album playlist fetch failed:', e);
+        }
       }
 
+      // 2. If not found yet and targetVideoId exists, scrape video's album info on the fly
+      if ((!tracks || tracks.length === 0) && targetVideoId) {
+        try {
+          const videoAlbum = await api.getVideoAlbumInfo(targetVideoId);
+          if (videoAlbum?.album_playlist_id) {
+            tracks = await api.getYouTubePlaylist(videoAlbum.album_playlist_id, targetVideoId);
+          }
+        } catch (e) {
+          console.warn('Scraping video album info failed:', e);
+        }
+      }
+
+      // 3. Fallback: search YouTube Music for the album with album title + artist
       if (!tracks || tracks.length === 0) {
-        // Fallback: search for the album
-        const searchQuery = `${info.album} ${info.artist}`.trim();
+        const searchQuery = `${info.album} ${info.artist || ''}`.trim();
         const results = await api.searchYouTube(searchQuery, 'album');
-        const albumResult = results?.[0];
-        if (albumResult?.first_video_id) {
-          tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id);
+        const albumResult = results?.find(r => r.title?.toLowerCase() === info.album.toLowerCase()) || results?.[0];
+        if (albumResult?.id) {
+          tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id || targetVideoId || '');
+        }
+      }
+
+      // 4. Secondary fallback: search YouTube Music by album title alone
+      if (!tracks || tracks.length === 0) {
+        const results = await api.searchYouTube(info.album, 'album');
+        const albumResult = results?.find(r => r.title?.toLowerCase() === info.album.toLowerCase()) || results?.[0];
+        if (albumResult?.id) {
+          tracks = await api.getYouTubePlaylist(albumResult.id, albumResult.first_video_id || targetVideoId || '');
         }
       }
 

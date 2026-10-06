@@ -1254,7 +1254,7 @@ pub async fn get_spotify_playlist(playlist_id: String) -> Result<Vec<SpotifyTrac
 /// Fetch playlist/album tracks via YouTube Music browse API (pure Songs)
 async fn get_ytm_playlist_internal(playlist_id: &str) -> Result<Vec<Video>, String> {
     let client = get_ytm_client();
-    let browse_id = if playlist_id.starts_with("VL") {
+    let browse_id = if playlist_id.starts_with("VL") || playlist_id.starts_with("MPRE") {
         playlist_id.to_string()
     } else {
         format!("VL{}", playlist_id)
@@ -1810,12 +1810,40 @@ fn parse_artist_song(c: &serde_json::Value, default_artist: &str) -> Option<Arti
         .unwrap_or("")
         .to_string();
 
+    let album_playlist_id = r.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs/0/navigationEndpoint/watchEndpoint/playlistId")
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchEndpoint/playlistId"))
+        .or_else(|| r.pointer("/overlay/musicItemThumbnailOverlayRenderer/content/musicPlayButtonRenderer/playNavigationEndpoint/watchPlaylistEndpoint/playlistId"))
+        .and_then(|v| v.as_str())
+        .filter(|p| p.starts_with("OLAK5uy_"))
+        .map(|s| s.to_string());
+
+    let mut album_id = None;
+    if let Some(cols) = r.get("flexColumns").and_then(|c| c.as_array()) {
+        for col in cols {
+            if let Some(runs) = col.pointer("/musicResponsiveListItemFlexColumnRenderer/text/runs").and_then(|v| v.as_array()) {
+                for run in runs {
+                    let page_type = run.pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                        .and_then(|p| p.as_str());
+                    let b_id = run.pointer("/navigationEndpoint/browseEndpoint/browseId")
+                        .and_then(|b| b.as_str());
+                    if page_type == Some("MUSIC_PAGE_TYPE_ALBUM") || b_id.map_or(false, |b| b.starts_with("MPREb_")) {
+                        album_id = b_id.map(|s| s.to_string());
+                        break;
+                    }
+                }
+            }
+            if album_id.is_some() { break; }
+        }
+    }
+
     Some(ArtistSong {
         id,
         title,
         artist,
         plays,
         album,
+        album_id,
+        album_playlist_id,
         duration,
         thumbnail,
     })
@@ -2016,6 +2044,8 @@ pub async fn get_artist_details(
                     artist: v.channel,
                     plays: None,
                     album: None,
+                    album_id: None,
+                    album_playlist_id: None,
                     duration: Some(v.duration),
                     thumbnail: v.thumbnail,
                 });
@@ -2094,6 +2124,8 @@ pub async fn get_artist_top_songs(playlist_id: String) -> Result<Vec<ArtistSong>
                 artist: t.channel,
                 plays: None,
                 album: None,
+                album_id: None,
+                album_playlist_id: None,
                 duration: Some(t.duration),
                 thumbnail: t.thumbnail,
             });

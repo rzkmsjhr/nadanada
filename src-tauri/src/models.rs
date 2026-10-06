@@ -56,6 +56,10 @@ pub struct ArtistSong {
     pub artist: String,
     pub plays: Option<String>,
     pub album: Option<String>,
+    #[serde(default)]
+    pub album_id: Option<String>,
+    #[serde(default)]
+    pub album_playlist_id: Option<String>,
     pub duration: Option<String>,
     pub thumbnail: String,
 }

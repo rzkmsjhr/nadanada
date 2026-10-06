@@ -171,7 +171,11 @@ const ArtistSongItem = React.memo(({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (onAlbumClick) {
-                    onAlbumClick({ album: song.album, artist: song.artist || artistName }, song.id);
+                    onAlbumClick({ 
+                      album: song.album, 
+                      artist: song.artist || artistName,
+                      albumPlaylistId: song.album_playlist_id || song.album_id
+                    }, song.id);
                   }
                 }}
                 title={`Browse album "${song.album}"`}
