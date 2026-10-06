@@ -22,6 +22,7 @@ import { usePlaylistManager } from "./hooks/usePlaylistManager";
 import { useSystemIntegration } from "./hooks/useSystemIntegration";
 import { useAlbumInfo } from "./hooks/useAlbumInfo";
 import { useArtistPage } from "./hooks/useArtistPage";
+import { parseArtists } from "./utils/artistUtils";
 import { api } from './services/api';
 import { saveWindowState, StateFlags } from '@tauri-apps/plugin-window-state';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -191,7 +192,8 @@ function App() {
     savedPlaylists, setSavedPlaylists,
     shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
     handleAddSong, handleAddSongAfterCurrent, handleAddMultiple,
-    handleRemoveSong, handleReorder
+    handleRemoveSong, handleReorder,
+    lastMainPlaylistIndexRef
   } = usePlaylistManager({
     api,
     showSearch,
@@ -454,18 +456,27 @@ function App() {
       setPlaylist(savedPlaylist);
       setSavedPlaylist(null);
       if (setCurrentIndex) {
-        setCurrentIndex(targetIdx !== -1 ? targetIdx : 0);
+        const restoreIdx = targetIdx !== -1 
+          ? targetIdx 
+          : (lastMainPlaylistIndexRef?.current ?? 0);
+        setCurrentIndex(restoreIdx >= 0 && restoreIdx < savedPlaylist.length ? restoreIdx : 0);
       }
     }
-  }, [closeArtistPage, savedPlaylist, currentSong, setPlaylist, setSavedPlaylist, setCurrentIndex]);
+  }, [closeArtistPage, savedPlaylist, currentSong, setPlaylist, setSavedPlaylist, setCurrentIndex, lastMainPlaylistIndexRef]);
 
   const isPlayingCurrentArtistQueue = Boolean(
     selectedArtist &&
     currentSong &&
     (
       (artistDetails?.top_songs && artistDetails.top_songs.some(s => s.id === currentSong.id)) ||
-      currentSong.channel?.toLowerCase().includes((artistDetails?.name || selectedArtist).toLowerCase()) ||
-      (savedPlaylist && playlist.length > 0 && playlist.some(s => s.id === currentSong.id))
+      (savedPlaylist && playlist.length > 0 && playlist.some(s => s.id === currentSong.id)) ||
+      (() => {
+        const target = (artistDetails?.name || selectedArtist).toLowerCase().trim();
+        return parseArtists(currentSong.channel).some(a => {
+          const aLower = a.name.toLowerCase().trim();
+          return aLower === target || aLower.replace(/\s*-\s*topic$/i, '').trim() === target;
+        });
+      })()
     )
   );
 
@@ -561,30 +572,26 @@ function App() {
       handleStopPreview();
     }
 
-    const songs = artistDetails?.top_songs;
-    // Check if the current playlist is already this artist's top songs
-    const isAlreadyPlayingArtistQueue = playlist.length > 0 &&
-      songs &&
-      playlist.length === songs.length &&
-      songs.every(s => playlist.some(t => t.id === s.id));
-
-    if (isAlreadyPlayingArtistQueue) {
-      const existingIndex = playlist.findIndex(t => t.id === song.id);
-      if (existingIndex !== -1) {
-        if (currentIndex === existingIndex) {
-          setIsAudioPlaying(prev => !prev);
-        } else {
-          setCurrentIndex(existingIndex);
-          setIsAudioPlaying(true);
-        }
-        return;
-      }
+    // 1. If this exact song is currently active in the player, toggle play/pause
+    if (currentSong?.id === song.id) {
+      setIsAudioPlaying(prev => !prev);
+      return;
     }
 
+    // 2. If this song already exists in the active playlist queue
+    const existingIndex = playlist.findIndex(t => t.id === song.id);
+    if (existingIndex !== -1) {
+      setCurrentIndex(existingIndex);
+      setIsAudioPlaying(true);
+      return;
+    }
+
+    // 3. Otherwise build the artist queue and start playback
     if (!savedPlaylist) {
       setSavedPlaylist([...playlist]);
     }
 
+    const songs = artistDetails?.top_songs;
     const allSongs = (songs && songs.length > 0) ? songs : [song];
     const timestamp = Date.now();
     const newPlaylist = allSongs.map((t, i) => ({
@@ -601,14 +608,18 @@ function App() {
     setPlaylist(newPlaylist);
     setCurrentIndex(targetIndex !== -1 ? targetIndex : 0);
     setIsAudioPlaying(true);
-  }, [artistDetails, playlist, currentIndex, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+  }, [artistDetails, playlist, currentSong, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
 
   const handleShuffleArtistTopSongs = useCallback(() => {
     const songs = artistDetails?.top_songs;
     if (!songs || songs.length === 0) return;
 
+    const targetArtist = (artistDetails?.name || selectedArtist)?.toLowerCase().trim();
     const isPlayingCurrentArtist = playlist.length > 0 && 
-      playlist.some(t => t.channel === selectedArtist || songs.some(s => s.id === t.id));
+      playlist.some(t => {
+        const ch = (t.channel || '').toLowerCase().trim();
+        return ch === targetArtist || songs.some(s => s.id === t.id);
+      });
 
     if (isPlayingCurrentArtist && isShuffle) {
       setIsShuffle(false);

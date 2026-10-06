@@ -9,10 +9,13 @@ export function useArtistPage() {
   const [isLoadingMoreSongs, setIsLoadingMoreSongs] = useState(false);
   const artistCacheRef = useRef(new Map());
 
+  const activeRequestIdRef = useRef(0);
+
   const openArtistPage = useCallback(async (artistName, artistBrowseId = null) => {
     if (!artistName || !artistName.trim()) return;
     const cleanName = artistName.replace(/\s*-\s*Topic$/i, '').trim();
     const cacheKey = cleanName.toLowerCase();
+    const requestId = ++activeRequestIdRef.current;
 
     setSelectedArtist(cleanName);
     setArtistError(null);
@@ -28,17 +31,26 @@ export function useArtistPage() {
 
     try {
       const details = await api.getArtistDetails(cleanName, artistBrowseId);
+      if (requestId !== activeRequestIdRef.current) return;
+
       artistCacheRef.current.set(cacheKey, details);
+      if (details?.name) {
+        artistCacheRef.current.set(details.name.toLowerCase(), details);
+      }
       setArtistDetails(details);
     } catch (err) {
+      if (requestId !== activeRequestIdRef.current) return;
       console.error('Failed to load artist details:', err);
       setArtistError(err?.message || String(err));
     } finally {
-      setIsLoadingArtist(false);
+      if (requestId === activeRequestIdRef.current) {
+        setIsLoadingArtist(false);
+      }
     }
   }, []);
 
   const closeArtistPage = useCallback(() => {
+    activeRequestIdRef.current++;
     setSelectedArtist(null);
     setArtistDetails(null);
     setArtistError(null);
@@ -61,6 +73,9 @@ export function useArtistPage() {
           if (prev.name) {
             artistCacheRef.current.set(prev.name.toLowerCase(), updated);
           }
+          if (selectedArtist) {
+            artistCacheRef.current.set(selectedArtist.toLowerCase(), updated);
+          }
           return updated;
         });
       }
@@ -69,7 +84,7 @@ export function useArtistPage() {
     } finally {
       setIsLoadingMoreSongs(false);
     }
-  }, [artistDetails, isLoadingMoreSongs]);
+  }, [artistDetails, isLoadingMoreSongs, selectedArtist]);
 
   return {
     selectedArtist,

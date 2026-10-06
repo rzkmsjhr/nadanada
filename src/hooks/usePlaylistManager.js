@@ -247,6 +247,7 @@ export function usePlaylistManager({
     savedPlaylists, setSavedPlaylists,
     shouldScrollPlaylistToBottom, setShouldScrollPlaylistToBottom,
     handleAddSong, handleAddSongAfterCurrent, handleAddMultiple,
-    handleRemoveSong, handleReorder
+    handleRemoveSong, handleReorder,
+    lastMainPlaylistIndexRef
   };
 }
