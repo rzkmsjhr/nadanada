@@ -45,23 +45,23 @@ export function parseArtists(artistString) {
   
   if (!cleaned) return [];
 
-  // Protect known compound artist names so their internal commas/ampersands are not split
+  // Protect known compound artist names with commas so their internal commas are not split
   const placeholders = [];
   let tokenized = cleaned;
   COMPOUND_ARTISTS.forEach((compound, idx) => {
     const escaped = compound.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regexMatch = new RegExp(`(^|\\s|[,&])${escaped}($|\\s|[,&])`, 'gi');
+    const regexMatch = new RegExp(`(^|\\s|[,])\\s*${escaped}\\s*($|\\s|[,])`, 'gi');
     tokenized = tokenized.replace(regexMatch, (full, prefix, suffix) => {
       const placeholder = `___COMP_${idx}_${placeholders.length}___`;
-      // Preserve the actual matched capitalization/spelling
-      const actualMatch = full.slice(prefix.length, full.length - suffix.length);
+      const actualMatch = full.slice(prefix.length, full.length - suffix.length).trim();
       placeholders.push({ placeholder, actualMatch });
       return `${prefix}${placeholder}${suffix}`;
     });
   });
 
-  // Delimiters: comma, ampersand, feat., ft., featuring, x
-  const regex = /(\s*,\s*|\s+&\s+|\s+(?:feat\.?|ft\.?|featuring)\s+|\s+x\s+)/i;
+  // Delimiters: feat., ft., featuring, or comma.
+  // NEVER split on "&" or "x" because real band names frequently contain them (e.g. "Andra & the Backbone", "Simon & Garfunkel").
+  const regex = /(\s*[([]\s*(?:feat\.?|ft\.?|featuring)\s+|\s+(?:feat\.?|ft\.?|featuring)\s+|\s*,\s*)/i;
   const parts = tokenized.split(regex);
   const result = [];
 
@@ -71,10 +71,11 @@ export function parseArtists(artistString) {
     
     if (regex.test(part)) {
       if (result.length > 0) {
-        result[result.length - 1].separator = part;
+        const sep = /feat/i.test(part) ? ' feat. ' : /ft/i.test(part) ? ' ft. ' : part;
+        result[result.length - 1].separator = sep;
       }
     } else {
-      let trimmed = part.trim();
+      let trimmed = part.trim().replace(/[)\]]+$/, '').trim();
       placeholders.forEach(({ placeholder, actualMatch }) => {
         trimmed = trimmed.replace(placeholder, actualMatch);
       });
