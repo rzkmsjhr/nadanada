@@ -12,7 +12,6 @@ import {
   Disc, 
   AlertCircle 
 } from 'lucide-react';
-import { parseArtists } from '../utils/artistUtils';
 
 const ArtistSongItem = React.memo(({
   song,
@@ -50,16 +49,35 @@ const ArtistSongItem = React.memo(({
     setShouldScrollSubtitle(false);
   };
 
-  const parsedArtists = parseArtists(song.artist || artistName);
-
-  const displayPlays = (() => {
+  const playsData = (() => {
     if (song.plays) {
-      const p = song.plays.trim();
-      if (/plays?$/i.test(p)) return p;
-      if (/views?$/i.test(p)) return p.replace(/views?$/i, 'plays').trim();
-      return `${p} plays`;
+      const trimmed = song.plays.trim();
+      const match = trimmed.match(/^([\d.,]+\s*[KMBkmb]?)\s*(?:plays?|views?)?$/i);
+      if (match) {
+        return {
+          counter: match[1].trim(),
+          label: 'plays'
+        };
+      }
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 2) {
+        return {
+          counter: parts[0],
+          label: 'plays'
+        };
+      }
+      return {
+        counter: trimmed,
+        label: 'plays'
+      };
     }
-    return song.duration || null;
+    if (song.duration) {
+      return {
+        counter: song.duration,
+        label: null
+      };
+    }
+    return null;
   })();
 
   return (
@@ -107,7 +125,7 @@ const ArtistSongItem = React.memo(({
         }}
       />
 
-      {/* Song Info (Title & Subtitle with marquee animation on hover) */}
+      {/* Song Info (Title & Album subtitle with marquee animation on hover) */}
       <div className="song-info">
         <div className="song-title-wrapper">
           <div
@@ -123,56 +141,33 @@ const ArtistSongItem = React.memo(({
           </div>
         </div>
 
-        <div className="song-title-wrapper" style={{ marginTop: '2px' }}>
-          <div
-            ref={subtitleRef}
-            className={`song-title ${isHovered && shouldScrollSubtitle ? 'scrolling' : ''}`}
-            style={{
-              fontSize: '0.75rem',
-              color: 'var(--text-muted)',
-              fontWeight: 400,
-              paddingBottom: 0
-            }}
-          >
-            {/* Multiple Artists Clickable Links */}
-            <span>
-              {parsedArtists.map((a, i) => (
-                <React.Fragment key={i}>
-                  <span
-                    className="artist-link"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onArtistClick) onArtistClick(a.name);
-                    }}
-                    title={`View ${a.name}'s page`}
-                  >
-                    {a.name}
-                  </span>
-                  {a.separator && <span style={{ opacity: 0.6 }}>{a.separator}</span>}
-                </React.Fragment>
-              ))}
-            </span>
-
-            {/* Album (clickable) */}
-            {song.album && (
-              <>
-                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
-                <span
-                  className="album-link"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onAlbumClick) {
-                      onAlbumClick({ album: song.album, artist: song.artist || artistName }, song.id);
-                    }
-                  }}
-                  title={`Browse album "${song.album}"`}
-                >
-                  {song.album}
-                </span>
-              </>
-            )}
+        {song.album && (
+          <div className="song-title-wrapper" style={{ marginTop: '2px' }}>
+            <div
+              ref={subtitleRef}
+              className={`song-title ${isHovered && shouldScrollSubtitle ? 'scrolling' : ''}`}
+              style={{
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                fontWeight: 400,
+                paddingBottom: 0
+              }}
+            >
+              <span
+                className="album-link"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onAlbumClick) {
+                    onAlbumClick({ album: song.album, artist: song.artist || artistName }, song.id);
+                  }
+                }}
+                title={`Browse album "${song.album}"`}
+              >
+                {song.album}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Play Counter & Action Buttons */}
@@ -180,21 +175,42 @@ const ArtistSongItem = React.memo(({
         style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Play Counter Text */}
-        {displayPlays && (
-          <span
+        {/* Plays Counter text stacked (Counter on top, plays on bottom) */}
+        {playsData && (
+          <div 
             style={{
-              fontSize: '0.78rem',
-              color: 'var(--text-muted)',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-              marginRight: '4px',
-              opacity: 0.85
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              justifyContent: 'center',
+              lineHeight: 1.15,
+              marginRight: '6px',
+              minWidth: '38px',
+              textAlign: 'right',
+              userSelect: 'none'
             }}
-            title={displayPlays}
+            title={playsData.label ? `${playsData.counter} ${playsData.label}` : playsData.counter}
           >
-            {displayPlays}
-          </span>
+            <span style={{
+              fontSize: '0.8rem',
+              fontWeight: 600,
+              color: isCurrentTrack ? 'var(--accent-color)' : 'var(--text-main)',
+              letterSpacing: '-0.01em'
+            }}>
+              {playsData.counter}
+            </span>
+            {playsData.label && (
+              <span style={{
+                fontSize: '0.62rem',
+                fontWeight: 500,
+                color: 'var(--text-muted)',
+                opacity: 0.8,
+                marginTop: '1px'
+              }}>
+                {playsData.label}
+              </span>
+            )}
+          </div>
         )}
 
         {/* Add to Playlist button */}
