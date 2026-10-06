@@ -2,14 +2,12 @@ import React, { useState, useRef } from 'react';
 import { 
   Play, 
   Pause, 
-  Square, 
   Plus, 
   Check, 
   Loader2, 
   Download, 
   ChevronDown, 
   ChevronUp, 
-  Sparkles, 
   Music2, 
   Disc, 
   AlertCircle 
@@ -21,13 +19,10 @@ const ArtistSongItem = React.memo(({
   idx,
   artistName,
   isCurrentTrack,
-  isPreviewing,
   isAdded,
   isDownloaded,
   isDownloading,
   onPlaySong,
-  onPlayPreview,
-  onStopPreview,
   onAddSong,
   onDownloadSong,
   onAlbumClick,
@@ -57,6 +52,16 @@ const ArtistSongItem = React.memo(({
 
   const parsedArtists = parseArtists(song.artist || artistName);
 
+  const displayPlays = (() => {
+    if (song.plays) {
+      const p = song.plays.trim();
+      if (/plays?$/i.test(p)) return p;
+      if (/views?$/i.test(p)) return p.replace(/views?$/i, 'plays').trim();
+      return `${p} plays`;
+    }
+    return song.duration || null;
+  })();
+
   return (
     <div
       className={`song-item ${isCurrentTrack ? 'active' : ''}`}
@@ -66,7 +71,7 @@ const ArtistSongItem = React.memo(({
       style={{
         display: 'flex',
         alignItems: 'center',
-        padding: '7px 8px',
+        padding: '6px 8px',
         borderRadius: '8px',
         gap: '10px',
         cursor: 'pointer',
@@ -148,14 +153,6 @@ const ArtistSongItem = React.memo(({
               ))}
             </span>
 
-            {/* Plays count (e.g. 664M plays) */}
-            {song.plays && (
-              <>
-                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
-                <span style={{ color: 'var(--text-main)', opacity: 0.85 }}>{song.plays}</span>
-              </>
-            )}
-
             {/* Album (clickable) */}
             {song.album && (
               <>
@@ -174,48 +171,30 @@ const ArtistSongItem = React.memo(({
                 </span>
               </>
             )}
-
-            {/* Duration fallback */}
-            {!song.plays && song.duration && (
-              <>
-                <span style={{ margin: '0 4px', opacity: 0.4 }}>•</span>
-                <span>{song.duration}</span>
-              </>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Play Counter & Action Buttons */}
       <div 
-        style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
+        style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Preview button */}
-        {onPlayPreview && (
-          <button
-            className="btn btn-icon"
-            onClick={() => {
-              if (isPreviewing) {
-                onStopPreview?.();
-              } else {
-                onPlayPreview({
-                  id: song.id,
-                  title: song.title,
-                  channel: song.artist || artistName,
-                  thumbnail: song.thumbnail,
-                  duration: song.duration
-                });
-              }
-            }}
-            title={isPreviewing ? "Stop Preview" : "Preview song"}
+        {/* Play Counter Text */}
+        {displayPlays && (
+          <span
             style={{
-              padding: '6px',
-              color: isPreviewing ? 'var(--accent-color)' : 'var(--text-muted)'
+              fontSize: '0.78rem',
+              color: 'var(--text-muted)',
+              fontWeight: 500,
+              whiteSpace: 'nowrap',
+              marginRight: '4px',
+              opacity: 0.85
             }}
+            title={displayPlays}
           >
-            {isPreviewing ? <Square size={15} fill="currentColor" /> : <Sparkles size={15} />}
-          </button>
+            {displayPlays}
+          </span>
         )}
 
         {/* Add to Playlist button */}
@@ -352,8 +331,8 @@ export default function ArtistPage({
       flexDirection: 'column',
       height: '100%',
       overflowY: 'auto',
-      padding: '12px 14px',
-      gap: '16px'
+      padding: '8px 4px',
+      gap: '14px'
     }}>
       {/* Top Songs Section */}
       <div>
@@ -361,12 +340,12 @@ export default function ArtistPage({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '10px',
-          padding: '0 4px'
+          marginBottom: '8px',
+          padding: '0 8px'
         }}>
           <h2 style={{
             margin: 0,
-            fontSize: '1.05rem',
+            fontSize: '1.02rem',
             fontWeight: 700,
             color: 'var(--text-main)',
             display: 'flex',
@@ -396,13 +375,10 @@ export default function ArtistPage({
               idx={idx}
               artistName={artistName}
               isCurrentTrack={currentSongId === song.id}
-              isPreviewing={previewSongId === song.id}
               isAdded={targetPlaylist.some(s => s.id === song.id)}
               isDownloaded={downloadedIds?.has(song.id)}
               isDownloading={downloadingSongId === song.id}
               onPlaySong={onPlaySong}
-              onPlayPreview={onPlayPreview}
-              onStopPreview={onStopPreview}
               onAddSong={onAddSong}
               onDownloadSong={onDownloadSong}
               onAlbumClick={onAlbumClick}

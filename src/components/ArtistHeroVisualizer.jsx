@@ -100,7 +100,7 @@ export default function ArtistHeroVisualizer({
           ? '0 36px 156px 36px' 
           : isMaximized 
             ? '18px 24px 30px 24px' 
-            : '12px 20px 26px 20px',
+            : '8px 18px 40px 18px',
         display: 'flex',
         flexDirection: 'column',
         gap: isFullscreen ? '14px' : '10px',
@@ -116,7 +116,7 @@ export default function ArtistHeroVisualizer({
             <div>
               <h1 style={{
                 margin: 0,
-                fontSize: isFullscreen ? '2.5rem' : '1.65rem',
+                fontSize: isFullscreen ? '2.5rem' : isMaximized ? '2rem' : '1.45rem',
                 fontWeight: 800,
                 color: '#ffffff',
                 textShadow: '0 2px 14px rgba(0,0,0,0.85)',
