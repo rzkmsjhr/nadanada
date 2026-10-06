@@ -1943,9 +1943,43 @@ pub async fn get_artist_details(
         .and_then(|s| s.as_str())
         .map(|s| s.to_string());
 
-    let description = header.and_then(|h| h.pointer("/description/runs/0/text"))
-        .and_then(|s| s.as_str())
-        .map(|s| s.to_string());
+    let description = header
+        .and_then(|h| h.pointer("/description/runs"))
+        .and_then(|r| r.as_array())
+        .map(|runs| {
+            runs.iter()
+                .filter_map(|run| run.get("text").and_then(|t| t.as_str()))
+                .collect::<Vec<_>>()
+                .join("")
+        })
+        .or_else(|| {
+            header.and_then(|h| h.pointer("/description/simpleText"))
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
+        .or_else(|| {
+            browse_json.pointer("/contents/singleColumnBrowseResultsRenderer/tabs/0/tabRenderer/content/sectionListRenderer/contents")
+                .and_then(|c| c.as_array())
+                .and_then(|sections| {
+                    sections.iter().find_map(|s| {
+                        s.get("musicDescriptionShelfRenderer").and_then(|shelf| {
+                            shelf.pointer("/description/runs")
+                                .and_then(|r| r.as_array())
+                                .map(|runs| {
+                                    runs.iter()
+                                        .filter_map(|run| run.get("text").and_then(|t| t.as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("")
+                                })
+                                .or_else(|| {
+                                    shelf.pointer("/description/simpleText")
+                                        .and_then(|s| s.as_str())
+                                        .map(|s| s.to_string())
+                                })
+                        })
+                    })
+                })
+        });
 
     let mut top_songs = Vec::new();
     let mut top_songs_playlist_id = None;

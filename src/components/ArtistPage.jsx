@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { 
   Play, 
   Pause, 
@@ -10,8 +10,10 @@ import {
   ChevronUp, 
   Music2, 
   Disc, 
-  AlertCircle 
+  AlertCircle,
+  ExternalLink
 } from 'lucide-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 
 const ArtistSongItem = React.memo(({
   song,
@@ -300,6 +302,30 @@ export default function ArtistPage({
   const hasMore = Boolean(artistDetails?.top_songs_playlist_id && !artistDetails?.has_loaded_all);
   const targetPlaylist = mainPlaylist || playlist || [];
 
+  const { bioText, wikiUrl } = useMemo(() => {
+    if (!description) return { bioText: '', wikiUrl: null };
+
+    // Matches e.g. "...From Wikipedia (https://en.wikipedia.org/wiki/Pamungkas) under Creative Commons..."
+    const match = description.match(/^(.*?)(?:(?:\r?\n)+|\s+)From Wikipedia\s*(?:\((https?:\/\/[^\s)]+)\))?(?:\s*under\s*Creative Commons[^\n]*)?\s*$/is);
+    if (match) {
+      return {
+        bioText: match[1].trim(),
+        wikiUrl: match[2] || null
+      };
+    }
+
+    // Handles dangling/incomplete cut-offs from earlier API parsing e.g. "...From Wikipedia ("
+    const truncatedMatch = description.match(/^(.*?)(?:(?:\r?\n)+|\s+)From Wikipedia\s*\(?\s*$/is);
+    if (truncatedMatch) {
+      return {
+        bioText: truncatedMatch[1].trim(),
+        wikiUrl: null
+      };
+    }
+
+    return { bioText: description.trim(), wikiUrl: null };
+  }, [description]);
+
   if (isLoading && !artistDetails) {
     return (
       <div style={{
@@ -347,7 +373,7 @@ export default function ArtistPage({
       flexDirection: 'column',
       height: '100%',
       overflowY: 'auto',
-      padding: '8px 4px',
+      padding: '8px 4px 18px 4px',
       gap: '14px'
     }}>
       {/* Top Songs Section */}
@@ -437,7 +463,7 @@ export default function ArtistPage({
       </div>
 
       {/* Description / Bio Section */}
-      {description && (
+      {bioText && (
         <div style={{
           marginTop: '6px',
           padding: '12px 14px',
@@ -458,40 +484,82 @@ export default function ArtistPage({
           </div>
           <div style={{
             fontSize: '0.83rem',
-            lineHeight: 1.5,
+            lineHeight: 1.55,
             color: 'var(--text-main)',
-            opacity: 0.9
+            opacity: 0.9,
+            whiteSpace: 'pre-line'
           }}>
-            {showFullBio || description.length <= 180
-              ? description
-              : `${description.slice(0, 180)}…`
+            {showFullBio || bioText.length <= 220
+              ? bioText
+              : `${bioText.slice(0, 220)}…`
             }
           </div>
-          {description.length > 180 && (
-            <button
-              onClick={() => setShowFullBio(!showFullBio)}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--accent-color)',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: 0,
-                alignSelf: 'flex-start',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '2px',
-                marginTop: '2px'
-              }}
-            >
-              {showFullBio ? (
-                <>Less <ChevronUp size={13} /></>
-              ) : (
-                <>More <ChevronDown size={13} /></>
-              )}
-            </button>
-          )}
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginTop: '2px',
+            flexWrap: 'wrap',
+            gap: '8px'
+          }}>
+            {bioText.length > 220 ? (
+              <button
+                onClick={() => setShowFullBio(!showFullBio)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--accent-color)',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px'
+                }}
+              >
+                {showFullBio ? (
+                  <>Less <ChevronUp size={13} /></>
+                ) : (
+                  <>More <ChevronDown size={13} /></>
+                )}
+              </button>
+            ) : <span />}
+
+            {wikiUrl && (
+              <a
+                href={wikiUrl}
+                onClick={(e) => {
+                  e.preventDefault();
+                  openUrl(wikiUrl).catch(() => window.open(wikiUrl, '_blank'));
+                }}
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-muted)',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  opacity: 0.85,
+                  cursor: 'pointer',
+                  transition: 'opacity 0.15s, color 0.15s'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.opacity = '1';
+                  e.currentTarget.style.color = 'var(--accent-color)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = '0.85';
+                  e.currentTarget.style.color = 'var(--text-muted)';
+                }}
+                title="Read more on Wikipedia"
+              >
+                <span>Wikipedia</span>
+                <ExternalLink size={11} />
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>
