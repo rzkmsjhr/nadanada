@@ -7,6 +7,7 @@ export default function ArtistHeroVisualizer({
   isLoading,
   isFullscreen = false,
   isMaximized = false,
+  isMiniPlayer = false,
   isShuffle = false,
   onPlayAll,
   onShuffleAll,
@@ -63,8 +64,8 @@ export default function ArtistHeroVisualizer({
         }}
       />
 
-      {/* Top Header Row (Close Button) - Hide in fullscreen to prevent collision with fullscreen player HUD */}
-      {!isFullscreen && onClose && (
+      {/* Top Header Row (Close Button) - Hide in fullscreen or mini player */}
+      {!isFullscreen && !isMiniPlayer && onClose && (
         <div style={{
           position: 'relative',
           zIndex: 5,
@@ -100,10 +101,12 @@ export default function ArtistHeroVisualizer({
           ? '0 36px 156px 36px' 
           : isMaximized 
             ? '18px 24px 30px 24px' 
-            : '8px 18px 40px 18px',
+            : isMiniPlayer
+              ? '12px 14px'
+              : '8px 18px 40px 18px',
         display: 'flex',
         flexDirection: 'column',
-        gap: isFullscreen ? '14px' : '10px',
+        gap: isFullscreen ? '14px' : isMiniPlayer ? '3px' : '10px',
         pointerEvents: 'auto'
       }}>
         {isLoading && !artistDetails ? (
@@ -116,7 +119,7 @@ export default function ArtistHeroVisualizer({
             <div>
               <h1 style={{
                 margin: 0,
-                fontSize: isFullscreen ? '2.5rem' : isMaximized ? '2rem' : '1.45rem',
+                fontSize: isFullscreen ? '2.5rem' : isMaximized ? '2rem' : isMiniPlayer ? '1.25rem' : '1.45rem',
                 fontWeight: 800,
                 color: '#ffffff',
                 textShadow: '0 2px 14px rgba(0,0,0,0.85)',
@@ -132,19 +135,19 @@ export default function ArtistHeroVisualizer({
                   alignItems: 'center',
                   gap: '6px',
                   marginTop: isFullscreen ? '6px' : '4px',
-                  fontSize: isFullscreen ? '0.95rem' : '0.82rem',
+                  fontSize: isFullscreen ? '0.95rem' : isMiniPlayer ? '0.78rem' : '0.82rem',
                   color: 'rgba(255, 255, 255, 0.85)',
                   textShadow: '0 1px 4px rgba(0,0,0,0.7)',
                   fontWeight: 500
                 }}>
-                  <Users size={isFullscreen ? 16 : 14} style={{ opacity: 0.85 }} />
+                  <Users size={isFullscreen ? 16 : isMiniPlayer ? 13 : 14} style={{ opacity: 0.85 }} />
                   <span>{audience}</span>
                 </div>
               )}
             </div>
 
-            {/* Quick Action Buttons */}
-            {artistDetails?.top_songs?.length > 0 && (
+            {/* Quick Action Buttons (hidden in mini player as it has its own media controller) */}
+            {!isMiniPlayer && artistDetails?.top_songs?.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: isFullscreen ? '4px' : '2px' }}>
                 <button
                   className="btn btn-primary"

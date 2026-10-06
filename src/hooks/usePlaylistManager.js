@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 export function usePlaylistManager({
   api,
@@ -77,13 +77,53 @@ export function usePlaylistManager({
     loadPlaylists();
   }, [api]);
 
+  const lastMainPlaylistIndexRef = useRef(currentIndex);
+
+  useEffect(() => {
+    if (!savedPlaylist) {
+      lastMainPlaylistIndexRef.current = currentIndex;
+    }
+  }, [savedPlaylist, currentIndex]);
+
+  const persistSession = useCallback((activePlaylist, activeIdx, preservedPlaylist) => {
+    const playlistToPersist = preservedPlaylist || activePlaylist;
+    let indexToPersist = activeIdx;
+    if (preservedPlaylist && preservedPlaylist.length > 0) {
+      const activeTrack = activePlaylist[activeIdx];
+      const matchIdx = activeTrack ? preservedPlaylist.findIndex(s => s.id === activeTrack.id) : -1;
+      indexToPersist = matchIdx !== -1 ? matchIdx : (lastMainPlaylistIndexRef.current ?? 0);
+      if (indexToPersist >= preservedPlaylist.length) {
+        indexToPersist = Math.max(0, preservedPlaylist.length - 1);
+      } else if (indexToPersist < 0) {
+        indexToPersist = 0;
+      }
+    } else if (playlistToPersist.length === 0) {
+      indexToPersist = 0;
+    } else if (indexToPersist >= playlistToPersist.length) {
+      indexToPersist = Math.max(0, playlistToPersist.length - 1);
+    }
+    try {
+      localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlistToPersist));
+      localStorage.setItem('nadanada-session-index', indexToPersist.toString());
+    } catch (e) {
+      console.error('Failed to save session playlist:', e);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      localStorage.setItem('nadanada-session-playlist', JSON.stringify(playlist));
-      localStorage.setItem('nadanada-session-index', currentIndex.toString());
+      persistSession(playlist, currentIndex, savedPlaylist);
     }, 500);
     return () => clearTimeout(timer);
-  }, [playlist, currentIndex]);
+  }, [playlist, currentIndex, savedPlaylist, persistSession]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      persistSession(playlist, currentIndex, savedPlaylist);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [playlist, currentIndex, savedPlaylist, persistSession]);
 
   useEffect(() => {
     if (!playlistsLoadedRef.current) return; // Don't overwrite the file before we've loaded it
