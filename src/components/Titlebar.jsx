@@ -6,16 +6,16 @@ const Titlebar = ({ appWindow, onToggleMiniPlayer, isMiniPlayer }) => {
 
   const handleMouseDown = (e) => {
     if (
-      e.target === e.currentTarget || 
-      e.target.classList.contains('titlebar-logo') || 
-      e.target.classList.contains('titlebar-center')
+      e.button === 0 &&
+      !e.target.closest('.titlebar-button') && 
+      !e.target.closest('.mac-btn')
     ) {
       appWindow.startDragging().catch(() => {});
     }
   };
 
   return (
-    <div className={`titlebar ${isMac ? 'mac' : ''}`} onMouseDown={handleMouseDown}>
+    <div className={`titlebar ${isMac ? 'mac' : ''}`} data-tauri-drag-region onMouseDown={handleMouseDown}>
       {isMac ? (
         <>
           <div className="titlebar-buttons mac">
@@ -26,7 +26,15 @@ const Titlebar = ({ appWindow, onToggleMiniPlayer, isMiniPlayer }) => {
           <div className="titlebar-center">
             <Music2 size={14} /> NadaNada
           </div>
-          <div style={{ width: '70px' }}></div>
+          <div className="titlebar-buttons mac-right">
+            <div 
+              className="titlebar-button mac-mini-btn" 
+              onClick={() => onToggleMiniPlayer?.()} 
+              title={isMiniPlayer ? "Exit Mini Player" : "Mini Player"}
+            >
+              <PictureInPicture2 size={14} />
+            </div>
+          </div>
         </>
       ) : (
         <>

@@ -443,6 +443,12 @@ body {
   align-items: center;
   height: 100%;
 }
+.titlebar-buttons.mac-right {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+}
 .mac-btn {
   width: 12px;
   height: 12px;
@@ -456,6 +462,16 @@ body {
 .mac-btn.close { background: #ff5f56; border: 1px solid #e0443e; }
 .mac-btn.minimize { background: #ffbd2e; border: 1px solid #dea123; }
 .mac-btn.maximize { background: #27c93f; border: 1px solid #1aab29; }
+.mac-mini-btn {
+  width: 28px !important;
+  height: 22px !important;
+  border-radius: 6px;
+  color: var(--text-muted);
+}
+.mac-mini-btn:hover {
+  color: var(--text-main);
+  background: var(--panel-border, rgba(128, 128, 128, 0.2));
+}
 .titlebar-center {
   display: flex;
   align-items: center;
