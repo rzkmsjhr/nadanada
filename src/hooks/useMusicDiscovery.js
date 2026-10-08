@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api.js';
 
 export const parseDuration = (durationStr) => {
@@ -361,6 +361,8 @@ export function useMusicDiscovery({
   const [isFetchingTrending, setIsFetchingTrending] = useState(false);
   const [trendingType, setTrendingType] = useState(null);
 
+  const mixCacheRef = useRef(new Map());
+
   useEffect(() => {
     if (isEndlessPlay && playlist.length > 0 && currentIndex >= playlist.length - 2 && !isFetchingEndless && !failedEndlessFetch) {
       const fetchNext = async () => {
@@ -371,14 +373,47 @@ export function useMusicDiscovery({
         }
         setIsFetchingEndless(true);
         try {
-          const current = (currentIndex >= 0 && currentIndex < playlist.length) ? playlist[currentIndex] : playlist[playlist.length - 1];
-          const seedId = current?.id;
-          if (!seedId) {
+          // Always extend the playlist from the end!
+          const lastIdx = playlist.length - 1;
+          const songA = playlist[lastIdx];
+          const songB = playlist.length >= 2 ? playlist[lastIdx - 1] : null;
+
+          if (!songA?.id) {
             setIsFetchingEndless(false);
             return;
           }
-          const results = await api.getYouTubeMix(seedId);
-          
+
+          // Anchor tracks establish the playlist's original mood and theme.
+          // User-added songs have !isEndlessGenerated; fallback to first tracks.
+          const userTracks = playlist.filter(s => !s.isEndlessGenerated);
+          const anchorSong = userTracks.length > 0 ? userTracks[0] : playlist[0];
+
+          const mixCache = mixCacheRef.current;
+          const getMix = async (videoId) => {
+            if (!videoId) return [];
+            if (mixCache.has(videoId)) return mixCache.get(videoId);
+            try {
+              const res = await api.getYouTubeMix(videoId);
+              if (res && res.length > 0) {
+                mixCache.set(videoId, res);
+                if (mixCache.size > 40) {
+                  const oldestKey = mixCache.keys().next().value;
+                  mixCache.delete(oldestKey);
+                }
+                return res;
+              }
+            } catch (err) {
+              console.error("Failed to fetch mix for", videoId, err);
+            }
+            return [];
+          };
+
+          const mixA = await getMix(songA.id);
+          const mixB = songB?.id ? await getMix(songB.id) : [];
+          const mixAnchor = (anchorSong?.id && anchorSong.id !== songA.id && anchorSong.id !== songB?.id)
+            ? await getMix(anchorSong.id)
+            : [];
+
           const getWords = (song) => {
             const text = ((song.title || '') + ' ' + (song.channel || '')).toLowerCase()
               .replace(/\[.*?\]|\(.*?\)/g, ' ') // remove brackets and parens
@@ -398,85 +433,110 @@ export function useMusicDiscovery({
             return intersection / union;
           };
 
-          const extractArtistFingerprint = (song) => {
-            if (!song) return { clean: '', channelClean: '' };
-            const title = (song.title || '').toLowerCase();
-            const channel = (song.channel || '').toLowerCase()
+          const extractArtistClean = (song) => {
+            if (!song) return '';
+            const channel = (song.channel || '')
               .replace(/\s*-\s*topic$/i, '')
               .replace(/vevo$/i, '')
               .replace(/official(\s+channel|\s+music)?$/i, '')
               .trim();
-
-            let artistCandidate = '';
+            const title = song.title || '';
             if (title.includes(' - ')) {
-              artistCandidate = title.split(' - ')[0].trim();
+              const prefix = title.split(' - ')[0].trim();
+              if (prefix.length >= 2 && prefix.length <= 40) return prefix;
             } else if (title.includes(' ~ ')) {
-              artistCandidate = title.split(' ~ ')[0].trim();
-            } else {
-              artistCandidate = channel;
+              const prefix = title.split(' ~ ')[0].trim();
+              if (prefix.length >= 2 && prefix.length <= 40) return prefix;
             }
-
-            const clean = str => str
-              .replace(/\(.*?\)|\[.*?\]/g, ' ')
-              .replace(/\b(feat|ft|featuring|with|prod|x)\b.*$/i, ' ')
-              .replace(/[^a-z0-9]/gi, '')
-              .toLowerCase();
-
-            return {
-              clean: clean(artistCandidate),
-              channelClean: clean(channel)
-            };
+            return channel;
           };
 
-          const isSameArtist = (songA, songB) => {
-            if (!songA || !songB) return false;
-            const a = extractArtistFingerprint(songA);
-            const b = extractArtistFingerprint(songB);
+          const normalizeArtistName = (name) => {
+            return (name || '').toLowerCase()
+              .replace(/\(.*?\)|\[.*?\]/g, ' ')
+              .replace(/\b(feat|ft|featuring|with|prod|x)\b.*$/i, ' ')
+              .replace(/[^a-z0-9\u3040-\u30ff\u4e00-\u9faf]/gi, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          };
 
-            if (a.clean && b.clean && a.clean === b.clean) return true;
-            if (a.channelClean && b.channelClean && a.channelClean === b.channelClean) return true;
-            if (a.clean && b.channelClean && a.clean === b.channelClean) return true;
-            if (a.channelClean && b.clean && a.channelClean === b.clean) return true;
-
-            if (a.clean.length > 3 && b.clean.length > 3) {
-              if (a.clean.includes(b.clean) || b.clean.includes(a.clean)) return true;
-            }
-            if (a.channelClean.length > 3 && b.channelClean.length > 3) {
-              if (a.channelClean.includes(b.channelClean) || b.channelClean.includes(a.channelClean)) return true;
-            }
-            if (a.clean.length > 3 && b.channelClean.length > 3) {
-              if (a.clean.includes(b.channelClean) || b.channelClean.includes(a.clean)) return true;
-            }
-            if (a.channelClean.length > 3 && b.clean.length > 3) {
-              if (a.channelClean.includes(b.clean) || b.clean.includes(a.channelClean)) return true;
-            }
-
+          const isSameArtist = (song1, song2) => {
+            if (!song1 || !song2) return false;
+            const a = normalizeArtistName(extractArtistClean(song1));
+            const b = normalizeArtistName(extractArtistClean(song2));
+            if (!a || !b) return false;
+            if (a === b) return true;
+            if (a.length > 3 && b.length > 3 && (a.includes(b) || b.includes(a))) return true;
             return false;
+          };
+
+          const analyzeMixSphere = (tracks, baseSong) => {
+            const trackIds = new Set();
+            const artistNames = new Set();
+            const artistWordSet = new Set();
+
+            if (baseSong) {
+              if (baseSong.id) trackIds.add(baseSong.id);
+              const baseArt = normalizeArtistName(extractArtistClean(baseSong));
+              if (baseArt) {
+                artistNames.add(baseArt);
+                baseArt.split(/\s+/).filter(w => w.length > 2).forEach(w => artistWordSet.add(w));
+              }
+            }
+
+            for (const t of tracks) {
+              if (t.id) trackIds.add(t.id);
+              const art = normalizeArtistName(extractArtistClean(t));
+              if (art) {
+                artistNames.add(art);
+                art.split(/\s+/).filter(w => w.length > 2).forEach(w => artistWordSet.add(w));
+              }
+            }
+
+            return { trackIds, artistNames, artistWordSet };
           };
 
           const existingIds = new Set(playlist.map(s => s.id));
           const existingWordSets = playlist.map(s => getWords(s));
-          
-          let available = results.filter(v => {
-            if (existingIds.has(v.id)) return false;
-            
+
+          // Combine candidate pools from the last song (mixA) and second-to-last (mixB)
+          const candidatePool = [];
+          const seenPoolIds = new Set();
+
+          for (const v of mixA) {
+            if (!existingIds.has(v.id) && !seenPoolIds.has(v.id)) {
+              candidatePool.push(v);
+              seenPoolIds.add(v.id);
+            }
+          }
+
+          if (mixB && mixB.length > 0) {
+            for (const v of mixB) {
+              if (!existingIds.has(v.id) && !seenPoolIds.has(v.id)) {
+                candidatePool.push(v);
+                seenPoolIds.add(v.id);
+              }
+            }
+          }
+
+          let available = candidatePool.filter(v => {
             const vWords = getWords(v);
             for (let existingSet of existingWordSets) {
               if (calculateSimilarity(vWords, existingSet) > 0.55) {
-                return false; // Semantic duplicate found
+                return false; // Semantic duplicate
               }
             }
             return true;
           });
-          
+
           if (available.length === 0) {
             console.log("Primary mix empty or all duplicates. Attempting fallback...");
             try {
-              let cleanArtist = current.channel ? current.channel.replace(/- topic/i, '').replace(/vevo/i, '').trim() : '';
-              let fallbackQuery = cleanArtist ? `${cleanArtist} songs` : `${current.title} cover`;
-              
+              let cleanArtist = songA.channel ? songA.channel.replace(/- topic/i, '').replace(/vevo/i, '').trim() : '';
+              let fallbackQuery = cleanArtist ? `${cleanArtist} songs` : `${songA.title} cover`;
+
               let fallbackResults = await api.searchYouTube(fallbackQuery);
-              available = fallbackResults.filter(v => {
+              available = (fallbackResults || []).filter(v => {
                 if (existingIds.has(v.id)) return false;
                 const vWords = getWords(v);
                 for (let existingSet of existingWordSets) {
@@ -485,103 +545,126 @@ export function useMusicDiscovery({
                 return true;
               });
 
-              if (available.length === 0 && playlist.length > 1) {
-                 // Final fallback: try mixing from the previous song
-                 const prevSong = currentIndex > 0 ? playlist[currentIndex - 1] : null;
-                 if (prevSong?.id) {
-                   const prevResults = await api.getYouTubeMix(prevSong.id);
-                   available = prevResults.filter(v => !existingIds.has(v.id));
-                 }
+              if (available.length === 0 && songB?.id) {
+                const prevResults = await getMix(songB.id);
+                available = prevResults.filter(v => !existingIds.has(v.id));
               }
             } catch (fallbackErr) {
               console.error("Endless play fallback failed:", fallbackErr);
             }
           }
-          
+
           if (available.length > 0) {
-            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b|lirik|lyrics|lyric|cover|live)/i;
-            available.sort((a, b) => {
-              const aIsSong = a.item_type === 'song' || (!videoRegex.test(a.title) && a.item_type !== 'video');
-              const bIsSong = b.item_type === 'song' || (!videoRegex.test(b.title) && b.item_type !== 'video');
-              if (aIsSong && !bIsSong) return -1;
-              if (!aIsSong && bIsSong) return 1;
-              return 0;
+            const sphereB = songB ? analyzeMixSphere(mixB, songB) : null;
+            const sphereAnchor = anchorSong ? analyzeMixSphere(mixAnchor, anchorSong) : null;
+            const recentHistory = playlist.slice(Math.max(0, playlist.length - 7));
+
+            const scoredCandidates = available.map(track => {
+              let score = 0;
+              const candArtistNorm = normalizeArtistName(extractArtistClean(track));
+              const candWords = candArtistNorm.split(/\s+/).filter(w => w.length > 2);
+
+              // 1. Fatigue / Repetition penalty:
+              // Strictly reject candidate if it is by the immediate predecessor's artist (songA)
+              if (isSameArtist(track, songA)) {
+                return { track, score: -9999, rejected: true };
+              }
+
+              // Penalize if artist appeared in the recent 2-7 tracks
+              const recentConflictCount = recentHistory.filter(h => isSameArtist(track, h)).length;
+              if (recentConflictCount > 0) {
+                score -= recentConflictCount * 80;
+              }
+
+              // 2. Position in mixA (YouTube Music relevance rank)
+              const rankInA = mixA.findIndex(t => t.id === track.id);
+              if (rankInA !== -1) {
+                score += Math.max(0, 50 - rankInA);
+              }
+
+              // 3. Consistency with Song B (second-to-last song in playlist)
+              if (sphereB) {
+                if (sphereB.trackIds.has(track.id)) {
+                  score += 80; // Direct track match in Song B's sphere
+                } else if (sphereB.artistNames.has(candArtistNorm)) {
+                  score += 50; // Artist is part of Song B's recommendation sphere
+                } else if (candWords.some(w => sphereB.artistWordSet.has(w))) {
+                  score += 25; // Shared artist token
+                } else {
+                  // Disconnected from Song B: penalize jumping away from preceding context
+                  score -= 50;
+                }
+              }
+
+              // 4. Consistency with Playlist Anchor (Original Mood / Theme)
+              if (sphereAnchor && playlist.length >= 3) {
+                if (sphereAnchor.trackIds.has(track.id)) {
+                  score += 70; // Direct track match with anchor theme
+                } else if (sphereAnchor.artistNames.has(candArtistNorm)) {
+                  score += 45; // Artist belongs to the anchor theme/genre
+                } else if (candWords.some(w => sphereAnchor.artistWordSet.has(w))) {
+                  score += 20; // Shared token with anchor
+                } else {
+                  // Complete disconnection from the playlist's original theme
+                  score -= 60;
+                }
+              }
+
+              // 5. Official Song preference over video
+              if (track.item_type === 'song') {
+                score += 25;
+              }
+
+              // 6. Penalize derivatives, karaoke, covers, live
+              if (isKaraokeOrDerivative(track.title, track.channel)) {
+                score -= 150;
+              }
+
+              return { track, score, rejected: false };
             });
 
-            let finalPicked = null;
-            let fallbackCandidate = null;
+            const validCandidates = scoredCandidates
+              .filter(c => !c.rejected && c.score > -200)
+              .sort((a, b) => b.score - a.score);
 
-            // Look at the last 7 tracks to prevent same artist repeats within 6-7 tracks
-            const recentHistory = playlist.slice(Math.max(0, currentIndex - 6), currentIndex + 1);
+            const bestEntry = validCandidates.length > 0
+              ? validCandidates[0]
+              : scoredCandidates.filter(c => !c.rejected).sort((a, b) => b.score - a.score)[0];
 
-            for (let item of available) {
-              let picked = item;
-              
-              // If the recommended track is explicitly a video or lyric version, try to find the official song audio version
-              const isTopic = (picked.channel || '').toLowerCase().includes('- topic');
-              const isSong = picked.item_type === 'song';
-              
-              if (!isTopic && !isSong && videoRegex.test(picked.title)) {
-                const cleanTitle = picked.title
-                  .replace(/\[.*?\]|\(.*?\)/g, ' ')
-                  .replace(videoRegex, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim();
-                  
-                if (cleanTitle.length > 0) {
-                  try {
-                    let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
-                    const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist}`, 'song');
-                    if (searchResults && searchResults.length > 0) {
-                      const candidateSong = searchResults[0];
-                      const artistWords = searchArtist ? [...new Set(normalizeText(searchArtist).split(/\s+/).filter(w => w.length > 1))] : [];
-                      // Only replace if the candidate song is genuinely by the same artist
-                      if (doesCandidateMatchArtist(candidateSong, artistWords, searchArtist)) {
-                        picked = candidateSong;
-                      }
+            let picked = bestEntry?.track || available[0];
+
+            // If the recommended track is explicitly a video or lyric version, try to find the official song audio version
+            const videoRegex = /(official video|music video|official hd video|official music video|\bvideo\b|lirik|lyrics|lyric|cover|live)/i;
+            const isTopic = (picked.channel || '').toLowerCase().includes('- topic');
+            const isSong = picked.item_type === 'song';
+
+            if (!isTopic && !isSong && videoRegex.test(picked.title)) {
+              const cleanTitle = picked.title
+                .replace(/\[.*?\]|\(.*?\)/g, ' ')
+                .replace(videoRegex, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+              if (cleanTitle.length > 0) {
+                try {
+                  let searchArtist = picked.channel ? picked.channel.replace(/vevo/i, '').replace(/official/i, '').trim() : '';
+                  const searchResults = await api.searchYouTube(`${cleanTitle} ${searchArtist}`, 'song');
+                  if (searchResults && searchResults.length > 0) {
+                    const candidateSong = searchResults[0];
+                    const artistWords = searchArtist ? [...new Set(normalizeText(searchArtist).split(/\s+/).filter(w => w.length > 1))] : [];
+                    if (doesCandidateMatchArtist(candidateSong, artistWords, searchArtist)) {
+                      picked = candidateSong;
                     }
-                  } catch (err) {
-                    console.error("Audio fallback search failed:", err);
                   }
-                }
-              }
-              
-              // Check if the final ID and signature are already in the playlist
-              let isDuplicate = false;
-              if (existingIds.has(picked.id)) {
-                isDuplicate = true;
-              } else {
-                const pickedWords = getWords(picked);
-                for (let existingSet of existingWordSets) {
-                  if (calculateSimilarity(pickedWords, existingSet) > 0.55) {
-                    isDuplicate = true;
-                    break;
-                  }
-                }
-              }
-              
-              if (!isDuplicate) {
-                // Check if artist appeared in the last 7 tracks
-                const hasRecentConflict = recentHistory.some(historyTrack => isSameArtist(picked, historyTrack));
-                
-                if (!hasRecentConflict) {
-                  finalPicked = picked;
-                  break;
-                } else if (!fallbackCandidate && !isSameArtist(picked, current)) {
-                  // Keep as fallback only if it's not the immediately preceding song
-                  fallbackCandidate = picked;
+                } catch (err) {
+                  console.error("Audio fallback search failed:", err);
                 }
               }
             }
-            
-            // If every available song had an artist conflict, use fallback candidate or first available
-            if (!finalPicked) {
-              finalPicked = fallbackCandidate || available[0];
-            }
-            
-            if (finalPicked) {
+
+            if (picked) {
               const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-              setPlaylist(prev => [...prev, { ...finalPicked, queueId }]);
+              setPlaylist(prev => [...prev, { ...picked, queueId, isEndlessGenerated: true }]);
             } else {
               setFailedEndlessFetch(true);
             }
@@ -596,7 +679,7 @@ export function useMusicDiscovery({
           setIsFetchingEndless(false);
         }
       };
-      
+
       fetchNext();
     }
   }, [currentIndex, playlist.length, isEndlessPlay, isFetchingEndless, failedEndlessFetch]);
@@ -604,6 +687,9 @@ export function useMusicDiscovery({
   // Reset the failed state whenever the user manually plays a different song or adds a song
   useEffect(() => {
     setFailedEndlessFetch(false);
+    if (playlist.length === 0) {
+      mixCacheRef.current.clear();
+    }
   }, [currentIndex, playlist.length, isEndlessPlay]);
 
   const handleLoadTrending = async (region) => {
