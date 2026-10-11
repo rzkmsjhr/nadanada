@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Loader2, Plus, Check, X, Disc, Music, Play, Square } from 'lucide-react';
+import { Loader2, Plus, Check, X, Disc, Music, Video, Play, Square } from 'lucide-react';
 
 const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId, onPlayPreview, onStopPreview, isPreviewing }) => {
   const isAlbum = video.is_playlist;
@@ -192,7 +192,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             <input 
               className="input" 
               style={{ width: '100%', paddingRight: '32px' }}
-              placeholder="Search YouTube..." 
+              placeholder={searchType === 'video' ? "Search YouTube Videos..." : searchType === 'album' ? "Search Albums..." : "Search Songs..."} 
               value={query}
               onChange={e => setQuery(e.target.value)}
               autoFocus
@@ -223,6 +223,14 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             onClick={() => handleTypeSwitch('song')}
           >
             <Music size={14} /> Songs
+          </button>
+          <button
+            type="button"
+            className={`btn ${searchType === 'video' ? 'btn-primary' : ''}`}
+            style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'video' ? '' : 'var(--bg-color)' }}
+            onClick={() => handleTypeSwitch('video')}
+          >
+            <Video size={14} /> Videos
           </button>
           <button
             type="button"
