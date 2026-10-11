@@ -152,13 +152,13 @@ export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavio
               height: prevSizeRef.current.height || defHeight, 
               minWidth: 375, 
               minHeight: 580,
-              alwaysOnTop: false
+              alwaysOnTop: behavior === 'prompt'
             });
             if (prevSizeRef.current.wasMaximized) {
               await appWindow.maximize();
             }
           } else {
-            await invoke('force_resize_window', { width: defWidth, height: defHeight, minWidth: 375, minHeight: 580, alwaysOnTop: false });
+            await invoke('force_resize_window', { width: defWidth, height: defHeight, minWidth: 375, minHeight: 580, alwaysOnTop: behavior === 'prompt' });
           }
         } catch (err) {
           console.error("Failed to restore window on close:", err);
@@ -167,6 +167,7 @@ export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavio
 
       if (behavior === 'minimize') {
         try {
+          await api.setAlwaysOnTop(false);
           await appWindow.hide();
         } catch (err) {
           console.error("Failed to hide window on close:", err);
@@ -181,6 +182,12 @@ export function useSystemIntegration(appWindow, setShowClosePrompt, closeBehavio
           console.error("Failed to quit app on close:", err);
         }
         return;
+      }
+
+      try {
+        await api.showClosePromptWindow();
+      } catch (err) {
+        console.error("Failed to show close prompt window:", err);
       }
 
       setShowClosePrompt(true);

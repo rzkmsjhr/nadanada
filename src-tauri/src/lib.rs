@@ -30,6 +30,7 @@ pub fn run() {
                         } => {
                             let app = tray.app_handle();
                             if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.unminimize();
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
@@ -45,8 +46,27 @@ pub fn run() {
                 if window.label() == "main" {
                     // Prevent the default close behavior
                     api.prevent_close();
-                    // Tell the frontend that we want to close, so it can show our custom prompt
-                    let _ = window.emit("close-requested", ());
+
+                    let behavior = app_commands::get_close_behavior();
+                    match behavior {
+                        1 => {
+                            // Minimize to tray
+                            let _ = window.hide();
+                        }
+                        2 => {
+                            // Close app
+                            window.app_handle().exit(0);
+                        }
+                        _ => {
+                            // Prompt user: immediately bring window to front and on top
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_always_on_top(true);
+                            let _ = window.set_focus();
+                            let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+                            let _ = window.emit("close-requested", ());
+                        }
+                    }
                 }
             }
         })
@@ -60,6 +80,9 @@ pub fn run() {
             app_commands::quit_app,
             app_commands::force_resize_window,
             app_commands::clear_cached_data,
+            app_commands::set_close_behavior,
+            app_commands::set_always_on_top,
+            app_commands::show_close_prompt_window,
             server::get_embed_port,
             youtube::get_playlist_title,
             youtube::get_video_album_info,
@@ -75,6 +98,18 @@ pub fn run() {
             youtube::get_artist_details,
             youtube::get_artist_top_songs
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = _event {
+                if !has_visible_windows {
+                    if let Some(window) = _app_handle.get_webview_window("main") {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }

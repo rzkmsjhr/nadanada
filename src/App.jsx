@@ -119,6 +119,7 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem('nadanada-close-behavior', closeBehavior);
+    api.setCloseBehavior(closeBehavior).catch(() => {});
   }, [closeBehavior]);
 
   const {
