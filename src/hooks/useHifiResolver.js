@@ -18,19 +18,16 @@ function needsHifiCheck(s, inFlightSet) {
  * 
  * Strictness:
  * - Only runs when isHifiEnabled is true.
- * - Only operates on the active playback playlist (bypasses when savedPlaylist / external view is active).
+ * - Operates on the active playback playlist.
  * - Prioritizes currentSong (currentIndex) and nextSong (currentIndex + 1) for immediate playback & crossfade.
  */
 export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEnabled, savedPlaylist }) {
   const inFlightRef = useRef(new Set());
   const isHifiEnabledRef = useRef(isHifiEnabled);
   isHifiEnabledRef.current = isHifiEnabled;
-  const savedPlaylistRef = useRef(savedPlaylist);
-  savedPlaylistRef.current = savedPlaylist;
 
   useEffect(() => {
-    // Only operate on active current playlist, not when browsing temporary album views (savedPlaylist)
-    if (!isHifiEnabled || !playlist || playlist.length === 0 || Boolean(savedPlaylist)) {
+    if (!isHifiEnabled || !playlist || playlist.length === 0) {
       return;
     }
 
@@ -63,7 +60,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
         // Always commit completed in-flight resolutions to playlist so concurrent playlist updates
         // (such as Endless Play appending a track) never drop an already-resolved song!
-        if (isHifiEnabledRef.current && !savedPlaylistRef.current) {
+        if (isHifiEnabledRef.current) {
           setPlaylist(prev => {
             let changed = false;
             let updated = [...prev];
@@ -127,7 +124,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
           inFlightRef.current.delete(song.id);
         }
 
-        if (isHifiEnabledRef.current && !savedPlaylistRef.current) {
+        if (isHifiEnabledRef.current) {
           setPlaylist(prev => {
             const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
             if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION)) return prev;
@@ -165,5 +162,5 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
     return () => {
       isCancelled = true;
     };
-  }, [playlist, currentIndex, isHifiEnabled, Boolean(savedPlaylist), setPlaylist]);
+  }, [playlist, currentIndex, isHifiEnabled, setPlaylist]);
 }

@@ -356,6 +356,42 @@ export function getCachedHifi(song) {
   return cached;
 }
 
+/**
+ * Sanitizes a track loaded from persistent storage or saved playlists.
+ * If the track has an unverified or legacy Hi-Fi stream_url (matcher version !== HIFI_MATCHER_VERSION),
+ * strips the stream_url so that it is cleanly re-verified by strict matcher v3 before playback.
+ */
+export function sanitizeLegacyHifiTrack(s) {
+  if (!s || typeof s !== 'object') return s;
+  // Local/downloaded files are always preserved
+  if (s.is_local || s.file_path) return s;
+  // Native Monochrome tracks (where id === hifi_id or searched directly from Monochrome) are preserved
+  if (s.source === 'monochrome' && (!s.hifi_id || String(s.hifi_id) === String(s.id))) {
+    return s;
+  }
+  // If track hasn't been verified with current matcher version
+  if (s._hifiVersion !== HIFI_MATCHER_VERSION) {
+    if (s.stream_url) {
+      return {
+        ...s,
+        stream_url: null,
+        source: null,
+        hifi_id: null,
+        _hifiChecked: false,
+        _hifiVersion: undefined
+      };
+    }
+    if (s._hifiChecked) {
+      return {
+        ...s,
+        _hifiChecked: false,
+        _hifiVersion: undefined
+      };
+    }
+  }
+  return s;
+}
+
 const inFlightPromises = new Map();
 
 /**

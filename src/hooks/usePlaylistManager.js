@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION } from '../services/hifiResolver';
+import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack } from '../services/hifiResolver';
 
 export function usePlaylistManager({
   api,
@@ -12,9 +12,7 @@ export function usePlaylistManager({
       const saved = localStorage.getItem('nadanada-session-playlist');
       const parsed = saved ? JSON.parse(saved) : [];
       return Array.isArray(parsed)
-        ? parsed.map(s => (s && s.stream_url && s.hifi_id && String(s.hifi_id) !== String(s.id) && s._hifiVersion !== HIFI_MATCHER_VERSION)
-            ? { ...s, stream_url: null, source: null, hifi_id: null, _hifiChecked: false }
-            : s)
+        ? parsed.map(sanitizeLegacyHifiTrack)
         : [];
     } catch (e) {
       console.error('Failed to parse session playlist:', e);
@@ -56,7 +54,11 @@ export function usePlaylistManager({
         const data = await api.loadPlaylists();
         const parsed = JSON.parse(data);
         if (parsed && parsed.length > 0) {
-          setSavedPlaylists(parsed);
+          const sanitized = parsed.map(pl => ({
+            ...pl,
+            items: Array.isArray(pl.items) ? pl.items.map(sanitizeLegacyHifiTrack) : []
+          }));
+          setSavedPlaylists(sanitized);
         } else {
           // One-time migration from localStorage
           const lsData = localStorage.getItem('nadanada-saved-playlists');
@@ -64,8 +66,12 @@ export function usePlaylistManager({
             try {
               const lsParsed = JSON.parse(lsData);
               if (lsParsed && lsParsed.length > 0) {
-                setSavedPlaylists(lsParsed);
-                await api.savePlaylists(lsData);
+                const sanitized = lsParsed.map(pl => ({
+                  ...pl,
+                  items: Array.isArray(pl.items) ? pl.items.map(sanitizeLegacyHifiTrack) : []
+                }));
+                setSavedPlaylists(sanitized);
+                await api.savePlaylists(JSON.stringify(sanitized));
                 localStorage.removeItem('nadanada-saved-playlists');
               }
             } catch {}
@@ -75,7 +81,15 @@ export function usePlaylistManager({
         console.error('Failed to load playlists from file, using localStorage fallback:', e);
         try {
           const lsData = localStorage.getItem('nadanada-saved-playlists');
-          if (lsData) setSavedPlaylists(JSON.parse(lsData));
+          if (lsData) {
+            const lsParsed = JSON.parse(lsData);
+            if (lsParsed && lsParsed.length > 0) {
+              setSavedPlaylists(lsParsed.map(pl => ({
+                ...pl,
+                items: Array.isArray(pl.items) ? pl.items.map(sanitizeLegacyHifiTrack) : []
+              })));
+            }
+          }
         } catch {}
       } finally {
         playlistsLoadedRef.current = true;
