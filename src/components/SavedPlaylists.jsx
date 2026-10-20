@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Check, X, Pencil, Trash2 } from "lucide-react";
-const SavedPlaylistItem = React.memo(({ pl, onSelect, onDelete, onRename }) => {
+import { Check, X, Pencil, Trash2, Loader2 } from "lucide-react";
+const SavedPlaylistItem = React.memo(({ pl, onSelect, onDelete, onRename, isLoading }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(pl.name);
   const [isHovered, setIsHovered] = useState(false);
@@ -88,8 +88,21 @@ const SavedPlaylistItem = React.memo(({ pl, onSelect, onDelete, onRename }) => {
 
   return (
     <div 
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '12px', cursor: 'pointer', gap: '8px' }} 
-      onClick={() => onSelect(pl)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px',
+        background: 'var(--panel-bg)',
+        border: isLoading ? '1px solid var(--accent-color)' : '1px solid var(--panel-border)',
+        borderRadius: '12px',
+        cursor: isLoading ? 'wait' : 'pointer',
+        gap: '8px',
+        opacity: isLoading ? 0.9 : 1
+      }} 
+      onClick={() => {
+        if (!isLoading) onSelect(pl);
+      }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -99,32 +112,49 @@ const SavedPlaylistItem = React.memo(({ pl, onSelect, onDelete, onRename }) => {
             {pl.name}
           </div>
         </div>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{pl.items.length} songs</div>
+        <div style={{ fontSize: '0.8rem', color: isLoading ? 'var(--accent-color)' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {isLoading ? (
+            <>
+              <Loader2 size={13} className="animate-spin" />
+              <span>Checking Hi-Fi (1-5)...</span>
+            </>
+          ) : (
+            <span>{pl.items.length} songs</span>
+          )}
+        </div>
       </div>
       <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-        <button 
-          className="btn btn-icon" 
-          style={{ border: 'none', color: 'var(--text-muted)' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditName(pl.name);
-            setIsEditing(true);
-          }}
-          title="Edit Name"
-        >
-          <Pencil size={15} />
-        </button>
-        <button 
-          className="btn btn-icon" 
-          style={{ border: 'none', color: '#ef4444' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(pl.id);
-          }}
-          title="Delete Playlist"
-        >
-          <Trash2 size={16} />
-        </button>
+        {isLoading ? (
+          <div style={{ padding: '6px 10px', display: 'flex', alignItems: 'center', color: 'var(--accent-color)' }}>
+            <Loader2 size={18} className="animate-spin" />
+          </div>
+        ) : (
+          <>
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none', color: 'var(--text-muted)' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditName(pl.name);
+                setIsEditing(true);
+              }}
+              title="Edit Name"
+            >
+              <Pencil size={15} />
+            </button>
+            <button 
+              className="btn btn-icon" 
+              style={{ border: 'none', color: '#ef4444' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(pl.id);
+              }}
+              title="Delete Playlist"
+            >
+              <Trash2 size={16} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

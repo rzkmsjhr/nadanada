@@ -9,7 +9,7 @@ import ErrorModal from './modals/ErrorModal';
 import SuccessModal from './modals/SuccessModal';
 import SettingsModal from './SettingsModal';
 import { useAppContext } from '../context/AppContext';
-import { sanitizeLegacyHifiTrack, getCachedHifi, HIFI_MATCHER_VERSION } from '../services/hifiResolver';
+import { sanitizeLegacyHifiTrack, getCachedHifi, HIFI_MATCHER_VERSION, resolveInitialPlaylistTracks } from '../services/hifiResolver';
 
 export default function AppModals() {
   const {
@@ -107,42 +107,18 @@ export default function AppModals() {
 
       {showLoadPrompt && <LoadPlaylistModal 
         savedPlaylists={savedPlaylists}
-        onSelect={(playlistItem) => {
-          const sanitizedItems = Array.isArray(playlistItem?.items)
-            ? playlistItem.items.map(sanitizeLegacyHifiTrack)
-            : [];
-          
-          // Immediate synchronous cache check for track 0 and 1 so FLAC plays with 0ms delay
-          if (isHifiEnabled && sanitizedItems.length > 0 && !sanitizedItems[0].stream_url && !sanitizedItems[0].is_local) {
-            const cached = getCachedHifi(sanitizedItems[0]);
-            if (cached && cached.stream_url) {
-              sanitizedItems[0] = {
-                ...sanitizedItems[0],
-                stream_url: cached.stream_url,
-                source: 'monochrome',
-                hifi_id: cached.hifi_id,
-                _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION
-              };
-            }
-          }
-          if (isHifiEnabled && sanitizedItems.length > 1 && !sanitizedItems[1].stream_url && !sanitizedItems[1].is_local) {
-            const cachedNext = getCachedHifi(sanitizedItems[1]);
-            if (cachedNext && cachedNext.stream_url) {
-              sanitizedItems[1] = {
-                ...sanitizedItems[1],
-                stream_url: cachedNext.stream_url,
-                source: 'monochrome',
-                hifi_id: cachedNext.hifi_id,
-                _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION
-              };
-            }
+        onSelect={async (playlistItem) => {
+          let items = Array.isArray(playlistItem?.items) ? playlistItem.items : [];
+          if (isHifiEnabled && items.length > 0) {
+            items = await resolveInitialPlaylistTracks(items, 5);
+          } else {
+            items = items.map(sanitizeLegacyHifiTrack);
           }
 
-          setPlaylist(sanitizedItems);
+          setPlaylist(items);
           setSavedPlaylist(null);
           setCurrentIndex(0);
+          setIsAudioPlaying(true);
           setShowLoadPrompt(false);
         }}
         onDelete={(id) => {

@@ -853,13 +853,15 @@ export function useMusicDiscovery({
           const playlistId = match[1];
           const songs = await api.getYouTubePlaylist(playlistId, '');
           if (songs && songs.length > 0) {
-            handleAddMultiple(songs);
+            setImportProgress('Checking Hi-Fi (1-5)...');
+            const preparedSongs = await handleAddMultiple(songs);
+            const itemsToSave = (preparedSongs && preparedSongs.length > 0) ? preparedSongs : songs;
             try {
               const pTitle = await api.getPlaylistTitle('youtube', playlistId);
-              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: songs }]);
+              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: itemsToSave }]);
             } catch (err) {
               console.error("Failed to fetch youtube title", err);
-              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported YouTube Playlist", items: songs }]);
+              setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported YouTube Playlist", items: itemsToSave }]);
             }
             setSuccessMessage(`Imported ${songs.length} songs from YouTube playlist.`);
             setImportUrl('');
@@ -1006,13 +1008,15 @@ export function useMusicDiscovery({
             }
             
             if (importedSongs.length > 0) {
-              handleAddMultiple(importedSongs);
+              setImportProgress('Checking Hi-Fi (1-5)...');
+              const preparedSongs = await handleAddMultiple(importedSongs);
+              const itemsToSave = (preparedSongs && preparedSongs.length > 0) ? preparedSongs : importedSongs;
               try {
                 const pTitle = await api.getPlaylistTitle('spotify', playlistId);
-                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: importedSongs }]);
+                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: pTitle, items: itemsToSave }]);
               } catch (err) {
                 console.error("Failed to fetch spotify title", err);
-                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported Spotify Playlist", items: importedSongs }]);
+                setSavedPlaylists(prev => [...prev, { id: Date.now().toString(), name: "Imported Spotify Playlist", items: itemsToSave }]);
               }
               let msg = `Imported ${importedSongs.length} out of ${spotifyTracks.length} songs from Spotify.`;
               setSuccessMessage({

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { SavedPlaylistItem } from '../SavedPlaylists';
 
@@ -14,6 +14,18 @@ const LoadPlaylistModal = ({
   importProgress,
   handleImportPlaylist
 }) => {
+  const [loadingPlaylistId, setLoadingPlaylistId] = useState(null);
+
+  const handleSelect = async (pl) => {
+    if (loadingPlaylistId || isImporting) return;
+    setLoadingPlaylistId(pl.id);
+    try {
+      await onSelect(pl);
+    } finally {
+      setLoadingPlaylistId(null);
+    }
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal-content" style={{ maxWidth: '400px' }}>
@@ -36,9 +48,10 @@ const LoadPlaylistModal = ({
                 <SavedPlaylistItem 
                   key={pl.id} 
                   pl={pl} 
-                  onSelect={onSelect} 
+                  onSelect={handleSelect} 
                   onDelete={onDelete} 
                   onRename={onRename} 
+                  isLoading={loadingPlaylistId === pl.id}
                 />
               ))}
             </div>
@@ -95,7 +108,7 @@ const LoadPlaylistModal = ({
             <button 
               onClick={handleImportPlaylist} 
               className="btn btn-primary" 
-              disabled={!importUrl.trim() || isImporting} 
+              disabled={!importUrl.trim() || isImporting || Boolean(loadingPlaylistId)} 
               style={{ padding: '8px 16px', minWidth: '120px' }}
             >
               {isImporting ? (
@@ -109,7 +122,11 @@ const LoadPlaylistModal = ({
         </div>
 
         <div className="modal-actions">
-          <button onClick={onClose} className="btn btn-secondary btn-large">
+          <button 
+            onClick={onClose} 
+            className="btn btn-secondary btn-large"
+            disabled={isImporting || Boolean(loadingPlaylistId)}
+          >
             Close
           </button>
         </div>

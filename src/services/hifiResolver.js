@@ -515,3 +515,94 @@ export async function resolveHifiForTrack(song) {
     }
   }
 }
+
+/**
+ * Resolves and validates the first N tracks (default: 5) of a playlist in parallel
+ * before playback or batch import begins.
+ * Returns a new array where the first N tracks have verified Hi-Fi fields attached
+ * (or marked checked), and subsequent tracks have instant cached Hi-Fi attached if available.
+ */
+export async function resolveInitialPlaylistTracks(tracks, count = 5) {
+  if (!Array.isArray(tracks) || tracks.length === 0) return tracks || [];
+
+  const sanitized = tracks.map(sanitizeLegacyHifiTrack);
+  const targetCount = Math.min(count, sanitized.length);
+
+  // Check the first N tracks in parallel
+  const initialBatch = sanitized.slice(0, targetCount);
+
+  const resolvedBatch = await Promise.all(
+    initialBatch.map(async (song) => {
+      if (!song || song.is_local || song.file_path) return song;
+      // If already verified with current matcher version, keep as is
+      if (song._hifiChecked && song._hifiVersion === HIFI_MATCHER_VERSION) return song;
+      // If native Monochrome, mark verified
+      if (song.source === 'monochrome' && (!song.hifi_id || String(song.hifi_id) === String(song.id))) {
+        return { ...song, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+      }
+
+      // Check fast cache first (0ms)
+      const cached = getCachedHifi(song);
+      if (cached && cached.stream_url) {
+        return {
+          ...song,
+          stream_url: cached.stream_url,
+          source: 'monochrome',
+          hifi_id: cached.hifi_id,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        };
+      }
+
+      // Query Monochrome if not in cache
+      try {
+        const hifi = await resolveHifiForTrack(song);
+        if (hifi && hifi.stream_url) {
+          return {
+            ...song,
+            stream_url: hifi.stream_url,
+            source: 'monochrome',
+            hifi_id: hifi.hifi_id,
+            _hifiChecked: true,
+            _hifiVersion: HIFI_MATCHER_VERSION
+          };
+        } else {
+          return {
+            ...song,
+            stream_url: null,
+            source: null,
+            hifi_id: null,
+            _hifiChecked: true,
+            _hifiVersion: HIFI_MATCHER_VERSION
+          };
+        }
+      } catch (e) {
+        console.warn('[HIFI] Initial batch resolution error for:', song.title, e);
+        return {
+          ...song,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        };
+      }
+    })
+  );
+
+  // For tracks beyond targetCount, attach cached Hi-Fi if available (instant 0ms)
+  const remainingBatch = sanitized.slice(targetCount).map((song) => {
+    if (!song || song.is_local || song.file_path || song.stream_url) return song;
+    const cached = getCachedHifi(song);
+    if (cached && cached.stream_url) {
+      return {
+        ...song,
+        stream_url: cached.stream_url,
+        source: 'monochrome',
+        hifi_id: cached.hifi_id,
+        _hifiChecked: true,
+        _hifiVersion: HIFI_MATCHER_VERSION
+      };
+    }
+    return song;
+  });
+
+  return [...resolvedBatch, ...remainingBatch];
+}

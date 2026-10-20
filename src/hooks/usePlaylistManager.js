@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack } from '../services/hifiResolver';
+import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack, resolveInitialPlaylistTracks } from '../services/hifiResolver';
 
 export function usePlaylistManager({
   api,
@@ -231,54 +231,26 @@ export function usePlaylistManager({
     if (showSearch) {
       hasAddedSongInSearchRef.current = true;
     }
-    if (!videos || videos.length === 0) return;
+    if (!videos || videos.length === 0) return [];
 
-    let firstTrackHifi = null;
-    if (isHifiEnabled && videos[0] && !videos[0].is_local && !videos[0].stream_url) {
-      try {
-        firstTrackHifi = await resolveHifiForTrack(videos[0]);
-      } catch (e) {}
+    let preparedVideos = videos;
+    if (isHifiEnabled) {
+      preparedVideos = await resolveInitialPlaylistTracks(videos, 5);
+    } else {
+      preparedVideos = videos.map(sanitizeLegacyHifiTrack);
     }
 
     const timestamp = Date.now();
-    const newSongs = videos.map((video, idx) => {
-      let hifiFields = {};
-      if (isHifiEnabled && !video.is_local && !video.stream_url) {
-        if (idx === 0) {
-          if (firstTrackHifi && firstTrackHifi.stream_url) {
-            hifiFields = {
-              stream_url: firstTrackHifi.stream_url,
-              source: 'monochrome',
-              hifi_id: firstTrackHifi.hifi_id,
-              _hifiChecked: true,
-              _hifiVersion: HIFI_MATCHER_VERSION
-            };
-          } else {
-            hifiFields = { _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
-          }
-        } else {
-          const cached = getCachedHifi(video);
-          if (cached && cached.stream_url) {
-            hifiFields = {
-              stream_url: cached.stream_url,
-              source: 'monochrome',
-              hifi_id: cached.hifi_id,
-              _hifiChecked: true,
-              _hifiVersion: HIFI_MATCHER_VERSION
-            };
-          }
-        }
-      }
-      return {
-        ...video,
-        ...hifiFields,
-        queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9)
-      };
-    });
+    const newSongs = preparedVideos.map((video, idx) => ({
+      ...video,
+      queueId: (timestamp + idx).toString() + Math.random().toString(36).substr(2, 9)
+    }));
+
     setPlaylist(prev => [...prev, ...newSongs]);
     if (savedPlaylist) {
       setSavedPlaylist(prev => [...prev, ...newSongs]);
     }
+    return newSongs;
   };
 
   const handleRemoveSong = index => {

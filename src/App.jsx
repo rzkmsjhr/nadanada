@@ -14,7 +14,7 @@ import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
 import { useLyrics } from "./hooks/useLyrics";
 import { useHifiResolver } from "./hooks/useHifiResolver";
-import { resolveHifiForTrack, HIFI_MATCHER_VERSION } from "./services/hifiResolver";
+import { resolveHifiForTrack, HIFI_MATCHER_VERSION, resolveInitialPlaylistTracks, sanitizeLegacyHifiTrack } from "./services/hifiResolver";
 import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
@@ -419,14 +419,20 @@ function App() {
         if (!savedPlaylist) {
           setSavedPlaylist([...playlist]);
         }
+        let albumTracks = tracks;
+        if (isHifiEnabled) {
+          albumTracks = await resolveInitialPlaylistTracks(albumTracks, 5);
+        } else {
+          albumTracks = albumTracks.map(sanitizeLegacyHifiTrack);
+        }
         const timestamp = Date.now();
-        const albumTracks = tracks.map((t, i) => ({
+        const queuedAlbumTracks = albumTracks.map((t, i) => ({
           ...t,
           queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
         }));
-        setPlaylist(albumTracks);
+        setPlaylist(queuedAlbumTracks);
         // Find if the clicked song is in the album, else play first track
-        const currentIdxInAlbum = tracks.findIndex(t => t.id === targetVideoId);
+        const currentIdxInAlbum = queuedAlbumTracks.findIndex(t => t.id === targetVideoId);
         setCurrentIndex(currentIdxInAlbum !== -1 ? currentIdxInAlbum : 0);
         setIsAudioPlaying(true);
       } else {
@@ -530,7 +536,7 @@ function App() {
 
   const isPlayingArtist = isAudioPlaying && isPlayingCurrentArtistQueue;
 
-  const handlePlayArtistTopSongs = useCallback((tracksToPlay = null) => {
+  const handlePlayArtistTopSongs = useCallback(async (tracksToPlay = null) => {
     if (!tracksToPlay && isPlayingCurrentArtistQueue) {
       setIsAudioPlaying(prev => !prev);
       return;
@@ -546,21 +552,32 @@ function App() {
     if (!savedPlaylist) {
       setSavedPlaylist([...playlist]);
     }
+    let preparedSongs = songs;
+    if (isHifiEnabled) {
+      preparedSongs = await resolveInitialPlaylistTracks(preparedSongs, 5);
+    } else {
+      preparedSongs = preparedSongs.map(sanitizeLegacyHifiTrack);
+    }
     const timestamp = Date.now();
-    const newPlaylist = songs.map((t, i) => ({
+    const newPlaylist = preparedSongs.map((t, i) => ({
       id: t.id,
       title: t.title,
-      channel: t.artist || selectedArtist,
+      channel: t.channel || t.artist || selectedArtist,
       thumbnail: t.thumbnail,
       duration: t.duration || '',
       album: t.album || '',
+      stream_url: t.stream_url || null,
+      source: t.source || null,
+      hifi_id: t.hifi_id || null,
+      _hifiChecked: t._hifiChecked || false,
+      _hifiVersion: t._hifiVersion || undefined,
       queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
     }));
 
     setPlaylist(newPlaylist);
     setCurrentIndex(0);
     setIsAudioPlaying(true);
-  }, [artistDetails, selectedArtist, savedPlaylist, playlist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist, isPlayingCurrentArtistQueue]);
+  }, [artistDetails, selectedArtist, savedPlaylist, playlist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist, isPlayingCurrentArtistQueue, isHifiEnabled]);
 
   const handleAddArtistTopSongs = useCallback(() => {
     const songs = artistDetails?.top_songs;
@@ -632,7 +649,7 @@ function App() {
     setSuccessMessage(`Added "${newTrack.title}" to playlist`);
   }, [savedPlaylist, playlist, selectedArtist, isHifiEnabled, handleAddSong, setSavedPlaylist, setSuccessMessage]);
 
-  const handlePlayArtistSong = useCallback((song) => {
+  const handlePlayArtistSong = useCallback(async (song) => {
     if (!song) return;
 
     if (previewSavedStateRef.current || previewSong) {
@@ -660,14 +677,25 @@ function App() {
 
     const songs = artistDetails?.top_songs;
     const allSongs = (songs && songs.length > 0) ? songs : [song];
+    let preparedSongs = allSongs;
+    if (isHifiEnabled) {
+      preparedSongs = await resolveInitialPlaylistTracks(preparedSongs, 5);
+    } else {
+      preparedSongs = preparedSongs.map(sanitizeLegacyHifiTrack);
+    }
     const timestamp = Date.now();
-    const newPlaylist = allSongs.map((t, i) => ({
+    const newPlaylist = preparedSongs.map((t, i) => ({
       id: t.id,
       title: t.title,
-      channel: t.artist || selectedArtist,
+      channel: t.channel || t.artist || selectedArtist,
       thumbnail: t.thumbnail,
       duration: t.duration || '',
       album: t.album || '',
+      stream_url: t.stream_url || null,
+      source: t.source || null,
+      hifi_id: t.hifi_id || null,
+      _hifiChecked: t._hifiChecked || false,
+      _hifiVersion: t._hifiVersion || undefined,
       queueId: `${timestamp}-${i}-${Math.random().toString(36).substr(2, 9)}`
     }));
 
@@ -675,7 +703,7 @@ function App() {
     setPlaylist(newPlaylist);
     setCurrentIndex(targetIndex !== -1 ? targetIndex : 0);
     setIsAudioPlaying(true);
-  }, [artistDetails, playlist, currentSong, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist]);
+  }, [artistDetails, playlist, currentSong, selectedArtist, savedPlaylist, previewSong, previewSavedStateRef, handleStopPreview, setPlaylist, setCurrentIndex, setIsAudioPlaying, setSavedPlaylist, isHifiEnabled]);
 
   const handleShuffleArtistTopSongs = useCallback(() => {
     const songs = artistDetails?.top_songs;
