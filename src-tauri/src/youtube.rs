@@ -97,6 +97,8 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         track_count: None,
         first_video_id: None,
         item_type: Some(if is_video { "video".to_string() } else { default_type.to_string() }),
+        stream_url: None,
+        source: None,
     })
 }
 
@@ -161,6 +163,8 @@ fn parse_ytm_album_item(r: &serde_json::Value) -> Option<Video> {
         track_count: None,
         first_video_id,
         item_type: Some("album".to_string()),
+        stream_url: None,
+        source: None,
     })
 }
 
@@ -306,6 +310,8 @@ async fn scrape_regular_youtube_search(
                                 track_count: None,
                                 first_video_id: None,
                                 item_type: Some("video".to_string()),
+        stream_url: None,
+        source: None,
                             });
                         }
                     } else if let Some(playlist) = item.get("playlistRenderer") {
@@ -327,6 +333,8 @@ async fn scrape_regular_youtube_search(
                                 track_count: Some(track_count),
                                 first_video_id: Some(first_video),
                                 item_type: Some("album".to_string()),
+        stream_url: None,
+        source: None,
                             });
                         }
                     } else if let Some(lockup) = item.get("lockupViewModel") {
@@ -366,6 +374,8 @@ async fn scrape_regular_youtube_search(
                                 track_count: Some(track_count),
                                 first_video_id: Some(first_video),
                                 item_type: Some("album".to_string()),
+        stream_url: None,
+        source: None,
                             });
                         }
                     }
@@ -1076,6 +1086,8 @@ async fn get_ytm_mix_internal(video_id: &str) -> Result<Vec<Video>, String> {
                         track_count: None,
                         first_video_id: None,
                         item_type: Some(if is_video { "video".to_string() } else { "song".to_string() }),
+        stream_url: None,
+        source: None,
                     });
                 }
             }
@@ -1165,6 +1177,8 @@ async fn scrape_youtube_mix(video_id: &str) -> Result<Vec<Video>, String> {
                                 track_count: None,
                                 first_video_id: None,
                                 item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
+        stream_url: None,
+        source: None,
                             });
                         }
                     }
@@ -1397,6 +1411,8 @@ async fn scrape_youtube_playlist(
                                 track_count: None,
                                 first_video_id: None,
                                 item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
+        stream_url: None,
+        source: None,
                             });
                         }
                     }
@@ -1431,6 +1447,8 @@ async fn scrape_youtube_playlist(
                                     track_count: None,
                                     first_video_id: None,
                                     item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
+        stream_url: None,
+        source: None,
                                 });
                             }
                         }

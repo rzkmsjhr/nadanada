@@ -6,6 +6,7 @@ pub mod playlists;
 pub mod server;
 pub mod youtube;
 pub mod lyrics;
+pub mod monochrome;
 
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -73,7 +74,9 @@ pub fn run() {
             lyrics::get_lyrics,
             lyrics::save_lyrics,
             youtube::get_artist_details,
-            youtube::get_artist_top_songs
+            youtube::get_artist_top_songs,
+            monochrome::search_monochrome,
+            monochrome::get_monochrome_album
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

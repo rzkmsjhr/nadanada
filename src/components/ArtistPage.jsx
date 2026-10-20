@@ -31,6 +31,7 @@ const ArtistSongItem = React.memo(({
   onArtistClick
 }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isAddingSong, setIsAddingSong] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
   const textRef = useRef(null);
@@ -234,26 +235,31 @@ const ArtistSongItem = React.memo(({
         {onAddSong && (
           <button
             className="btn btn-icon"
-            onClick={() => {
-              if (!isAdded) {
-                onAddSong({
-                  id: song.id,
-                  title: song.title,
-                  channel: song.artist || artistName,
-                  thumbnail: song.thumbnail,
-                  duration: song.duration || '',
-                  album: song.album
-                });
+            onClick={async () => {
+              if (!isAdded && !isAddingSong) {
+                setIsAddingSong(true);
+                try {
+                  await onAddSong({
+                    id: song.id,
+                    title: song.title,
+                    channel: song.artist || artistName,
+                    thumbnail: song.thumbnail,
+                    duration: song.duration || '',
+                    album: song.album
+                  });
+                } finally {
+                  setIsAddingSong(false);
+                }
               }
             }}
-            disabled={isAdded}
+            disabled={isAdded || isAddingSong}
             title={isAdded ? "Already in playlist" : "Add to playlist"}
             style={{
               padding: '6px',
-              color: isAdded ? 'var(--accent-color)' : 'var(--text-muted)'
+              color: (isAdded || isAddingSong) ? 'var(--accent-color)' : 'var(--text-muted)'
             }}
           >
-            {isAdded ? <Check size={16} /> : <Plus size={16} />}
+            {isAddingSong ? <Loader2 size={16} className="animate-spin" /> : (isAdded ? <Check size={16} /> : <Plus size={16} />)}
           </button>
         )}
 
@@ -273,7 +279,8 @@ const ArtistSongItem = React.memo(({
               onClick={() => onDownloadSong({
                 id: song.id,
                 title: song.title,
-                channel: song.artist || artistName
+                channel: song.artist || artistName,
+                duration: song.duration || ''
               })}
               title="Download for offline"
               style={{ padding: '6px', color: 'var(--text-muted)' }}

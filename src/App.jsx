@@ -13,6 +13,8 @@ import ChordDisplay from "./components/ChordDisplay";
 import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
 import { useLyrics } from "./hooks/useLyrics";
+import { useHifiResolver } from "./hooks/useHifiResolver";
+import { resolveHifiForTrack, HIFI_MATCHER_VERSION } from "./services/hifiResolver";
 import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
@@ -132,6 +134,15 @@ function App() {
     toggleFullscreen
   } = useSystemIntegration(appWindow, setShowClosePrompt, closeBehavior);
 
+    const [isHifiEnabled, setIsHifiEnabled] = useState(() => {
+    const saved = localStorage.getItem('nadanada-hifi-enabled');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('nadanada-hifi-enabled', isHifiEnabled.toString());
+  }, [isHifiEnabled]);
+
   const [crossfadeDuration, setCrossfadeDuration] = useState(() => {
     const saved = localStorage.getItem('nadanada-crossfade-duration');
     const parsed = saved !== null ? parseInt(saved, 10) : 3;
@@ -197,7 +208,8 @@ function App() {
   } = usePlaylistManager({
     api,
     showSearch,
-    hasAddedSongInSearchRef
+    hasAddedSongInSearchRef,
+    isHifiEnabled
   });
   const {
     previewSong, setPreviewSong,
@@ -267,7 +279,7 @@ function App() {
     downloadedIds,
     loadDownloadedSongs,
     handleDownloadSong
-  } = useDownloadManager(api, setGlobalError);
+  } = useDownloadManager(api, setGlobalError, isHifiEnabled);
   const [successMessage, setSuccessMessage] = useState(null);
 
   useEffect(() => {
@@ -342,6 +354,15 @@ function App() {
       setRestoredSong(null);
     }
   }, [currentIndex, playlist]);
+
+  
+  useHifiResolver({
+    playlist,
+    setPlaylist,
+    currentIndex,
+    isHifiEnabled,
+    savedPlaylist
+  });
 
   const { albumInfo, isLoadingAlbum, albumCache } = useAlbumInfo(playlist, currentIndex);
 
@@ -568,10 +589,10 @@ function App() {
     }
   }, [artistDetails, selectedArtist, savedPlaylist, handleAddMultiple, setSavedPlaylist, setSuccessMessage]);
 
-  const handleAddSongToMainPlaylist = useCallback((song) => {
+  const handleAddSongToMainPlaylist = useCallback(async (song) => {
     if (!song) return;
     const timestamp = Date.now();
-    const newTrack = {
+    let newTrack = {
       id: song.id,
       title: song.title,
       channel: song.channel || song.artist || selectedArtist,
@@ -583,13 +604,32 @@ function App() {
 
     if (savedPlaylist) {
       if (savedPlaylist.some(t => t.id === newTrack.id)) return;
+      if (isHifiEnabled && !newTrack.is_local && !newTrack.stream_url) {
+        try {
+          const hifi = await resolveHifiForTrack(newTrack);
+          if (hifi && hifi.stream_url) {
+            newTrack = {
+              ...newTrack,
+              stream_url: hifi.stream_url,
+              source: 'monochrome',
+              hifi_id: hifi.hifi_id,
+              _hifiChecked: true,
+              _hifiVersion: HIFI_MATCHER_VERSION
+            };
+          } else {
+            newTrack = { ...newTrack, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+          }
+        } catch (e) {
+          newTrack = { ...newTrack, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+        }
+      }
       setSavedPlaylist(prev => [...prev, newTrack]);
     } else {
       if (playlist.some(t => t.id === newTrack.id)) return;
-      handleAddSong(newTrack);
+      await handleAddSong(newTrack);
     }
     setSuccessMessage(`Added "${newTrack.title}" to playlist`);
-  }, [savedPlaylist, playlist, selectedArtist, handleAddSong, setSavedPlaylist, setSuccessMessage]);
+  }, [savedPlaylist, playlist, selectedArtist, isHifiEnabled, handleAddSong, setSavedPlaylist, setSuccessMessage]);
 
   const handlePlayArtistSong = useCallback((song) => {
     if (!song) return;
@@ -725,7 +765,8 @@ function App() {
     miniPlayerOpacity, setMiniPlayerOpacity,
     fontScale, setFontScale,
     closeBehavior, setCloseBehavior,
-    isVinylEnabled, onToggleVinyl: handleToggleVinyl
+    isVinylEnabled, onToggleVinyl: handleToggleVinyl,
+    isHifiEnabled, setIsHifiEnabled
   };
 
   return (
@@ -865,6 +906,7 @@ function App() {
         }}>
             <Player 
               ref={playerRef} 
+              isHifiEnabled={isHifiEnabled}
               currentSong={currentSong} 
               isSearchExpanded={(showSearch || Boolean(selectedArtist)) && !isMaximized} 
               nextSong={trueNextSong} 

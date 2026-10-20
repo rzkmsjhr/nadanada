@@ -51,7 +51,9 @@ export default function AppModals() {
     fontScale,
     setFontScale,
     closeBehavior,
-    setCloseBehavior
+    setCloseBehavior,
+    isHifiEnabled,
+    setIsHifiEnabled
   } = useAppContext();
   return (
     <>
@@ -72,6 +74,8 @@ export default function AppModals() {
           setFontScale={setFontScale}
           closeBehavior={closeBehavior}
           setCloseBehavior={setCloseBehavior}
+          isHifiEnabled={isHifiEnabled}
+          setIsHifiEnabled={setIsHifiEnabled}
         />
       )}
 

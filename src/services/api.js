@@ -12,6 +12,10 @@ export const api = {
   searchYouTube: (query, searchType = null) => invoke('search_youtube', { query, searchType }),
   getYouTubeMix: (videoId) => invoke('get_youtube_mix', { videoId }),
   getYouTubePlaylist: (playlistId, firstVideoId = '') => invoke('get_youtube_playlist', { playlistId, firstVideoId }),
+
+  // Monochrome / Hi-Fi (FLAC)
+  searchMonochrome: (query, searchType = 'song') => invoke('search_monochrome', { query, searchType }),
+  getMonochromeAlbum: (releaseId) => invoke('get_monochrome_album', { releaseId }),
   
   // Spotify / Charts
   getSpotifyPlaylist: (playlistId) => invoke('get_spotify_playlist', { playlistId }),
@@ -19,7 +23,7 @@ export const api = {
 
   // Downloads / Local
   getDownloadedSongs: () => invoke('get_downloaded_songs'),
-  downloadSong: (id, title, artist) => invoke('download_song', { id, title, artist }),
+  downloadSong: (id, title, artist, streamUrl = null) => invoke('download_song', { id, title, artist, streamUrl }),
   addLocalSong: (filePath) => invoke('add_local_song', { filePath }),
   deleteDownloadedSong: (filePath) => invoke('delete_downloaded_song', { filePath }),
   

@@ -15,6 +15,10 @@ pub struct Video {
     pub first_video_id: Option<String>,
     #[serde(default)]
     pub item_type: Option<String>,
+    #[serde(default)]
+    pub stream_url: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

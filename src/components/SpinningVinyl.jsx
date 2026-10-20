@@ -8,8 +8,8 @@ import { Disc } from 'lucide-react';
 export function isAlbumArtTrack(song) {
   if (!song) return false;
 
-  // 1. Local offline files are always audio tracks with album art
-  if (song.is_local) return true;
+  // 1. Local offline files or direct audio streams (like Monochrome/FLAC) are always audio tracks with album art
+  if (song.is_local || song.source === 'monochrome' || song.is_monochrome || song.stream_url) return true;
 
   const channel = (song.channel || '').toLowerCase().trim();
   const title = (song.title || '').toLowerCase().trim();
@@ -117,6 +117,7 @@ export default function SpinningVinyl({
   const [imgErrors, setImgErrors] = useState({});
   const transitionTimersRef = useRef([]);
   const prevSongIdRef = useRef(song?.id || null);
+  const targetSongRef = useRef(song || null);
   const prevCrossfadeRef = useRef(false);
   const displayedSongRef = useRef(displayedSong);
   displayedSongRef.current = displayedSong;
@@ -150,6 +151,7 @@ export default function SpinningVinyl({
     if (!toSong || fromSong?.id === toSong?.id) return;
 
     clearTimers();
+    targetSongRef.current = toSong;
 
     setTransitionDirection(dir);
     setOutgoingSong(fromSong);
@@ -188,6 +190,7 @@ export default function SpinningVinyl({
       // Incoming disc is smoothly brought to rest on the platter spindle.
       // Atomically commit displayedSong and return to idle with zero freeze or flash.
       const finishTimer = setTimeout(() => {
+        targetSongRef.current = toSong;
         setDisplayedSong(toSong);
         setOutgoingSong(null);
         setIncomingSong(null);
@@ -199,6 +202,7 @@ export default function SpinningVinyl({
       setTonearmAngle(0);
 
       const finishTimer = setTimeout(() => {
+        targetSongRef.current = toSong;
         setDisplayedSong(toSong);
         setOutgoingSong(null);
         setIncomingSong(null);
@@ -213,22 +217,25 @@ export default function SpinningVinyl({
     const currentId = song?.id;
     const targetDir = direction || 'forward';
 
-    // Auto-crossfade start detection
-    if (isCrossfading && !prevCrossfadeRef.current && nextSong && nextSong.id !== displayedSongRef.current?.id) {
-      prevCrossfadeRef.current = true;
-      triggerTransition(displayedSongRef.current || song, nextSong, targetDir);
-      prevSongIdRef.current = nextSong.id;
+    // Auto-crossfade start detection: keep visualizer locked onto nextSong throughout the entire crossfade
+    if (isCrossfading && nextSong) {
+      if (!prevCrossfadeRef.current && nextSong.id !== targetSongRef.current?.id) {
+        prevCrossfadeRef.current = true;
+        triggerTransition(targetSongRef.current || displayedSongRef.current || song, nextSong, targetDir);
+        prevSongIdRef.current = nextSong.id;
+      }
       return;
     }
     prevCrossfadeRef.current = isCrossfading;
 
     // Normal song change or manual skip detection
-    if (currentId && currentId !== prevSongIdRef.current) {
+    if (currentId && (currentId !== prevSongIdRef.current || currentId !== targetSongRef.current?.id)) {
       const prevId = prevSongIdRef.current;
       prevSongIdRef.current = currentId;
 
       if (!prevId) {
         // First song load ever: initial appearance
+        targetSongRef.current = song;
         setDisplayedSong(song);
         if (isPlaying) {
           setTonearmAngle(54);
@@ -236,11 +243,12 @@ export default function SpinningVinyl({
         return;
       }
 
-      if (currentId !== displayedSongRef.current?.id) {
-        triggerTransition(displayedSongRef.current, song, targetDir);
+      if (currentId !== targetSongRef.current?.id) {
+        triggerTransition(targetSongRef.current || displayedSongRef.current, song, targetDir);
       }
     } else if (!currentId && prevSongIdRef.current) {
       prevSongIdRef.current = null;
+      targetSongRef.current = null;
       setDisplayedSong(null);
       setTonearmAngle(0);
       setTransitionPhase('idle');

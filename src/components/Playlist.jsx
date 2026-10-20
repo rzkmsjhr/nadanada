@@ -4,6 +4,7 @@ import { parseArtists } from '../utils/artistUtils';
 
 const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIndex, handleDragStart, setDragOverIndex, handleDrop, isTrendingMode, isDownloadedView, onAddSong, addedSongs, setAddedSongs, onDownloadSong, downloadingSongId, downloadedIds, onRemove, onAddToSavedPlaylist, albumInfo, onAlbumClick, onArtistClick }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isAddingSong, setIsAddingSong] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [shouldScrollSubtitle, setShouldScrollSubtitle] = useState(false);
   const textRef = useRef(null);
@@ -118,14 +119,25 @@ const PlaylistItem = React.memo(({ song, index, isActive, isDragOver, onSelectIn
             <button 
               className="btn btn-icon" 
               style={{ border: 'none', padding: '6px' }}
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
-                onAddSong(song);
-                setAddedSongs(prev => new Set(prev).add(song.queueId));
+                if (isAddingSong) return;
+                setIsAddingSong(true);
+                try {
+                  await onAddSong(song);
+                  setAddedSongs(prev => new Set(prev).add(song.queueId));
+                } finally {
+                  setIsAddingSong(false);
+                }
               }}
+              disabled={isAddingSong}
               title="Add to my playlist"
             >
-              <Plus size={18} style={{ color: 'var(--accent-color)' }} />
+              {isAddingSong ? (
+                <Loader2 size={18} className="animate-spin" style={{ color: 'var(--accent-color)' }} />
+              ) : (
+                <Plus size={18} style={{ color: 'var(--accent-color)' }} />
+              )}
             </button>
           )
         )}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow, Type } from 'lucide-react';
+import { X, Check, Palette, Sliders, Database, AlertTriangle, PictureInPicture2, AppWindow, Type, Sparkles } from 'lucide-react';
 import { api } from '../services/api';
 
 const THEMES = [
@@ -42,7 +42,9 @@ export default function SettingsModal({
   fontScale = 100,
   setFontScale,
   closeBehavior = 'prompt',
-  setCloseBehavior
+  setCloseBehavior,
+  isHifiEnabled = true,
+  setIsHifiEnabled
 }) {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
@@ -270,6 +272,66 @@ export default function SettingsModal({
             opacity: 0.8
           }}>
             Crossfade applies to online playback. Automatically turned off for downloaded &amp; offline tracks.
+          </div>
+        </div>
+
+        {/* Hi-Fi Lossless FLAC Section */}
+        <div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '6px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.75px',
+              color: 'var(--text-muted)'
+            }}>
+              <Sparkles size={16} style={{ color: isHifiEnabled ? 'var(--accent-color)' : 'var(--text-muted)' }} />
+              <span>Hi-Fi Audio (Lossless FLAC)</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsHifiEnabled && setIsHifiEnabled(!isHifiEnabled)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                width: '44px',
+                height: '24px',
+                borderRadius: '12px',
+                padding: '2px',
+                background: isHifiEnabled ? 'var(--accent-color)' : 'var(--panel-border)',
+                boxShadow: isHifiEnabled ? '0 2px 10px rgba(0, 0, 0, 0.35)' : 'none',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'background 0.2s ease',
+                position: 'relative'
+              }}
+              title={isHifiEnabled ? "Disable Hi-Fi Lossless Audio" : "Enable Hi-Fi Lossless Audio"}
+            >
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: '#ffffff',
+                transform: isHifiEnabled ? 'translateX(20px)' : 'translateX(0)',
+                transition: 'transform 0.2s ease',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)'
+              }} />
+            </button>
+          </div>
+          <div style={{
+            fontSize: '0.72rem',
+            color: 'var(--text-muted)',
+            opacity: 0.8
+          }}>
+            Automatically upgrades tracks in the queue to studio-grade lossless FLAC whenever a matching high-fidelity stream is found.
           </div>
         </div>
 

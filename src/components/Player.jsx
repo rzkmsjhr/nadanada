@@ -9,6 +9,7 @@ import { usePlayerCore } from '../hooks/usePlayerCore';
 import VideoOverlay from './VideoOverlay';
 import SpinningVinyl, { isAlbumArtTrack } from './SpinningVinyl';
 import ArtistHeroVisualizer from './ArtistHeroVisualizer';
+import { parseDurationToSecs } from '../services/hifiResolver';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
@@ -31,9 +32,12 @@ const Player = React.forwardRef(function Player({
   onCloseArtistPage,
   onPlayArtistTopSongs,
   onShuffleArtistTopSongs,
-  onAddArtistTopSongs
+  onAddArtistTopSongs,
+  isHifiEnabled = true
 }, ref) {
   
+  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && (song.stream_url || song.source === 'monochrome') && !song.is_local);
+
   const core = usePlayerCore({
     currentSong,
     nextSong,
@@ -48,7 +52,8 @@ const Player = React.forwardRef(function Player({
     onSongEnded,
     crossfadeDuration,
     setCrossfadeDuration,
-    downloadedIds
+    downloadedIds,
+    isHifiEnabled
   });
 
   const activeSong = core.activeDeck === 0 ? core.deck0Song : core.deck1Song;
@@ -66,8 +71,8 @@ const Player = React.forwardRef(function Player({
     if (onPrevious) onPrevious();
   }, [onPrevious]);
 
-  const currentVinylSong = activeSong || currentSong;
-  const nextVinylSong = core.isCrossfading ? (core.activeDeck === 0 ? core.deck1Song : core.deck0Song) : nextSong;
+  const currentVinylSong = core.isCrossfading ? (activeSong || currentSong) : (currentSong || activeSong);
+  const nextVinylSong = core.isCrossfading ? ((core.activeDeck === 0 ? core.deck1Song : core.deck0Song) || nextSong) : nextSong;
   const isVinylVisible = isVinylEnabled && isAlbumArtTrack(currentVinylSong);
 
   const [showFullscreenControls, setShowFullscreenControls] = useState(true);
@@ -301,7 +306,7 @@ const Player = React.forwardRef(function Player({
           
           <div style={{ position: 'absolute', inset: 0 }}>
             {/* Deck 0 (YouTube) */}
-            {core.deck0Song && !core.deck0Song?.is_local && !core.streamUrl && !core.isExtractingStream && (
+            {core.deck0Song && !core.deck0Song?.is_local && !isSongHiFi(core.deck0Song) && !core.streamUrl && !core.isExtractingStream && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -392,7 +397,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 1 (YouTube) */}
-            {core.deck1Song && !core.deck1Song?.is_local && !core.streamUrl && !core.isExtractingStream && (
+            {core.deck1Song && !core.deck1Song?.is_local && !isSongHiFi(core.deck1Song) && !core.streamUrl && !core.isExtractingStream && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -651,7 +656,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 0 (Local / Stream Audio) */}
-            {core.deck0Song && (core.deck0Song?.is_local || core.streamUrl) && (
+            {core.deck0Song && (core.deck0Song?.is_local || isSongHiFi(core.deck0Song) || core.streamUrl) && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -668,55 +673,99 @@ const Player = React.forwardRef(function Player({
                     <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                       ♪
                     </div>
-                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck0Song) ? 'Hi-Fi Audio' : 'Audio Stream Fallback')}</div>
                   </div>
                 )}
                 <audio
                   id="deck-0-audio"
-                  src={core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl}
-                  autoPlay
+                  src={core.deck0Song?.stream_url || (core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl)}
+                  preload="auto"
+                  autoPlay={core.activeDeck === 0}
                   onPlay={() => {
-                    if (core.activeDeck === 0) {
-                      core.setIsPlaying(true);
-                      core.handleStallClear();
-                      if (onPlayStateChange) onPlayStateChange(true);
-                    }
+                    core.handleAudioDeckPlay?.(0);
                   }}
-                  onPause={() => {
-                    if (core.activeDeck === 0) {
-                      core.setIsPlaying(false);
-                      if (onPlayStateChange) onPlayStateChange(false);
-                    }
+                  onPause={(e) => {
+                    core.handleAudioDeckPause?.(0, e);
                   }}
                   onEnded={() => {
-                    if (core.activeDeck === 0) core.handleTrackEnd();
+                    core.handleAudioDeckEnded?.(0);
                   }}
                   onTimeUpdate={(e) => {
                     if (core.activeDeck === 0 && !core.isDragging) {
-                      core.setCurrentTime(e.target.currentTime);
-                      if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
-                      if (!core.isOfflinePlayback) {
-                        core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      const curTime = e.target.currentTime;
+                      const fallbackDur = parseDurationToSecs(core.deck0Song?.duration);
+                      const dur = (Number.isFinite(e.target.duration) && e.target.duration > 0 && e.target.duration !== Infinity)
+                        ? e.target.duration
+                        : (fallbackDur > 0 ? fallbackDur : (core.duration || 0));
+
+                      if (Number.isFinite(curTime)) {
+                        core.setCurrentTime(curTime);
+                        if (onTimeUpdate) onTimeUpdate(curTime);
+                        if (!core.isOfflinePlayback && dur > 0 && Number.isFinite(dur)) {
+                          core.checkAutoCrossfade(curTime, dur);
+                        }
                       }
                     }
                   }}
                   onLoadedMetadata={(e) => {
                     if (core.activeDeck === 0) {
-                      core.setDuration(e.target.duration);
+                      const fallbackDur = parseDurationToSecs(core.deck0Song?.duration);
+                      const dur = (Number.isFinite(e.target.duration) && e.target.duration > 0 && e.target.duration !== Infinity)
+                        ? e.target.duration
+                        : (fallbackDur > 0 ? fallbackDur : (core.duration || 0));
+                      if (dur > 0 && Number.isFinite(dur)) core.setDuration(dur);
+                      const targetStart = Math.floor(core.deck0Song?.startSeconds || core.deck0Song?.initialTime || 0);
+                      if (targetStart > 0 && e.target.currentTime < 1) {
+                        try { e.target.currentTime = targetStart; } catch (_) {}
+                      }
                       e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
                     } else {
                       e.target.volume = 0;
                     }
                   }}
                   onError={(e) => {
-                    console.error("Deck 0 audio error", e);
-                    if (onError) onError("Failed to play local audio file.");
+                    const err = e?.target?.error;
+                    if (err && err.code === 1) return; // MEDIA_ERR_ABORTED - ignored
+                    console.warn("Deck 0 audio element error:", err?.code, err?.message);
                     core.handleStallClear();
+
+                    if (core.activeDeck !== 0) {
+                      core.handleAudioStreamFailure?.(0, e?.target?.currentTime);
+                      return;
+                    }
+
+                    if (isSongHiFi(core.deck0Song)) {
+                      core.handleAudioStreamFailure?.(0, e?.target?.currentTime);
+                      return;
+                    }
+
+                    if (core.deck0Song?.is_local) {
+                      if (onError) onError("Failed to play local audio file: " + (core.deck0Song.title || ""));
+                      return;
+                    }
+
+                    if (core.streamUrl) {
+                      if (onError) onError("Audio stream interrupted.");
+                    }
                   }}
-                  onWaiting={core.handleStallStart}
-                  onStalled={core.handleStallStart}
-                  onCanPlay={core.handleStallClear}
-                  onPlaying={core.handleStallClear}
+                  onWaiting={() => {
+                    if (core.activeDeck === 0) core.handleStallStart();
+                  }}
+                  onStalled={() => {
+                    if (core.activeDeck === 0) core.handleStallStart();
+                  }}
+                  onCanPlay={() => {
+                    if (core.activeDeck === 0) {
+                      core.handleStallClear();
+                    } else {
+                      core.handleAudioDeckReady?.(0);
+                    }
+                  }}
+                  onPlaying={() => {
+                    if (core.activeDeck === 0) {
+                      core.handleStallClear();
+                    }
+                  }}
                 />
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
@@ -727,7 +776,7 @@ const Player = React.forwardRef(function Player({
             )}
 
             {/* Deck 1 (Local / Stream Audio) */}
-            {core.deck1Song && (core.deck1Song?.is_local || core.streamUrl) && (
+            {core.deck1Song && (core.deck1Song?.is_local || isSongHiFi(core.deck1Song) || core.streamUrl) && (
               <div style={{
                 position: 'absolute',
                 inset: 0,
@@ -744,55 +793,99 @@ const Player = React.forwardRef(function Player({
                     <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
                       ♪
                     </div>
-                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : 'Audio Stream Fallback'}</div>
+                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck1Song) ? 'Hi-Fi Audio' : 'Audio Stream Fallback')}</div>
                   </div>
                 )}
                 <audio
                   id="deck-1-audio"
-                  src={core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl}
-                  autoPlay
+                  src={core.deck1Song?.stream_url || (core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl)}
+                  preload="auto"
+                  autoPlay={core.activeDeck === 1}
                   onPlay={() => {
-                    if (core.activeDeck === 1) {
-                      core.setIsPlaying(true);
-                      core.handleStallClear();
-                      if (onPlayStateChange) onPlayStateChange(true);
-                    }
+                    core.handleAudioDeckPlay?.(1);
                   }}
-                  onPause={() => {
-                    if (core.activeDeck === 1) {
-                      core.setIsPlaying(false);
-                      if (onPlayStateChange) onPlayStateChange(false);
-                    }
+                  onPause={(e) => {
+                    core.handleAudioDeckPause?.(1, e);
                   }}
                   onEnded={() => {
-                    if (core.activeDeck === 1) core.handleTrackEnd();
+                    core.handleAudioDeckEnded?.(1);
                   }}
                   onTimeUpdate={(e) => {
                     if (core.activeDeck === 1 && !core.isDragging) {
-                      core.setCurrentTime(e.target.currentTime);
-                      if (onTimeUpdate) onTimeUpdate(e.target.currentTime);
-                      if (!core.isOfflinePlayback) {
-                        core.checkAutoCrossfade(e.target.currentTime, e.target.duration);
+                      const curTime = e.target.currentTime;
+                      const fallbackDur = parseDurationToSecs(core.deck1Song?.duration);
+                      const dur = (Number.isFinite(e.target.duration) && e.target.duration > 0 && e.target.duration !== Infinity)
+                        ? e.target.duration
+                        : (fallbackDur > 0 ? fallbackDur : (core.duration || 0));
+
+                      if (Number.isFinite(curTime)) {
+                        core.setCurrentTime(curTime);
+                        if (onTimeUpdate) onTimeUpdate(curTime);
+                        if (!core.isOfflinePlayback && dur > 0 && Number.isFinite(dur)) {
+                          core.checkAutoCrossfade(curTime, dur);
+                        }
                       }
                     }
                   }}
                   onLoadedMetadata={(e) => {
                     if (core.activeDeck === 1) {
-                      core.setDuration(e.target.duration);
+                      const fallbackDur = parseDurationToSecs(core.deck1Song?.duration);
+                      const dur = (Number.isFinite(e.target.duration) && e.target.duration > 0 && e.target.duration !== Infinity)
+                        ? e.target.duration
+                        : (fallbackDur > 0 ? fallbackDur : (core.duration || 0));
+                      if (dur > 0 && Number.isFinite(dur)) core.setDuration(dur);
+                      const targetStart = Math.floor(core.deck1Song?.startSeconds || core.deck1Song?.initialTime || 0);
+                      if (targetStart > 0 && e.target.currentTime < 1) {
+                        try { e.target.currentTime = targetStart; } catch (_) {}
+                      }
                       e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
                     } else {
                       e.target.volume = 0;
                     }
                   }}
                   onError={(e) => {
-                    console.error("Deck 1 audio error", e);
-                    if (onError) onError("Failed to play local audio file.");
+                    const err = e?.target?.error;
+                    if (err && err.code === 1) return; // MEDIA_ERR_ABORTED - ignored
+                    console.warn("Deck 1 audio element error:", err?.code, err?.message);
                     core.handleStallClear();
+
+                    if (core.activeDeck !== 1) {
+                      core.handleAudioStreamFailure?.(1, e?.target?.currentTime);
+                      return;
+                    }
+
+                    if (isSongHiFi(core.deck1Song)) {
+                      core.handleAudioStreamFailure?.(1, e?.target?.currentTime);
+                      return;
+                    }
+
+                    if (core.deck1Song?.is_local) {
+                      if (onError) onError("Failed to play local audio file: " + (core.deck1Song.title || ""));
+                      return;
+                    }
+
+                    if (core.streamUrl) {
+                      if (onError) onError("Audio stream interrupted.");
+                    }
                   }}
-                  onWaiting={core.handleStallStart}
-                  onStalled={core.handleStallStart}
-                  onCanPlay={core.handleStallClear}
-                  onPlaying={core.handleStallClear}
+                  onWaiting={() => {
+                    if (core.activeDeck === 1) core.handleStallStart();
+                  }}
+                  onStalled={() => {
+                    if (core.activeDeck === 1) core.handleStallStart();
+                  }}
+                  onCanPlay={() => {
+                    if (core.activeDeck === 1) {
+                      core.handleStallClear();
+                    } else {
+                      core.handleAudioDeckReady?.(1);
+                    }
+                  }}
+                  onPlaying={() => {
+                    if (core.activeDeck === 1) {
+                      core.handleStallClear();
+                    }
+                  }}
                 />
                 <div 
                   style={{ position: 'absolute', inset: 0, zIndex: 10 }}
@@ -1637,6 +1730,8 @@ const Player = React.forwardRef(function Player({
 
       {!isMiniPlayer && !isFullscreen && (
         <PlayerControls
+          isHifiEnabled={isHifiEnabled}
+          isPlayingHifi={isSongHiFi(activeSong && activeSong.id === currentSong?.id ? activeSong : currentSong)}
           currentSong={currentSong}
           isPlaying={core.isPlaying}
           isBuffering={core.isBuffering}

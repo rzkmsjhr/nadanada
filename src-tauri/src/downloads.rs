@@ -147,16 +147,17 @@ pub async fn get_stream_url(_app: tauri::AppHandle, video_id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn download_song(id: String, title: String, artist: String) -> Result<String, String> {
-    let url = format!("https://www.youtube.com/watch?v={}", id);
-
+pub async fn download_song(
+    id: String,
+    title: String,
+    artist: String,
+    stream_url: Option<String>,
+) -> Result<String, String> {
     let mut data_dir = dirs::data_local_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
     data_dir.push("NadaNada");
     if !data_dir.exists() {
         std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
     }
-
-    let exe_path = get_yt_dlp_path().await?;
 
     let mut music_dir = dirs::audio_dir()
         .unwrap_or_else(|| dirs::document_dir().unwrap_or_else(|| PathBuf::from(".")));
@@ -194,6 +195,107 @@ pub async fn download_song(id: String, title: String, artist: String) -> Result<
         },
         "",
     );
+
+    // If stream_url is provided (e.g. from Monochrome Hi-Fi lossless FLAC), download the raw audio stream directly!
+    if let Some(ref direct_url) = stream_url {
+        let trimmed_url = direct_url.trim();
+        if !trimmed_url.is_empty() {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(180))
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+            for attempt in 1..=3 {
+                let res = client
+                    .get(trimmed_url)
+                    .header(
+                        reqwest::header::USER_AGENT,
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                    )
+                    .header(reqwest::header::ACCEPT, "*/*")
+                    .send()
+                    .await;
+
+                if let Ok(response) = res {
+                    if response.status().is_success() {
+                        if let Ok(bytes) = response.bytes().await {
+                            if !bytes.is_empty() {
+                                let ext = if bytes.starts_with(b"fLaC") { "flac" } else { "flac" };
+                                let file_name = if safe_artist.trim().eq_ignore_ascii_case("release")
+                                    || safe_artist.trim().eq_ignore_ascii_case("unknown")
+                                    || safe_artist.trim().is_empty()
+                                {
+                                    format!("{}.{}", safe_title.trim(), ext)
+                                } else {
+                                    format!("{} - {}.{}", safe_artist.trim(), safe_title.trim(), ext)
+                                };
+
+                                let final_path = music_dir.join(&file_name);
+                                if fs::write(&final_path, &bytes).is_ok() {
+                                    let final_path_str = final_path.to_string_lossy().to_string();
+                                    let final_path_clone = final_path_str.clone();
+                                    let id_clone = id.clone();
+
+                                    let _ = tokio::task::spawn_blocking(move || {
+                                        let _lock = IO_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+                                        let registry_path = data_dir.join("youtube_downloads.json");
+                                        let mut registry: std::collections::HashMap<String, String> = if registry_path.exists() {
+                                            if let Ok(content) = fs::read_to_string(&registry_path) {
+                                                serde_json::from_str(&content).unwrap_or_default()
+                                            } else {
+                                                std::collections::HashMap::new()
+                                            }
+                                        } else {
+                                            std::collections::HashMap::new()
+                                        };
+                                        // Remove any stale .m4a entry for the same video ID so .flac replaces it cleanly
+                                        let stale_paths: Vec<String> = registry
+                                            .iter()
+                                            .filter(|(k, v)| *v == &id_clone && *k != &final_path_clone && k.ends_with(".m4a"))
+                                            .map(|(k, _)| k.clone())
+                                            .collect();
+                                        for sp in stale_paths {
+                                            registry.remove(&sp);
+                                            let _ = fs::remove_file(&sp);
+                                        }
+
+                                        registry.insert(final_path_clone.clone(), id_clone);
+                                        let _ = fs::write(
+                                            &registry_path,
+                                            serde_json::to_string(&registry).unwrap_or_default(),
+                                        );
+
+                                        let hidden_json_path = data_dir.join("hidden_downloads.json");
+                                        if hidden_json_path.exists() {
+                                            if let Ok(content) = fs::read_to_string(&hidden_json_path) {
+                                                if let Ok(mut hidden) = serde_json::from_str::<Vec<String>>(&content) {
+                                                    if hidden.contains(&final_path_clone) {
+                                                        hidden.retain(|p| p != &final_path_clone);
+                                                        let _ = fs::write(
+                                                            &hidden_json_path,
+                                                            serde_json::to_string(&hidden).unwrap_or_default(),
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }).await;
+
+                                    return Ok(final_path_str);
+                                }
+                            }
+                        }
+                    }
+                }
+                if attempt < 3 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+    }
+
+    let url = format!("https://www.youtube.com/watch?v={}", id);
+    let exe_path = get_yt_dlp_path().await?;
 
     // If the frontend couldn't find a real artist (e.g. "Release - Topic" or "Unknown"),
     // let yt-dlp extract it from deep metadata. Otherwise, trust the frontend's clean parsing!
@@ -380,7 +482,7 @@ pub fn get_downloaded_songs() -> Result<Vec<DownloadedSong>, String> {
                     continue;
                 }
                 if let Some(ext) = path.extension() {
-                    if ext == "m4a" || ext == "mp3" || ext == "webm" {
+                    if ext == "flac" || ext == "m4a" || ext == "mp3" || ext == "webm" || ext == "wav" || ext == "ogg" {
                         if let Some(file_name) = path.file_stem().and_then(|n| n.to_str()) {
                             let parts: Vec<&str> = file_name.splitn(2, " - ").collect();
                             let (artist, title) = if parts.len() == 2 {

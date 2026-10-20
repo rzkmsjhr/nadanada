@@ -148,9 +148,9 @@ export default function PlaylistViews() {
       onRemove={handleRemoveSong} 
       onReorder={handleReorder} 
       isTrendingMode={!!savedPlaylist} 
-      onAddSong={song => {
+      onAddSong={async song => {
         if (savedPlaylist) {
-          setSavedPlaylist([...savedPlaylist, song]);
+          await handleAddSongToMainPlaylist(song);
         }
       }} 
       onDownloadSong={handleDownloadSong} 

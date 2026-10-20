@@ -3,6 +3,8 @@ import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle,
 import { parseArtists } from '../utils/artistUtils';
 
 export default function PlayerControls({
+  isHifiEnabled = true,
+  isPlayingHifi,
   currentSong,
   isPlaying,
   isBuffering,
@@ -80,9 +82,26 @@ export default function PlayerControls({
       <div style={{ overflow: 'hidden' }}>
         <div style={{ padding: '16px 0 0 0', display: 'flex', flexDirection: 'column', gap: '12px', opacity: isSearchExpanded ? 0 : 1, transition: 'opacity 0.25s ease', pointerEvents: isSearchExpanded ? 'none' : 'auto' }}>
           <div style={{ width: '100%' }}>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {currentSong ? currentSong.title : 'Waiting for music...'}
-            </h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                {currentSong ? currentSong.title : 'Waiting for music...'}
+              </h3>
+              {currentSong && isHifiEnabled && (isPlayingHifi !== undefined ? isPlayingHifi : Boolean(currentSong.source === 'monochrome' || currentSong.stream_url)) && (
+                <span style={{
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  background: 'var(--accent-color)',
+                  color: '#ffffff',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                  letterSpacing: '0.6px',
+                  flexShrink: 0,
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)'
+                }}>
+                  Hi-Fi (FLAC)
+                </span>
+              )}
+            </div>
             {subtitleParts && (
               <div 
                 className="song-title-wrapper"

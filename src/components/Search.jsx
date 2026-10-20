@@ -1,12 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Loader2, Plus, Check, X, Disc, Music, Play, Square } from 'lucide-react';
+import { Loader2, Plus, Check, X, Disc, Music, Play, Square, Video as VideoIcon } from 'lucide-react';
 
 const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId, onPlayPreview, onStopPreview, isPreviewing }) => {
   const isAlbum = video.is_playlist;
   const [albumAdded, setAlbumAdded] = useState(false);
+  const [isAddingSong, setIsAddingSong] = useState(false);
   const isAdded = (!isAlbum && playlist.some(s => s.id === video.id)) || albumAdded;
-  const isLoading = loadingAlbumId === video.id;
+  const isLoading = loadingAlbumId === video.id || isAddingSong;
   
   const [isHovered, setIsHovered] = useState(false);
   const [shouldScroll, setShouldScroll] = useState(false);
@@ -95,7 +96,12 @@ const SongResultItem = ({ video, playlist, onAdd, handleAddAlbum, loadingAlbumId
                 setAlbumAdded(true);
               }
             } else if (!isAdded) {
-              onAdd(video); 
+              setIsAddingSong(true);
+              try {
+                await onAdd(video);
+              } finally {
+                setIsAddingSong(false);
+              }
             }
           }}
           disabled={isAdded || isLoading}
@@ -128,7 +134,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
     setIsSearching(true);
     try {
       const videos = await invoke('search_youtube', { query, searchType: typeToSearch });
-      setResults(videos);
+      setResults(videos || []);
     } catch (err) {
       console.error(err);
       onError('Search failed: ' + err);
@@ -171,7 +177,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
           tracks = tracks.slice(0, 50);
           onError(`Album is too large. Only the first 50 tracks were added to prevent performance issues.`);
         }
-        onAddMultiple(tracks);
+        await onAddMultiple(tracks);
         return true;
       }
       return false;
@@ -226,11 +232,19 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
           </button>
           <button
             type="button"
+            className={`btn ${searchType === 'video' ? 'btn-primary' : ''}`}
+            style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'video' ? '' : 'var(--bg-color)' }}
+            onClick={() => handleTypeSwitch('video')}
+          >
+            <VideoIcon size={14} /> Video
+          </button>
+          <button
+            type="button"
             className={`btn ${searchType === 'album' ? 'btn-primary' : ''}`}
             style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'album' ? '' : 'var(--bg-color)' }}
             onClick={() => handleTypeSwitch('album')}
           >
-            <Disc size={14} /> Albums
+            <Disc size={14} /> Album
           </button>
         </div>
       </form>

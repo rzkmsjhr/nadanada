@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
+import { hifiCache, resolveHifiForTrack, getCachedHifi } from '../services/hifiResolver';
 
-export function useDownloadManager(api, setGlobalError) {
+export function useDownloadManager(api, setGlobalError, isHifiEnabled = true) {
   const [showDownloadedList, setShowDownloadedList] = useState(false);
   const [downloadedSongs, setDownloadedSongs] = useState([]);
   const [downloadingSongId, setDownloadingSongId] = useState(null);
@@ -44,7 +45,24 @@ export function useDownloadManager(api, setGlobalError) {
       } else {
         artist = song.channel ? song.channel.replace(/ - Topic/i, '').trim() : 'Unknown';
       }
-      await api.downloadSong(song.id, title, artist);
+
+      // Check if song has stream_url (Hi-Fi) or resolve it from hifiCache / Monochrome
+      let streamUrl = song.stream_url;
+      if (!streamUrl && isHifiEnabled && !song.is_local) {
+        const cached = getCachedHifi(song);
+        if (cached && cached.stream_url) {
+          streamUrl = cached.stream_url;
+        } else {
+          try {
+            const resolved = await resolveHifiForTrack(song);
+            if (resolved && resolved.stream_url) {
+              streamUrl = resolved.stream_url;
+            }
+          } catch (e) {}
+        }
+      }
+
+      await api.downloadSong(song.id, title, artist, streamUrl);
       await loadDownloadedSongs();
     } catch (e) {
       console.error('Download failed:', e);
