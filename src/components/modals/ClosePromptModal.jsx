@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Disc } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { api } from '../../services/api';
@@ -6,10 +6,38 @@ import { api } from '../../services/api';
 const ClosePromptModal = ({ onClose, setCloseBehavior }) => {
   const [rememberChoice, setRememberChoice] = useState(false);
 
+  useEffect(() => {
+    // Keep window on top while prompt is open
+    api.setAlwaysOnTop(true).catch(() => {});
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        handleCancel();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      // Restore normal window stacking order on unmount
+      api.setAlwaysOnTop(false).catch(() => {});
+    };
+  }, []);
+
+  const handleCancel = async () => {
+    try {
+      await api.setAlwaysOnTop(false);
+    } catch {}
+    onClose();
+  };
+
   const handleMinimize = async () => {
     if (rememberChoice && setCloseBehavior) {
       setCloseBehavior('minimize');
     }
+    try {
+      await api.setAlwaysOnTop(false);
+    } catch {}
     onClose();
     try {
       await getCurrentWindow().hide();
@@ -22,6 +50,9 @@ const ClosePromptModal = ({ onClose, setCloseBehavior }) => {
     if (rememberChoice && setCloseBehavior) {
       setCloseBehavior('close');
     }
+    try {
+      await api.setAlwaysOnTop(false);
+    } catch {}
     onClose();
     try {
       await api.quitApp();
@@ -31,8 +62,8 @@ const ClosePromptModal = ({ onClose, setCloseBehavior }) => {
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="modal-overlay" onClick={handleCancel}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-icon-container">
           <Disc className="modal-icon" />
         </div>
@@ -88,7 +119,7 @@ const ClosePromptModal = ({ onClose, setCloseBehavior }) => {
             Quit App
           </button>
           <button 
-            onClick={() => onClose()} 
+            onClick={handleCancel} 
             className="btn btn-cancel btn-large"
           >
             Cancel

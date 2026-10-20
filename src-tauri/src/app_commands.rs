@@ -1,3 +1,38 @@
+use std::sync::atomic::{AtomicU8, Ordering};
+
+// 0: prompt, 1: minimize, 2: close
+static CLOSE_BEHAVIOR: AtomicU8 = AtomicU8::new(0);
+
+pub fn get_close_behavior() -> u8 {
+    CLOSE_BEHAVIOR.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+pub fn set_close_behavior(behavior: String) {
+    let code = match behavior.as_str() {
+        "minimize" => 1,
+        "close" => 2,
+        _ => 0,
+    };
+    CLOSE_BEHAVIOR.store(code, Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn set_always_on_top(window: tauri::Window, always_on_top: bool) {
+    let _ = window.set_always_on_top(always_on_top);
+    if !always_on_top {
+        let _ = window.request_user_attention(None);
+    }
+}
+
+#[tauri::command]
+pub fn show_close_prompt_window(window: tauri::Window) {
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_always_on_top(true);
+    let _ = window.set_focus();
+    let _ = window.request_user_attention(Some(tauri::UserAttentionType::Critical));
+}
 
 #[tauri::command]
 pub fn quit_app(app: tauri::AppHandle) {

@@ -198,7 +198,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             <input 
               className="input" 
               style={{ width: '100%', paddingRight: '32px' }}
-              placeholder="Search YouTube..." 
+              placeholder={searchType === 'video' ? "Search YouTube Videos..." : searchType === 'album' ? "Search Albums..." : "Search Songs..."} 
               value={query}
               onChange={e => setQuery(e.target.value)}
               autoFocus
@@ -236,7 +236,7 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
             style={{ flex: 1, padding: '4px', fontSize: '12px', display: 'flex', gap: '6px', justifyContent: 'center', background: searchType === 'video' ? '' : 'var(--bg-color)' }}
             onClick={() => handleTypeSwitch('video')}
           >
-            <VideoIcon size={14} /> Video
+            <VideoIcon size={14} /> Videos
           </button>
           <button
             type="button"

@@ -254,6 +254,11 @@ async fn scrape_regular_youtube_search(
                 "https://www.youtube.com/results?search_query={}&sp=EgIQAw%3D%3D",
                 urlencoding::encode(&search_query)
             )
+        } else if st == "video" {
+            format!(
+                "https://www.youtube.com/results?search_query={}&sp=EgIQAQ%3D%3D",
+                urlencoding::encode(&search_query)
+            )
         } else {
             search_query.push_str(" topic");
             format!(
@@ -289,99 +294,107 @@ async fn scrape_regular_youtube_search(
         let v: serde_json::Value = serde_json::from_str(json_str).map_err(|e| e.to_string())?;
 
         let mut videos = Vec::new();
-        if let Some(contents) = v.pointer("/contents/twoColumnSearchResultsRenderer/primaryContents/sectionListRenderer/contents/0/itemSectionRenderer/contents") {
-            if let Some(arr) = contents.as_array() {
-                for item in arr {
-                    if let Some(video) = item.get("videoRenderer") {
-                        let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let title = video.pointer("/title/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let channel = video.pointer("/ownerText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let sections = v.pointer("/contents/twoColumnSearchResultsRenderer/primaryContents/sectionListRenderer/contents")
+            .and_then(|c| c.as_array());
 
-                        if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video {
-                                id,
-                                title,
-                                thumbnail,
-                                duration,
-                                channel,
-                                is_playlist: false,
-                                track_count: None,
-                                first_video_id: None,
-                                item_type: Some("video".to_string()),
-        stream_url: None,
-        source: None,
-                            });
-                        }
-                    } else if let Some(playlist) = item.get("playlistRenderer") {
-                        let id = playlist.get("playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let title = playlist.pointer("/title/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let thumbnail = playlist.pointer("/thumbnails/0/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let track_count = playlist.pointer("/videoCount").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let channel = playlist.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let first_video = playlist.pointer("/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if let Some(sections_arr) = sections {
+            for section in sections_arr {
+                if let Some(contents) = section.pointer("/itemSectionRenderer/contents").and_then(|c| c.as_array()) {
+                    for item in contents {
+                        if let Some(video) = item.get("videoRenderer") {
+                            let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let title = video.pointer("/title/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let channel = video.pointer("/ownerText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-                        if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video {
-                                id,
-                                title,
-                                thumbnail,
-                                duration: "".to_string(),
-                                channel,
-                                is_playlist: true,
-                                track_count: Some(track_count),
-                                first_video_id: Some(first_video),
-                                item_type: Some("album".to_string()),
-        stream_url: None,
-        source: None,
-                            });
-                        }
-                    } else if let Some(lockup) = item.get("lockupViewModel") {
-                        let lockup_str = lockup.to_string();
+                            if !id.is_empty() && !title.is_empty() && !videos.iter().any(|existing: &Video| existing.id == id) {
+                                videos.push(Video {
+                                    id,
+                                    title,
+                                    thumbnail,
+                                    duration,
+                                    channel,
+                                    is_playlist: false,
+                                    track_count: None,
+                                    first_video_id: None,
+                                    item_type: Some("video".to_string()),
+                                    stream_url: None,
+                                    source: None,
+                                });
+                            }
+                        } else if let Some(playlist) = item.get("playlistRenderer") {
+                            let id = playlist.get("playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let title = playlist.pointer("/title/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let thumbnail = playlist.pointer("/thumbnails/0/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let track_count = playlist.pointer("/videoCount").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let channel = playlist.pointer("/shortBylineText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let first_video = playlist.pointer("/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-                        let mut id = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let title = lockup.pointer("/metadata/lockupMetadataViewModel/title/content").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        let thumbnail = lockup.pointer("/contentImage/collectionThumbnailViewModel/primaryThumbnail/thumbnailViewModel/image/sources/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            if !id.is_empty() && !title.is_empty() && !videos.iter().any(|existing: &Video| existing.id == id) {
+                                videos.push(Video {
+                                    id,
+                                    title,
+                                    thumbnail,
+                                    duration: "".to_string(),
+                                    channel,
+                                    is_playlist: true,
+                                    track_count: Some(track_count),
+                                    first_video_id: Some(first_video),
+                                    item_type: Some("album".to_string()),
+                                    stream_url: None,
+                                    source: None,
+                                });
+                            }
+                        } else if let Some(lockup) = item.get("lockupViewModel") {
+                            let lockup_str = lockup.to_string();
 
-                        if id.is_empty() {
-                            if let Some(caps) = Regex::new(r#""playlistId":"([^"]+)""#).unwrap().captures(&lockup_str) {
-                                id = caps[1].to_string();
+                            let mut id = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let title = lockup.pointer("/metadata/lockupMetadataViewModel/title/content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let thumbnail = lockup.pointer("/contentImage/collectionThumbnailViewModel/primaryThumbnail/thumbnailViewModel/image/sources/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                            if id.is_empty() {
+                                if let Some(caps) = Regex::new(r#""playlistId":"([^"]+)""#).unwrap().captures(&lockup_str) {
+                                    id = caps[1].to_string();
+                                }
+                            }
+
+                            let mut first_video = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            if first_video.is_empty() {
+                                if let Some(caps) = Regex::new(r#""videoId":"([^"]+)""#).unwrap().captures(&lockup_str) {
+                                    first_video = caps[1].to_string();
+                                }
+                            }
+
+                            let track_count_str = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/text").and_then(|v| v.as_str()).unwrap_or("");
+                            let mut track_count = track_count_str.split(' ').next().unwrap_or("").to_string();
+                            if track_count.is_empty() || !track_count_str.contains("videos") {
+                                track_count = String::new();
+                            }
+
+                            if !id.is_empty() && !title.is_empty() && !videos.iter().any(|existing: &Video| existing.id == id) {
+                                videos.push(Video {
+                                    id,
+                                    title,
+                                    thumbnail,
+                                    duration: "".to_string(),
+                                    channel: "".to_string(),
+                                    is_playlist: true,
+                                    track_count: Some(track_count),
+                                    first_video_id: Some(first_video),
+                                    item_type: Some("album".to_string()),
+                                    stream_url: None,
+                                    source: None,
+                                });
                             }
                         }
-
-                        let mut first_video = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if first_video.is_empty() {
-                            if let Some(caps) = Regex::new(r#""videoId":"([^"]+)""#).unwrap().captures(&lockup_str) {
-                                first_video = caps[1].to_string();
-                            }
-                        }
-
-                        let track_count_str = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/text").and_then(|v| v.as_str()).unwrap_or("");
-                        let mut track_count = track_count_str.split(' ').next().unwrap_or("").to_string();
-                        if track_count.is_empty() || !track_count_str.contains("videos") {
-                            track_count = String::new();
-                        }
-
-                        if !id.is_empty() && !title.is_empty() {
-                            videos.push(Video {
-                                id,
-                                title,
-                                thumbnail,
-                                duration: "".to_string(),
-                                channel: "".to_string(),
-                                is_playlist: true,
-                                track_count: Some(track_count),
-                                first_video_id: Some(first_video),
-                                item_type: Some("album".to_string()),
-        stream_url: None,
-        source: None,
-                            });
+                        if videos.len() >= 25 {
+                            break;
                         }
                     }
-                    if videos.len() >= 15 {
-                        break;
-                    }
+                }
+                if videos.len() >= 25 {
+                    break;
                 }
             }
         }
@@ -853,6 +866,23 @@ pub async fn search_youtube(
 
     // Clean query of embedded furigana/parentheses for matching
     // e.g. "縁(えにし)の糸 Mariya Takeuchi" -> "縁の糸 mariya takeuchi"
+    // If searching specifically for videos, query regular YouTube video search directly
+    if st == Some("video") {
+        match scrape_regular_youtube_search(&query, Some("video")).await {
+            Ok(results) if !results.is_empty() => {
+                return Ok(results);
+            }
+            Ok(_) => {
+                println!("search_youtube: 0 regular YouTube video results for {:?}, falling back to YTM", query);
+            }
+            Err(e) => {
+                println!("search_youtube: regular YouTube video search error ({}), falling back to YTM", e);
+            }
+        }
+        // Fallback to YTM video search if regular YouTube scraping failed
+        return search_youtube_music(&query, Some("video")).await;
+    }
+
     let clean_query = clean_title_for_matching(&query);
 
     // 1. Primary: Search YouTube Music ("song", "album", or "video" typed)
@@ -2466,6 +2496,28 @@ mod tests {
                 println!("Full top songs count: {}", songs.len());
                 assert!(songs.len() >= d.top_songs.len(), "Full top songs should have at least as many songs as shelf");
             }
+        });
+    }
+
+    #[test]
+    fn test_video_search_charlie_puth_npr() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let results = search_youtube("charlie puth NPR".to_string(), Some("video".to_string()))
+                .await
+                .expect("Video search should succeed");
+            println!("Charlie Puth NPR video search results (top 5):");
+            for (i, r) in results.iter().take(5).enumerate() {
+                println!("  [{}] title={:?}, channel={:?}, type={:?}, dur={:?}",
+                    i, r.title, r.channel, r.item_type, r.duration);
+            }
+            assert!(!results.is_empty(), "Should return video results for Charlie Puth NPR");
+            let has_npr = results.iter().take(3).any(|r| {
+                let t = r.title.to_lowercase();
+                let c = r.channel.to_lowercase();
+                (t.contains("tiny desk") || t.contains("npr")) || c.contains("npr")
+            });
+            assert!(has_npr, "Top 3 results should include the NPR Tiny Desk Concert");
         });
     }
 }

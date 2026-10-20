@@ -46,7 +46,10 @@ export const api = {
   },
   getCachedEmbedPort: () => cachedEmbedPort,
   clearCachedData: () => invoke('clear_cached_data'),
-  quitApp: () => invoke('quit_app')
+  quitApp: () => invoke('quit_app'),
+  setCloseBehavior: (behavior) => invoke('set_close_behavior', { behavior }),
+  setAlwaysOnTop: (alwaysOnTop) => invoke('set_always_on_top', { alwaysOnTop }),
+  showClosePromptWindow: () => invoke('show_close_prompt_window')
 };
 
 // Eagerly fetch port at startup
