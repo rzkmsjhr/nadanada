@@ -10,7 +10,7 @@ import VideoOverlay from './VideoOverlay';
 import SpinningVinyl, { isAlbumArtTrack } from './SpinningVinyl';
 import AlbumArtDisplay from './AlbumArtDisplay';
 import ArtistHeroVisualizer from './ArtistHeroVisualizer';
-import { parseDurationToSecs } from '../services/hifiResolver';
+import { parseDurationToSecs, isHifiEligibleTrack } from '../services/hifiResolver';
 
 const Player = React.forwardRef(function Player({ 
   currentSong, nextSong, onNext, onPrevious, hasNext, hasPrevious, onPlayStateChange, onTimeUpdate, onError, isMaximized, isFullscreen, onToggleFullscreen, isVideoHidden,
@@ -38,7 +38,7 @@ const Player = React.forwardRef(function Player({
   onToggleTrackHifi
 }, ref) {
   
-  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && (song.stream_url || song.source === 'monochrome') && !song.is_local);
+  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && isHifiEligibleTrack(song) && (song.stream_url || song.source === 'monochrome') && !song.is_local);
 
   const core = usePlayerCore({
     currentSong,

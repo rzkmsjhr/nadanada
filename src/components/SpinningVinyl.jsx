@@ -8,19 +8,16 @@ import { Disc } from 'lucide-react';
 export function isAlbumArtTrack(song) {
   if (!song) return false;
 
-  // 1. Local offline files or direct audio streams (like Monochrome/FLAC) are always audio tracks with album art
-  if (song.is_local || song.source === 'monochrome' || song.is_monochrome || song.stream_url) return true;
-
   const channel = (song.channel || '').toLowerCase().trim();
   const title = (song.title || '').toLowerCase().trim();
   const itemType = (song.item_type || '').toLowerCase().trim();
 
-  // 2. Explicit video type must NEVER spin or show turntable
+  // 1. Explicit video type must NEVER spin or show turntable
   if (itemType === 'video') {
     return false;
   }
 
-  // 3. Inspect title & channel for video markers FIRST
+  // 2. Inspect title & channel for video markers FIRST
   // Even if tagged as 'song' from a mix or playlist, if it's an official music video it is a VIDEO!
   const videoKeywords = [
     'official music video',
@@ -66,6 +63,9 @@ export function isAlbumArtTrack(song) {
   if (channel.includes('vevo')) {
     return false;
   }
+
+  // 3. Local offline files or direct audio streams (like Monochrome/FLAC) are always audio tracks with album art
+  if (song.is_local || song.source === 'monochrome' || song.is_monochrome || song.stream_url) return true;
 
   // 4. YouTube Topic channels are auto-generated audio releases with static album art
   if (channel.endsWith('- topic') || channel === 'topic') {

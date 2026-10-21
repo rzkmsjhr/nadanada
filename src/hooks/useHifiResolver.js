@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { resolveHifiForTrack, HIFI_MATCHER_VERSION } from '../services/hifiResolver';
+import { resolveHifiForTrack, HIFI_MATCHER_VERSION, isHifiEligibleTrack } from '../services/hifiResolver';
 
 function isNativeMonochromeItem(s) {
   return Boolean(s && s.source === 'monochrome' && s.stream_url && (!s.hifi_id || String(s.hifi_id) === String(s.id)));
@@ -8,6 +8,7 @@ function isNativeMonochromeItem(s) {
 function needsHifiCheck(s, inFlightSet) {
   if (!s || s.is_local || s.file_path || inFlightSet.has(s.id)) return false;
   if (s._userForcedYoutube) return false;
+  if (!isHifiEligibleTrack(s)) return false;
   if (isNativeMonochromeItem(s)) return false;
   if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) return false;
   return true;

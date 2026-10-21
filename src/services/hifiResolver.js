@@ -1,9 +1,9 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v4';
-const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'nadanada-hifi-cache-v3'];
+const STORAGE_KEY = 'nadanada-hifi-cache-v5';
+const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'nadanada-hifi-cache-v3', 'nadanada-hifi-cache-v4'];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 4;
+export const HIFI_MATCHER_VERSION = 5;
 
 /**
  * Known upstream streaming catalog IDs where the original recording was overwritten
@@ -51,6 +51,78 @@ export function setUserYoutubeForced(songId, forced) {
   } catch (e) {
     console.warn('[HIFI] Failed to persist user youtube override:', e);
   }
+}
+
+/**
+ * Video keywords that explicitly indicate a music video, performance, or video upload.
+ */
+export const VIDEO_TITLE_KEYWORDS = [
+  'official music video',
+  'official video',
+  'music video',
+  'official audio video',
+  'lyric video',
+  'lyrics video',
+  'visualizer',
+  'official visualizer',
+  'performance video',
+  'live performance',
+  'dance practice',
+  'live at',
+  'live in',
+  'live from',
+  'live concert',
+  'full concert',
+  'trailer',
+  'teaser',
+  '[mv]',
+  '(mv)',
+  '[m/v]',
+  '(m/v)',
+  '[official video]',
+  '(official video)',
+  '[official music video]',
+  '(official music video)',
+  '(video)',
+  '[video]'
+];
+
+/**
+ * Checks whether a track is eligible for Hi-Fi / lossless FLAC resolution.
+ * Per requirement: Hi-Fi version MUST only be searched and attached for "songs" and "- topic" channels.
+ * If the track is a video (or item_type is 'video' / regular YouTube video), it should NOT be overridden
+ * with Hi-Fi audio; the original YouTube video must be shown.
+ */
+export function isHifiEligibleTrack(song) {
+  if (!song) return false;
+  // Local offline files are played locally
+  if (song.is_local || song.file_path) return false;
+
+  // Native Monochrome tracks are audio releases
+  if (song.source === 'monochrome' || song.is_monochrome) return true;
+
+  const itemType = (song.item_type || '').toLowerCase().trim();
+  const channel = (song.channel || '').toLowerCase().trim();
+  const title = (song.title || '').toLowerCase().trim();
+
+  // Explicit video item type is never Hi-Fi eligible
+  if (itemType === 'video') return false;
+
+  // VEVO channels host official music videos, never static album tracks
+  if (channel.includes('vevo')) return false;
+
+  // Video titles containing MV / music video markers must stay as video
+  if (VIDEO_TITLE_KEYWORDS.some(k => title.includes(k))) return false;
+  if (/\b(mv|m\/v)\b/i.test(title)) return false;
+
+  // 1. YouTube Topic channels are auto-generated audio releases
+  if (channel.endsWith('- topic') || channel === 'topic') return true;
+
+  // 2. Explicit "song" items from YouTube Music (that passed video checks above)
+  if (itemType === 'song') return true;
+
+  // All other YouTube videos, uploads, or non-song/non-topic items are NOT Hi-Fi eligible
+  return false;
 }
 
 /**
@@ -417,7 +489,7 @@ export function matchTrack(song, results, options = {}) {
  * If invalid or mismatched, safely purges the entry and returns null.
  */
 export function getCachedHifi(song) {
-  if (!song) return null;
+  if (!song || !isHifiEligibleTrack(song)) return null;
   if (song.id && isUserYoutubeForced(song.id)) return null;
   const idKey = song.id ? String(song.id) : null;
   const { title, artist } = cleanSongTitle(song.title, song.channel);
@@ -480,6 +552,21 @@ export function sanitizeLegacyHifiTrack(s) {
   if (!s || typeof s !== 'object') return s;
   // Local/downloaded files are always preserved
   if (s.is_local || s.file_path) return s;
+
+  // If the track is not eligible for Hi-Fi (e.g. video), strip any stream_url and mark checked
+  if (!isHifiEligibleTrack(s)) {
+    if (s.stream_url || s.source === 'monochrome' || s.hifi_id || !s._hifiChecked || s._hifiVersion !== HIFI_MATCHER_VERSION) {
+      return {
+        ...s,
+        stream_url: null,
+        source: null,
+        hifi_id: null,
+        _hifiChecked: true,
+        _hifiVersion: HIFI_MATCHER_VERSION
+      };
+    }
+    return s;
+  }
   // If user explicitly forced YouTube for this song, keep it as YouTube
   if (s.id && isUserYoutubeForced(s.id)) {
     return {
@@ -543,6 +630,7 @@ const inFlightPromises = new Map();
 export async function resolveHifiForTrack(song, options = {}) {
   const { ignoreBlacklist = false, ignoreUserYoutubeForced = false } = options;
   if (!song || song.is_local || song.file_path) return null;
+  if (!isHifiEligibleTrack(song)) return null;
   if (!ignoreUserYoutubeForced && ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube)) return null;
   if (!ignoreBlacklist && song.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(song.hifi_id))) {
     const norm = `${song.title || ''} ${song.channel || ''}`.toLowerCase();
@@ -696,6 +784,16 @@ export async function resolveInitialPlaylistTracks(tracks, count = 5) {
   const resolvedBatch = await Promise.all(
     initialBatch.map(async (song) => {
       if (!song || song.is_local || song.file_path) return song;
+      if (!isHifiEligibleTrack(song)) {
+        return {
+          ...song,
+          stream_url: null,
+          source: null,
+          hifi_id: null,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        };
+      }
       // If user explicitly forced YouTube for this song, preserve it
       if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
         return {
@@ -764,6 +862,16 @@ export async function resolveInitialPlaylistTracks(tracks, count = 5) {
   // For tracks beyond targetCount, attach cached Hi-Fi if available (instant 0ms)
   const remainingBatch = sanitized.slice(targetCount).map((song) => {
     if (!song || song.is_local || song.file_path) return song;
+    if (!isHifiEligibleTrack(song)) {
+      return {
+        ...song,
+        stream_url: null,
+        source: null,
+        hifi_id: null,
+        _hifiChecked: true,
+        _hifiVersion: HIFI_MATCHER_VERSION
+      };
+    }
     if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
       return {
         ...song,

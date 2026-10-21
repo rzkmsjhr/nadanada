@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Maximize2, Minimize2 } from 'lucide-react';
 import { parseArtists } from '../utils/artistUtils';
-import { isKnownUpstreamMismatch } from '../services/hifiResolver';
+import { isKnownUpstreamMismatch, isHifiEligibleTrack } from '../services/hifiResolver';
 
 export default function PlayerControls({
   isHifiEnabled = true,
@@ -88,7 +88,7 @@ export default function PlayerControls({
               <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                 {currentSong ? currentSong.title : 'Waiting for music...'}
               </h3>
-              {currentSong && isHifiEnabled && !currentSong.is_local && (() => {
+              {currentSong && isHifiEnabled && !currentSong.is_local && isHifiEligibleTrack(currentSong) && (() => {
                 const isHiFi = Boolean(isPlayingHifi !== undefined ? isPlayingHifi : (currentSong.source === 'monochrome' || currentSong.stream_url));
                 const isForcedYt = Boolean(currentSong._userForcedYoutube);
                 const isUpstreamMismatch = isKnownUpstreamMismatch(currentSong);

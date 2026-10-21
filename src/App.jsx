@@ -566,6 +566,7 @@ function App() {
       thumbnail: t.thumbnail,
       duration: t.duration || '',
       album: t.album || '',
+      item_type: t.item_type || 'song',
       stream_url: t.stream_url || null,
       source: t.source || null,
       hifi_id: t.hifi_id || null,
@@ -617,6 +618,8 @@ function App() {
       thumbnail: song.thumbnail,
       duration: song.duration || '',
       album: song.album || '',
+      item_type: song.item_type || null,
+      source: song.source || null,
       queueId: `${timestamp}-${Math.random().toString(36).substr(2, 9)}`
     };
 
@@ -691,6 +694,7 @@ function App() {
       thumbnail: t.thumbnail,
       duration: t.duration || '',
       album: t.album || '',
+      item_type: t.item_type || 'song',
       stream_url: t.stream_url || null,
       source: t.source || null,
       hifi_id: t.hifi_id || null,

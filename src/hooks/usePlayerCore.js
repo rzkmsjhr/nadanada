@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
-import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack } from '../services/hifiResolver';
+import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack, isHifiEligibleTrack } from '../services/hifiResolver';
 
 // Global cache for captions across song transitions and component re-renders
 const globalCaptionsMap = new Map();
@@ -86,7 +86,7 @@ export function usePlayerCore({
   const isSongOffline = (song) => {
     if (!song) return false;
     if (song?.is_local || song?.file_path) return true;
-    if (isHifiEnabled && (song?.stream_url || song?.source === 'monochrome')) return false;
+    if (isHifiEnabled && isHifiEligibleTrack(song) && (song?.stream_url || song?.source === 'monochrome')) return false;
     if (downloadedIds && typeof downloadedIds.has === 'function') {
       if (song.id && downloadedIds.has(song.id)) return true;
       if (song.file_path && downloadedIds.has(song.file_path)) return true;
@@ -135,11 +135,11 @@ export function usePlayerCore({
   const isAudioElementPlayback = (song = currentSong) => {
     if (!song) return Boolean(streamUrl);
     if (song.is_local || song.file_path) return true;
-    if (isHifiEnabled && (song.stream_url || song.source === 'monochrome')) return true;
+    if (isHifiEnabled && isHifiEligibleTrack(song) && (song.stream_url || song.source === 'monochrome')) return true;
     return Boolean(streamUrl);
   };
 
-  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && (song.stream_url || song.source === 'monochrome') && !song.is_local);
+  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && isHifiEligibleTrack(song) && (song.stream_url || song.source === 'monochrome') && !song.is_local);
 
   // Deck Volume Control
   const applyDeckVolume = (deckIndex, vol) => {
@@ -386,7 +386,7 @@ export function usePlayerCore({
     outgoingEndedDuringCrossfadeRef.current = false;
 
     let songToPreload = incomingSong;
-    if (isHifiEnabled && !songToPreload.stream_url && !songToPreload.is_local) {
+    if (isHifiEnabled && !songToPreload.stream_url && !songToPreload.is_local && isHifiEligibleTrack(songToPreload)) {
       const cached = getCachedHifi(songToPreload);
       if (cached && cached.stream_url) {
         songToPreload = {
@@ -577,7 +577,7 @@ export function usePlayerCore({
 
       // Check hifiCache before mounting so if FLAC stream is available, it starts directly as FLAC!
       let songToLoad = currentSong;
-      if (isHifiEnabled && !songToLoad.stream_url && !songToLoad.is_local) {
+      if (isHifiEnabled && !songToLoad.stream_url && !songToLoad.is_local && isHifiEligibleTrack(songToLoad)) {
         const cached = getCachedHifi(songToLoad);
         if (cached && cached.stream_url) {
           songToLoad = {
@@ -637,6 +637,7 @@ export function usePlayerCore({
 
     if (
       isHifiEnabled &&
+      isHifiEligibleTrack(currentSong) &&
       currentSong.stream_url &&
       !activeDeckSong.stream_url &&
       !activeDeckSong._hifiFailed &&

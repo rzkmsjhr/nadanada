@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack, resolveInitialPlaylistTracks } from '../services/hifiResolver';
+import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack, resolveInitialPlaylistTracks, isHifiEligibleTrack } from '../services/hifiResolver';
 
 export function usePlaylistManager({
   api,
@@ -164,7 +164,7 @@ export function usePlaylistManager({
     }
 
     let hifiFields = {};
-    if (isHifiEnabled && video && !video.is_local && !video.file_path) {
+    if (isHifiEnabled && video && !video.is_local && !video.file_path && isHifiEligibleTrack(video)) {
       if (video.stream_url && video.source === 'monochrome' && (!video.hifi_id || String(video.hifi_id) === String(video.id) || video._hifiVersion === HIFI_MATCHER_VERSION)) {
         hifiFields = { _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
       } else {
