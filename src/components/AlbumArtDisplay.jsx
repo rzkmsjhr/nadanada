@@ -104,7 +104,7 @@ export default function AlbumArtDisplay({ song, subtext }) {
             justifyContent: 'center',
             width: '100%',
             height: '100%',
-            padding: '24px',
+            padding: '10px',
             boxSizing: 'border-box'
           }}>
             <img
@@ -113,13 +113,14 @@ export default function AlbumArtDisplay({ song, subtext }) {
               onLoad={handleLoad}
               onError={handleError}
               style={{
-                maxHeight: '82%',
-                maxWidth: '82%',
+                height: '88%',
+                maxHeight: '92%',
+                maxWidth: '92%',
                 aspectRatio: '1 / 1',
                 objectFit: 'contain',
-                borderRadius: '12px',
-                boxShadow: '0 16px 44px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.45)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '14px',
+                boxShadow: '0 20px 50px rgba(0, 0, 0, 0.75), 0 4px 16px rgba(0, 0, 0, 0.5)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 opacity: isLoaded ? 1 : 0,
                 transform: isLoaded ? 'scale(1)' : 'scale(0.96)',
                 transition: 'opacity 0.35s ease, transform 0.35s ease'
@@ -139,9 +140,9 @@ export default function AlbumArtDisplay({ song, subtext }) {
           gap: '12px'
         }}>
           <div style={{
-            width: '90px',
-            height: '90px',
-            borderRadius: '16px',
+            width: '110px',
+            height: '110px',
+            borderRadius: '18px',
             background: 'rgba(255, 255, 255, 0.05)',
             border: '1px solid rgba(255, 255, 255, 0.1)',
             display: 'flex',
@@ -149,7 +150,7 @@ export default function AlbumArtDisplay({ song, subtext }) {
             justifyContent: 'center',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
           }}>
-            <Disc size={42} style={{ color: 'var(--accent-color)', opacity: 0.85 }} />
+            <Disc size={50} style={{ color: 'var(--accent-color)', opacity: 0.85 }} />
           </div>
           <div style={{ color: 'rgba(255, 255, 255, 0.7)', fontSize: '0.85rem', fontWeight: 500 }}>
             {song?.title || 'Hi-Fi Audio'}
