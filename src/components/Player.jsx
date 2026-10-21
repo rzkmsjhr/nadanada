@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { usePlayerCore } from '../hooks/usePlayerCore';
 import VideoOverlay from './VideoOverlay';
 import SpinningVinyl, { isAlbumArtTrack } from './SpinningVinyl';
+import AlbumArtDisplay from './AlbumArtDisplay';
 import ArtistHeroVisualizer from './ArtistHeroVisualizer';
 import { parseDurationToSecs } from '../services/hifiResolver';
 
@@ -670,12 +671,10 @@ const Player = React.forwardRef(function Player({
                 justifyContent: 'center'
               }}>
                 {isVinylEnabled && isAlbumArtTrack(core.deck0Song) ? null : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                    <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
-                      ♪
-                    </div>
-                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck0Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck0Song) ? 'Hi-Fi Audio' : 'Audio Stream Fallback')}</div>
-                  </div>
+                  <AlbumArtDisplay
+                    song={core.deck0Song || currentSong}
+                    subtext={core.deck0Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck0Song) ? null : 'Audio Stream Fallback')}
+                  />
                 )}
                 <audio
                   id="deck-0-audio"
@@ -793,12 +792,10 @@ const Player = React.forwardRef(function Player({
                 justifyContent: 'center'
               }}>
                 {isVinylEnabled && isAlbumArtTrack(core.deck1Song) ? null : (
-                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-                    <div style={{ fontSize: '3rem', color: 'var(--accent-color)', opacity: 0.8, marginBottom: '16px' }}>
-                      ♪
-                    </div>
-                    <div style={{ color: 'rgba(255, 255, 255, 0.6)', fontSize: '0.9rem' }}>{core.deck1Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck1Song) ? 'Hi-Fi Audio' : 'Audio Stream Fallback')}</div>
-                  </div>
+                  <AlbumArtDisplay
+                    song={core.deck1Song || currentSong}
+                    subtext={core.deck1Song?.is_local ? 'Playing Offline' : (isSongHiFi(core.deck1Song) ? null : 'Audio Stream Fallback')}
+                  />
                 )}
                 <audio
                   id="deck-1-audio"
