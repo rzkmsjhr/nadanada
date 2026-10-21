@@ -1,9 +1,57 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v3';
-const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2'];
+const STORAGE_KEY = 'nadanada-hifi-cache-v4';
+const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'nadanada-hifi-cache-v3'];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 3;
+export const HIFI_MATCHER_VERSION = 4;
+
+/**
+ * Known upstream streaming catalog IDs where the original recording was overwritten
+ * by the distributor with a modern remake/re-recorded version featuring different vocalists.
+ */
+export const KNOWN_UPSTREAM_MISMATCHES = new Set([
+  '168395054749057024', // Dewa 19 - Aku Milikmu (upstream audio is 2021 Virzha single instead of 1994 Ari Lasso master)
+  '168589766881927168', // Dewa 19 feat. Virzha - Aku Milikmu (2021 Virzha remake)
+  '168395069831774208', // Dewa 19 - Tak Kan Ada Cinta Yang Lain (upstream audio is 2021 Ello remake)
+  '168395062953115648'  // Dewa 19 - Mahameru (upstream audio is 2021 Virzha remake)
+]);
+
+/**
+ * Checks whether the user has explicitly requested to keep this specific song on YouTube audio.
+ */
+export function isUserYoutubeForced(songId) {
+  if (!songId || typeof localStorage === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('nadanada-user-youtube-overrides');
+    if (!raw) return false;
+    const list = JSON.parse(raw);
+    return Array.isArray(list) && list.includes(String(songId));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Records or clears the user's manual preference to force YouTube audio for a song.
+ */
+export function setUserYoutubeForced(songId, forced) {
+  if (!songId || typeof localStorage === 'undefined') return;
+  try {
+    const idStr = String(songId);
+    let list = [];
+    const raw = localStorage.getItem('nadanada-user-youtube-overrides');
+    if (raw) list = JSON.parse(raw);
+    if (!Array.isArray(list)) list = [];
+    if (forced) {
+      if (!list.includes(idStr)) list.push(idStr);
+    } else {
+      list = list.filter(id => id !== idStr);
+    }
+    localStorage.setItem('nadanada-user-youtube-overrides', JSON.stringify(list));
+  } catch (e) {
+    console.warn('[HIFI] Failed to persist user youtube override:', e);
+  }
+}
 
 /**
  * Words inside brackets/parentheses that represent musical editions or versions and MUST BE PRESERVED.
@@ -159,8 +207,10 @@ function splitArtistList(str) {
 /**
  * Strictly checks whether a Monochrome candidate's artist matches the target song's artist.
  * Prevents matching a song with the same title by a different artist (e.g. "Wice - Supernova" vs "WIM - Supernova").
+ * Also rejects unrequested featured artists / collaborators (e.g. candidate has "Virzha" when original is solo Dewa 19).
  */
-export function doesArtistMatch(targetArtist, candidateArtist, fallbackChannel = '') {
+export function doesArtistMatch(targetArtist, candidateArtist, fallbackChannel = '', targetTitle = '', options = {}) {
+  const { ignoreCollaboratorCheck = false } = options;
   const targetList = [
     ...splitArtistList(targetArtist),
     ...splitArtistList(fallbackChannel)
@@ -170,22 +220,47 @@ export function doesArtistMatch(targetArtist, candidateArtist, fallbackChannel =
 
   if (targetList.length === 0 || candList.length === 0) return false;
 
+  let hasPrimaryMatch = false;
   for (const t of targetList) {
     const tCompact = t.replace(/\s+/g, '');
     const tNoThe = t.replace(/^the\s+/, '').trim();
 
     for (const c of candList) {
-      if (t === c) return true;
+      if (t === c) { hasPrimaryMatch = true; break; }
 
       const cCompact = c.replace(/\s+/g, '');
-      if (tCompact.length >= 2 && tCompact === cCompact) return true;
+      if (tCompact.length >= 2 && tCompact === cCompact) { hasPrimaryMatch = true; break; }
 
       const cNoThe = c.replace(/^the\s+/, '').trim();
-      if (tNoThe.length >= 3 && tNoThe === cNoThe) return true;
+      if (tNoThe.length >= 3 && tNoThe === cNoThe) { hasPrimaryMatch = true; break; }
+    }
+    if (hasPrimaryMatch) break;
+  }
+
+  if (!hasPrimaryMatch) return false;
+
+  if (ignoreCollaboratorCheck) return true;
+
+  // Protect against unrequested featured artists / collaborators:
+  // If candidate lists extra distinct artists that are NOT anywhere in target artist, channel, or title,
+  // it indicates a remake, duet, or remix by a different vocalist (e.g. Dewa 19 feat. Virzha)
+  const normTitle = normalizeArtistName(targetTitle || '');
+  const combinedTargetText = `${targetList.join(' ')} ${normalizeArtistName(fallbackChannel || '')} ${normTitle}`.toLowerCase();
+
+  const rawCandParts = (candidateArtist || '')
+    .split(/[,&/;]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)/i)
+    .map(normalizeArtistName)
+    .filter(Boolean);
+
+  for (const part of rawCandParts) {
+    if (part.length < 3) continue;
+    const isKnownInTarget = targetList.some(t => t === part || t.includes(part) || part.includes(t)) || combinedTargetText.includes(part);
+    if (!isKnownInTarget) {
+      return false;
     }
   }
 
-  return false;
+  return true;
 }
 
 /**
@@ -255,10 +330,28 @@ export function hasVersionConflict(flagsA, flagsB) {
 }
 
 /**
+ * Checks whether a track is a known upstream mismatch where digital distributors
+ * replaced the original master with a modern remake/re-recorded version.
+ */
+export function isKnownUpstreamMismatch(song) {
+  if (!song) return false;
+  if (song.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(song.hifi_id))) return true;
+  const t = (song.title || '').toLowerCase();
+  const a = (song.channel || song.artist || '').toLowerCase();
+  if (a.includes('dewa') && (t.includes('aku milikmu') || t.includes('tak kan ada cinta') || t.includes('mahameru'))) {
+    if (!t.includes('virzha') && !t.includes('ello') && !t.includes('2021') && !t.includes('remake')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Validates whether any track from Monochrome matches the target song.
  * Enforces strict musical edition flags and duration thresholds.
  */
-export function matchTrack(song, results) {
+export function matchTrack(song, results, options = {}) {
+  const { ignoreBlacklist = false } = options;
   if (!results || results.length === 0) return null;
   const { title: cleanTitle, artist: cleanArtist } = cleanSongTitle(song.title, song.channel);
   const normTarget = normalizeComparableTitle(cleanTitle);
@@ -267,11 +360,21 @@ export function matchTrack(song, results) {
   const targetFlags = extractVersionFlags(song.title);
   const songSecs = parseDurationToSecs(song.duration);
 
-  // Strictly filter out any candidates with mismatched artist or mismatched version descriptors
+  // Strictly filter out any candidates with mismatched artist, version descriptors, or known corruptions
   const candidates = results.filter(t => {
-    if (!doesArtistMatch(cleanArtist, t.channel, song.channel)) return false;
+    if (!doesArtistMatch(cleanArtist, t.channel, song.channel, song.title, { ignoreCollaboratorCheck: ignoreBlacklist })) return false;
     const candFlags = extractVersionFlags(t.title);
-    return !hasVersionConflict(targetFlags, candFlags);
+    if (hasVersionConflict(targetFlags, candFlags)) return false;
+
+    // Reject known upstream catalog tracks that substituted modern remakes
+    if (!ignoreBlacklist && t.id && KNOWN_UPSTREAM_MISMATCHES.has(String(t.id))) {
+      const normTargetText = `${cleanTitle} ${cleanArtist} ${song.channel || ''}`.toLowerCase();
+      if (!normTargetText.includes('virzha') && !normTargetText.includes('ello') && !normTargetText.includes('2021') && !normTargetText.includes('remake')) {
+        return false;
+      }
+    }
+
+    return true;
   });
 
   if (candidates.length === 0) return null;
@@ -315,6 +418,7 @@ export function matchTrack(song, results) {
  */
 export function getCachedHifi(song) {
   if (!song) return null;
+  if (song.id && isUserYoutubeForced(song.id)) return null;
   const idKey = song.id ? String(song.id) : null;
   const { title, artist } = cleanSongTitle(song.title, song.channel);
   const textKey = title && artist ? `${artist.toLowerCase()}:::${title.toLowerCase()}` : null;
@@ -322,8 +426,19 @@ export function getCachedHifi(song) {
   let cached = (idKey && hifiCache.get(idKey)) || (textKey && hifiCache.get(textKey)) || null;
   if (!cached || !cached.stream_url) return null;
 
+  // Reject known upstream catalog tracks that substituted modern remakes
+  if (cached.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(cached.hifi_id))) {
+    const normTargetText = `${title} ${artist} ${song.channel || ''}`.toLowerCase();
+    if (!normTargetText.includes('virzha') && !normTargetText.includes('ello') && !normTargetText.includes('2021') && !normTargetText.includes('remake')) {
+      if (idKey) hifiCache.delete(idKey);
+      if (textKey) hifiCache.delete(textKey);
+      persistCacheDebounced();
+      return null;
+    }
+  }
+
   // Validate artist match (purge any legacy entry missing artist or with mismatched artist)
-  if (!cached.artist || !doesArtistMatch(artist, cached.artist, song.channel)) {
+  if (!cached.artist || !doesArtistMatch(artist, cached.artist, song.channel, song.title)) {
     if (idKey) hifiCache.delete(idKey);
     if (textKey) hifiCache.delete(textKey);
     persistCacheDebounced();
@@ -365,6 +480,32 @@ export function sanitizeLegacyHifiTrack(s) {
   if (!s || typeof s !== 'object') return s;
   // Local/downloaded files are always preserved
   if (s.is_local || s.file_path) return s;
+  // If user explicitly forced YouTube for this song, keep it as YouTube
+  if (s.id && isUserYoutubeForced(s.id)) {
+    return {
+      ...s,
+      stream_url: null,
+      source: null,
+      hifi_id: null,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _userForcedYoutube: true
+    };
+  }
+  // If track has known upstream mismatched remake ID
+  if (s.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(s.hifi_id))) {
+    const norm = `${s.title || ''} ${s.channel || ''}`.toLowerCase();
+    if (!norm.includes('virzha') && !norm.includes('ello') && !norm.includes('2021') && !norm.includes('remake')) {
+      return {
+        ...s,
+        stream_url: null,
+        source: null,
+        hifi_id: null,
+        _hifiChecked: false,
+        _hifiVersion: undefined
+      };
+    }
+  }
   // Native Monochrome tracks (where id === hifi_id or searched directly from Monochrome) are preserved
   if (s.source === 'monochrome' && (!s.hifi_id || String(s.hifi_id) === String(s.id))) {
     return s;
@@ -399,8 +540,16 @@ const inFlightPromises = new Map();
  * Checks both song.id and canonical artist:::title in persistent cache with validation,
  * and deduplicates concurrent in-flight lookups for the same song.
  */
-export async function resolveHifiForTrack(song) {
+export async function resolveHifiForTrack(song, options = {}) {
+  const { ignoreBlacklist = false, ignoreUserYoutubeForced = false } = options;
   if (!song || song.is_local || song.file_path) return null;
+  if (!ignoreUserYoutubeForced && ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube)) return null;
+  if (!ignoreBlacklist && song.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(song.hifi_id))) {
+    const norm = `${song.title || ''} ${song.channel || ''}`.toLowerCase();
+    if (!norm.includes('virzha') && !norm.includes('ello') && !norm.includes('2021') && !norm.includes('remake')) {
+      return null;
+    }
+  }
   // Only trust pre-attached stream_url if it is a native Monochrome search item (id === hifi_id or no hifi_id)
   // OR if it was already verified with HIFI_MATCHER_VERSION
   if (
@@ -427,7 +576,14 @@ export async function resolveHifiForTrack(song) {
 
   const isValidCached = (entry) => {
     if (!entry || !entry.stream_url) return false;
-    if (!entry.artist || !doesArtistMatch(artist, entry.artist, song.channel)) return false;
+    if (!ignoreUserYoutubeForced && song.id && isUserYoutubeForced(song.id)) return false;
+    if (!ignoreBlacklist && entry.hifi_id && KNOWN_UPSTREAM_MISMATCHES.has(String(entry.hifi_id))) {
+      const normTargetText = `${title} ${artist} ${song.channel || ''}`.toLowerCase();
+      if (!normTargetText.includes('virzha') && !normTargetText.includes('ello') && !normTargetText.includes('2021') && !normTargetText.includes('remake')) {
+        return false;
+      }
+    }
+    if (!entry.artist || !doesArtistMatch(artist, entry.artist, song.channel, song.title, { ignoreCollaboratorCheck: ignoreBlacklist })) return false;
     if (entry.title) {
       const cachedFlags = extractVersionFlags(entry.title);
       if (hasVersionConflict(targetFlags, cachedFlags)) return false;
@@ -439,7 +595,7 @@ export async function resolveHifiForTrack(song) {
   };
 
   // Check persistent cache with artist, version & duration validation
-  if (idKey && hifiCache.has(idKey)) {
+  if (!ignoreBlacklist && idKey && hifiCache.has(idKey)) {
     const cached = hifiCache.get(idKey);
     if (cached === null) return null;
     if (isValidCached(cached)) {
@@ -448,7 +604,7 @@ export async function resolveHifiForTrack(song) {
       hifiCache.delete(idKey);
     }
   }
-  if (textKey && hifiCache.has(textKey)) {
+  if (!ignoreBlacklist && textKey && hifiCache.has(textKey)) {
     const cached = hifiCache.get(textKey);
     if (cached === null) return null;
     if (isValidCached(cached)) {
@@ -460,13 +616,15 @@ export async function resolveHifiForTrack(song) {
   }
 
   if (!title) {
-    if (idKey) hifiCache.set(idKey, null);
-    if (textKey) hifiCache.set(textKey, null);
-    persistCacheDebounced();
+    if (!ignoreBlacklist) {
+      if (idKey) hifiCache.set(idKey, null);
+      if (textKey) hifiCache.set(textKey, null);
+      persistCacheDebounced();
+    }
     return null;
   }
 
-  const dedupeKey = idKey || textKey;
+  const dedupeKey = (!ignoreBlacklist && (idKey || textKey)) || null;
   if (dedupeKey && inFlightPromises.has(dedupeKey)) {
     return inFlightPromises.get(dedupeKey);
   }
@@ -475,7 +633,7 @@ export async function resolveHifiForTrack(song) {
     const query = `${artist} ${title}`.trim();
     try {
       const results = await api.searchMonochrome(query, 'song');
-      const matched = matchTrack(song, results);
+      const matched = matchTrack(song, results, { ignoreBlacklist });
       if (matched && matched.stream_url) {
         const hifiData = {
           stream_url: matched.stream_url,
@@ -486,9 +644,11 @@ export async function resolveHifiForTrack(song) {
           duration: parseDurationToSecs(matched.duration),
           _hifiVersion: HIFI_MATCHER_VERSION
         };
-        if (idKey) hifiCache.set(idKey, hifiData);
-        if (textKey) hifiCache.set(textKey, hifiData);
-        persistCacheDebounced();
+        if (!ignoreBlacklist) {
+          if (idKey) hifiCache.set(idKey, hifiData);
+          if (textKey) hifiCache.set(textKey, hifiData);
+          persistCacheDebounced();
+        }
         return hifiData;
       }
     } catch (e) {
@@ -497,9 +657,11 @@ export async function resolveHifiForTrack(song) {
     }
 
     // Cache negative result so we never re-query unmatched songs on restart
-    if (idKey) hifiCache.set(idKey, null);
-    if (textKey) hifiCache.set(textKey, null);
-    persistCacheDebounced();
+    if (!ignoreBlacklist) {
+      if (idKey) hifiCache.set(idKey, null);
+      if (textKey) hifiCache.set(textKey, null);
+      persistCacheDebounced();
+    }
     return null;
   })();
 
@@ -534,6 +696,18 @@ export async function resolveInitialPlaylistTracks(tracks, count = 5) {
   const resolvedBatch = await Promise.all(
     initialBatch.map(async (song) => {
       if (!song || song.is_local || song.file_path) return song;
+      // If user explicitly forced YouTube for this song, preserve it
+      if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
+        return {
+          ...song,
+          stream_url: null,
+          source: null,
+          hifi_id: null,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _userForcedYoutube: true
+        };
+      }
       // If already verified with current matcher version, keep as is
       if (song._hifiChecked && song._hifiVersion === HIFI_MATCHER_VERSION) return song;
       // If native Monochrome, mark verified
@@ -589,7 +763,19 @@ export async function resolveInitialPlaylistTracks(tracks, count = 5) {
 
   // For tracks beyond targetCount, attach cached Hi-Fi if available (instant 0ms)
   const remainingBatch = sanitized.slice(targetCount).map((song) => {
-    if (!song || song.is_local || song.file_path || song.stream_url) return song;
+    if (!song || song.is_local || song.file_path) return song;
+    if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
+      return {
+        ...song,
+        stream_url: null,
+        source: null,
+        hifi_id: null,
+        _hifiChecked: true,
+        _hifiVersion: HIFI_MATCHER_VERSION,
+        _userForcedYoutube: true
+      };
+    }
+    if (song.stream_url) return song;
     const cached = getCachedHifi(song);
     if (cached && cached.stream_url) {
       return {

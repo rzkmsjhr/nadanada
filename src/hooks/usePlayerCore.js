@@ -626,7 +626,8 @@ export function usePlayerCore({
 
   // If currentSong receives its Hi-Fi stream_url right as the track is starting (e.g. bulk import),
   // seamlessly upgrade the active deck to FLAC before playback has progressed!
-  // Also, if a false-positive stream_url was stripped from currentSong, immediately revert to YouTube!
+  // Also, if a false-positive stream_url was stripped from currentSong or user toggles audio source,
+  // immediately switch between Hi-Fi and YouTube at the current playback position!
   useEffect(() => {
     if (!currentSong?.id || prevSongIdRef.current !== currentSong.id) return;
     if (isCrossfadingRef.current || isCrossfadeRampingRef.current) return;
@@ -639,25 +640,27 @@ export function usePlayerCore({
       currentSong.stream_url &&
       !activeDeckSong.stream_url &&
       !activeDeckSong._hifiFailed &&
-      (isBuffering || currentTime < 1.5)
+      (isBuffering || currentTime < 1.5 || currentSong._manualSourceSwitch)
     ) {
+      const pos = Math.max(0, currentTime || 0);
       if (activeDeckRef.current === 0) {
         try { deck0PlayerRef.current?.stopVideo?.(); } catch (e) {}
-        setDeck0Song({ ...currentSong });
+        setDeck0Song({ ...currentSong, startSeconds: Math.floor(pos) });
       } else {
         try { deck1PlayerRef.current?.stopVideo?.(); } catch (e) {}
-        setDeck1Song({ ...currentSong });
+        setDeck1Song({ ...currentSong, startSeconds: Math.floor(pos) });
       }
     } else if (!currentSong.stream_url && activeDeckSong.stream_url && !currentSong.is_local) {
       const audioEl = document.getElementById(activeDeckRef.current === 0 ? 'deck-0-audio' : 'deck-1-audio');
       if (audioEl) { try { audioEl.pause(); } catch (e) {} }
+      const pos = Math.max(0, currentTime || 0);
       if (activeDeckRef.current === 0) {
-        setDeck0Song({ ...currentSong, stream_url: null, source: null });
+        setDeck0Song({ ...currentSong, stream_url: null, source: null, startSeconds: Math.floor(pos) });
       } else {
-        setDeck1Song({ ...currentSong, stream_url: null, source: null });
+        setDeck1Song({ ...currentSong, stream_url: null, source: null, startSeconds: Math.floor(pos) });
       }
     }
-  }, [currentSong?.stream_url, isHifiEnabled]);
+  }, [currentSong?.stream_url, isHifiEnabled, currentSong?._manualSourceSwitch]);
 
   // If nextSong receives its Hi-Fi stream_url while being preloaded on the inactive deck
   // (before the crossfade volume ramp has started), upgrade the preload deck to FLAC!

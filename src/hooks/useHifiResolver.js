@@ -7,6 +7,7 @@ function isNativeMonochromeItem(s) {
 
 function needsHifiCheck(s, inFlightSet) {
   if (!s || s.is_local || s.file_path || inFlightSet.has(s.id)) return false;
+  if (s._userForcedYoutube) return false;
   if (isNativeMonochromeItem(s)) return false;
   if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) return false;
   return true;

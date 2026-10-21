@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, Loader2, Shuffle, Repeat, Repeat1, Maximize2, Minimize2 } from 'lucide-react';
 import { parseArtists } from '../utils/artistUtils';
+import { isKnownUpstreamMismatch } from '../services/hifiResolver';
 
 export default function PlayerControls({
   isHifiEnabled = true,
   isPlayingHifi,
+  onToggleTrackHifi,
   currentSong,
   isPlaying,
   isBuffering,
@@ -86,21 +88,96 @@ export default function PlayerControls({
               <h3 style={{ margin: 0, fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
                 {currentSong ? currentSong.title : 'Waiting for music...'}
               </h3>
-              {currentSong && isHifiEnabled && (isPlayingHifi !== undefined ? isPlayingHifi : Boolean(currentSong.source === 'monochrome' || currentSong.stream_url)) && (
-                <span style={{
-                  fontSize: '9px',
-                  fontWeight: 800,
-                  background: 'var(--accent-color)',
-                  color: '#ffffff',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                  letterSpacing: '0.6px',
-                  flexShrink: 0,
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)'
-                }}>
-                  Hi-Fi (FLAC)
-                </span>
-              )}
+              {currentSong && isHifiEnabled && !currentSong.is_local && (() => {
+                const isHiFi = Boolean(isPlayingHifi !== undefined ? isPlayingHifi : (currentSong.source === 'monochrome' || currentSong.stream_url));
+                const isForcedYt = Boolean(currentSong._userForcedYoutube);
+                const isUpstreamMismatch = isKnownUpstreamMismatch(currentSong);
+
+                if (isHiFi) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onToggleTrackHifi) onToggleTrackHifi(currentSong);
+                      }}
+                      title="Playing studio Lossless FLAC. Click to switch to original YouTube audio."
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '9px',
+                        fontWeight: 800,
+                        background: 'var(--accent-color)',
+                        color: '#ffffff',
+                        border: 'none',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.6px',
+                        flexShrink: 0,
+                        cursor: onToggleTrackHifi ? 'pointer' : 'default',
+                        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.35)',
+                        transition: 'transform 0.15s ease, opacity 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
+                    >
+                      Hi-Fi (FLAC)
+                    </button>
+                  );
+                }
+
+                if (isForcedYt || isUpstreamMismatch) {
+                  const tooltipText = isUpstreamMismatch
+                    ? 'Playing original master from YouTube (Modern remake avoided). Click to switch to 2021 remake (FLAC).'
+                    : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).';
+                  const labelText = isUpstreamMismatch ? 'Original (YouTube)' : 'YouTube (Original)';
+
+                  return (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onToggleTrackHifi) onToggleTrackHifi(currentSong);
+                      }}
+                      title={tooltipText}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontSize: '9px',
+                        fontWeight: 700,
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        color: 'var(--text-muted)',
+                        border: '1px solid rgba(255, 255, 255, 0.18)',
+                        padding: '2px 7px',
+                        borderRadius: '4px',
+                        letterSpacing: '0.5px',
+                        flexShrink: 0,
+                        cursor: onToggleTrackHifi ? 'pointer' : 'default',
+                        boxShadow: '0 1px 4px rgba(0, 0, 0, 0.2)',
+                        transition: 'all 0.15s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.16)';
+                        e.currentTarget.style.color = '#ffffff';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.35)';
+                        e.currentTarget.style.transform = 'scale(1.05)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                        e.currentTarget.style.color = 'var(--text-muted)';
+                        e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.18)';
+                        e.currentTarget.style.transform = 'scale(1)';
+                      }}
+                    >
+                      {labelText}
+                    </button>
+                  );
+                }
+
+                return null;
+              })()}
             </div>
             {subtitleParts && (
               <div 

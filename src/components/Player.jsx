@@ -33,7 +33,8 @@ const Player = React.forwardRef(function Player({
   onPlayArtistTopSongs,
   onShuffleArtistTopSongs,
   onAddArtistTopSongs,
-  isHifiEnabled = true
+  isHifiEnabled = true,
+  onToggleTrackHifi
 }, ref) {
   
   const isSongHiFi = (song) => Boolean(isHifiEnabled && song && (song.stream_url || song.source === 'monochrome') && !song.is_local);
@@ -754,9 +755,12 @@ const Player = React.forwardRef(function Player({
                   onStalled={() => {
                     if (core.activeDeck === 0) core.handleStallStart();
                   }}
-                  onCanPlay={() => {
+                  onCanPlay={(e) => {
                     if (core.activeDeck === 0) {
                       core.handleStallClear();
+                      if (core.isPlaying && e.target.paused) {
+                        e.target.play().catch(() => {});
+                      }
                     } else {
                       core.handleAudioDeckReady?.(0);
                     }
@@ -874,9 +878,12 @@ const Player = React.forwardRef(function Player({
                   onStalled={() => {
                     if (core.activeDeck === 1) core.handleStallStart();
                   }}
-                  onCanPlay={() => {
+                  onCanPlay={(e) => {
                     if (core.activeDeck === 1) {
                       core.handleStallClear();
+                      if (core.isPlaying && e.target.paused) {
+                        e.target.play().catch(() => {});
+                      }
                     } else {
                       core.handleAudioDeckReady?.(1);
                     }
@@ -1731,6 +1738,7 @@ const Player = React.forwardRef(function Player({
       {!isMiniPlayer && !isFullscreen && (
         <PlayerControls
           isHifiEnabled={isHifiEnabled}
+          onToggleTrackHifi={onToggleTrackHifi}
           isPlayingHifi={isSongHiFi(activeSong && activeSong.id === currentSong?.id ? activeSong : currentSong)}
           currentSong={currentSong}
           isPlaying={core.isPlaying}

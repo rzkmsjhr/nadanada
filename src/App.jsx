@@ -14,7 +14,7 @@ import WindowBorders from "./components/WindowBorders";
 import { useChords } from "./hooks/useChords";
 import { useLyrics } from "./hooks/useLyrics";
 import { useHifiResolver } from "./hooks/useHifiResolver";
-import { resolveHifiForTrack, HIFI_MATCHER_VERSION, resolveInitialPlaylistTracks, sanitizeLegacyHifiTrack } from "./services/hifiResolver";
+import { resolveHifiForTrack, HIFI_MATCHER_VERSION, resolveInitialPlaylistTracks, sanitizeLegacyHifiTrack, setUserYoutubeForced } from "./services/hifiResolver";
 import { useArtistFact } from "./hooks/useArtistFact";
 import { useDownloadManager } from "./hooks/useDownloadManager";
 import { useSearchPreview } from "./hooks/useSearchPreview";
@@ -729,6 +729,79 @@ function App() {
 
 
 
+  const handleToggleTrackHifi = useCallback(async (song) => {
+    if (!song) return;
+    const songId = song.id;
+    const isCurrentHifi = Boolean(song.stream_url || song.source === 'monochrome');
+
+    if (isCurrentHifi) {
+      setUserYoutubeForced(songId, true);
+      setPlaylist(prev => prev.map(s => {
+        if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
+          return {
+            ...s,
+            stream_url: null,
+            source: null,
+            hifi_id: null,
+            _userForcedYoutube: true,
+            _hifiChecked: true,
+            _hifiVersion: HIFI_MATCHER_VERSION,
+            _manualSourceSwitch: Date.now()
+          };
+        }
+        return s;
+      }));
+      if (restoredSong && restoredSong.id === songId) {
+        setRestoredSong(prev => prev ? {
+          ...prev,
+          stream_url: null,
+          source: null,
+          hifi_id: null,
+          _userForcedYoutube: true,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _manualSourceSwitch: Date.now()
+        } : null);
+      }
+    } else {
+      setUserYoutubeForced(songId, false);
+      try {
+        const resolved = await resolveHifiForTrack(song, { ignoreBlacklist: true, ignoreUserYoutubeForced: true });
+        if (resolved && resolved.stream_url) {
+          setPlaylist(prev => prev.map(s => {
+            if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
+              return {
+                ...s,
+                stream_url: resolved.stream_url,
+                source: 'monochrome',
+                hifi_id: resolved.hifi_id,
+                _userForcedYoutube: false,
+                _hifiChecked: true,
+                _hifiVersion: HIFI_MATCHER_VERSION,
+                _manualSourceSwitch: Date.now()
+              };
+            }
+            return s;
+          }));
+          if (restoredSong && restoredSong.id === songId) {
+            setRestoredSong(prev => prev ? {
+              ...prev,
+              stream_url: resolved.stream_url,
+              source: 'monochrome',
+              hifi_id: resolved.hifi_id,
+              _userForcedYoutube: false,
+              _hifiChecked: true,
+              _hifiVersion: HIFI_MATCHER_VERSION,
+              _manualSourceSwitch: Date.now()
+            } : null);
+          }
+        }
+      } catch (e) {
+        console.warn('[HIFI] Manual toggle to Hi-Fi failed:', e);
+      }
+    }
+  }, [restoredSong, setPlaylist]);
+
   useKeyboardShortcuts({
     playerRef,
     handleNext,
@@ -936,6 +1009,7 @@ function App() {
             <Player 
               ref={playerRef} 
               isHifiEnabled={isHifiEnabled}
+              onToggleTrackHifi={handleToggleTrackHifi}
               currentSong={currentSong} 
               isSearchExpanded={(showSearch || Boolean(selectedArtist)) && !isMaximized} 
               nextSong={trueNextSong} 
