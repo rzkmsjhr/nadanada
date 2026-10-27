@@ -60,6 +60,16 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     playerProxy.current.setCaption = (lang) => sendCommand('setCaption', { value: lang });
   }, [sendCommand]);
 
+  // On unmount, stop playback immediately to prevent ghost audio
+  useEffect(() => {
+    return () => {
+      try {
+        sendCommand('stop');
+        sendCommand('pause');
+      } catch (_) {}
+    };
+  }, [sendCommand]);
+
   // Listen for postMessage events from the iframe
   useEffect(() => {
     const handler = (event) => {

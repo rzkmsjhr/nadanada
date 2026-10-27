@@ -11,6 +11,7 @@ export default function PlayerControls({
   isPlaying,
   isBuffering,
   currentTime,
+  bufferedPercent,
   duration,
   masterVolume,
   isMuted,
@@ -127,11 +128,13 @@ export default function PlayerControls({
                   );
                 }
 
-                if (isForcedYt || isUpstreamMismatch) {
+                if (isForcedYt || isUpstreamMismatch || currentSong._hifiFailed) {
                   const tooltipText = isUpstreamMismatch
                     ? 'Playing original master from YouTube (Modern remake avoided). Click to switch to 2021 remake (FLAC).'
-                    : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).';
-                  const labelText = isUpstreamMismatch ? 'Original (YouTube)' : 'YouTube (Original)';
+                    : (currentSong._hifiFailed
+                      ? 'Playing YouTube audio (Lossless FLAC stream was temporarily unavailable). Click to retry Hi-Fi (FLAC).'
+                      : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).');
+                  const labelText = isUpstreamMismatch ? 'Original (YouTube)' : (currentSong._hifiFailed ? 'YouTube' : 'YouTube (Original)');
 
                   return (
                     <button
@@ -243,7 +246,17 @@ export default function PlayerControls({
               onTouchEnd={handleSeekMouseUp}
               disabled={!currentSong}
               style={{
-                background: `linear-gradient(to right, var(--accent-color) ${(currentTime / (duration || 1)) * 100}%, var(--panel-border) ${(currentTime / (duration || 1)) * 100}%)`
+                background: (() => {
+                  const playedPct = Math.min(100, (currentTime / (duration || 1)) * 100);
+                  const bufPct = Math.max(playedPct, Math.min(100, bufferedPercent !== undefined ? bufferedPercent : playedPct));
+                  return `linear-gradient(to right, 
+                    var(--accent-color) 0%, 
+                    var(--accent-color) ${playedPct}%, 
+                    rgba(255, 255, 255, 0.18) ${playedPct}%, 
+                    rgba(255, 255, 255, 0.18) ${bufPct}%, 
+                    var(--panel-border) ${bufPct}%, 
+                    var(--panel-border) 100%)`;
+                })()
               }}
             />
             <span>{formatTime(duration)}</span>
@@ -265,7 +278,7 @@ export default function PlayerControls({
               <button className="btn btn-icon" onClick={onPrevious} disabled={!hasPrevious}>
                 <SkipBack size={24} />
               </button>
-              <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong || isBuffering} style={{ padding: '10px' }}>
+              <button className="btn btn-icon btn-primary" onClick={togglePlay} disabled={!currentSong} style={{ padding: '10px' }}>
                 {isBuffering ? <Loader2 size={24} className="animate-spin" /> : (isPlaying ? <Pause size={24} /> : <Play size={24} />)}
               </button>
               <button className="btn btn-icon" onClick={onNext} disabled={!hasNext}>

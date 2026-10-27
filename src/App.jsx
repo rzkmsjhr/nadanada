@@ -779,6 +779,7 @@ function App() {
                 stream_url: resolved.stream_url,
                 source: 'monochrome',
                 hifi_id: resolved.hifi_id,
+                _hifiFailed: false,
                 _userForcedYoutube: false,
                 _hifiChecked: true,
                 _hifiVersion: HIFI_MATCHER_VERSION,
@@ -793,6 +794,7 @@ function App() {
               stream_url: resolved.stream_url,
               source: 'monochrome',
               hifi_id: resolved.hifi_id,
+              _hifiFailed: false,
               _userForcedYoutube: false,
               _hifiChecked: true,
               _hifiVersion: HIFI_MATCHER_VERSION,
@@ -803,6 +805,37 @@ function App() {
       } catch (e) {
         console.warn('[HIFI] Manual toggle to Hi-Fi failed:', e);
       }
+    }
+  }, [restoredSong, setPlaylist]);
+
+  const handleSongHifiFailed = useCallback((failedSong) => {
+    if (!failedSong) return;
+    const targetId = failedSong.id;
+    const targetHifiId = failedSong.hifi_id;
+
+    setPlaylist(prev => prev.map(s => {
+      if ((s.id && s.id === targetId) || (targetHifiId && s.hifi_id === targetHifiId) || (s.queueId && s.queueId === failedSong.queueId)) {
+        return {
+          ...s,
+          blob_url: null,
+          _hifiFailed: true,
+          _userForcedYoutube: false,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        };
+      }
+      return s;
+    }));
+
+    if (restoredSong && (restoredSong.id === targetId || (targetHifiId && restoredSong.hifi_id === targetHifiId))) {
+      setRestoredSong(prev => prev ? {
+        ...prev,
+        blob_url: null,
+        _hifiFailed: true,
+        _userForcedYoutube: false,
+        _hifiChecked: true,
+        _hifiVersion: HIFI_MATCHER_VERSION
+      } : null);
     }
   }, [restoredSong, setPlaylist]);
 
@@ -1014,6 +1047,7 @@ function App() {
               ref={playerRef} 
               isHifiEnabled={isHifiEnabled}
               onToggleTrackHifi={handleToggleTrackHifi}
+              onSongHifiFailed={handleSongHifiFailed}
               currentSong={currentSong} 
               isSearchExpanded={(showSearch || Boolean(selectedArtist)) && !isMaximized} 
               nextSong={trueNextSong} 

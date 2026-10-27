@@ -144,7 +144,11 @@ export default function PlaylistViews() {
     <Playlist 
       playlist={playlist} 
       currentIndex={currentIndex} 
-      onSelectIndex={setCurrentIndex} 
+      onSelectIndex={(idx) => {
+        setPlaylist(prev => prev.map((s, i) => i === idx && s._hifiFailed ? { ...s, _hifiFailed: false, _userForcedYoutube: false, _manualSourceSwitch: Date.now() } : s));
+        setCurrentIndex(idx);
+        setIsAudioPlaying(true);
+      }} 
       onRemove={handleRemoveSong} 
       onReorder={handleReorder} 
       isTrendingMode={!!savedPlaylist} 

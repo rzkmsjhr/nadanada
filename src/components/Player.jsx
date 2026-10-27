@@ -35,11 +35,10 @@ const Player = React.forwardRef(function Player({
   onShuffleArtistTopSongs,
   onAddArtistTopSongs,
   isHifiEnabled = true,
-  onToggleTrackHifi
+  onToggleTrackHifi,
+  onSongHifiFailed
 }, ref) {
   
-  const isSongHiFi = (song) => Boolean(isHifiEnabled && song && isHifiEligibleTrack(song) && (song.stream_url || song.source === 'monochrome') && !song.is_local);
-
   const core = usePlayerCore({
     currentSong,
     nextSong,
@@ -55,8 +54,11 @@ const Player = React.forwardRef(function Player({
     crossfadeDuration,
     setCrossfadeDuration,
     downloadedIds,
+    onSongHifiFailed,
     isHifiEnabled
   });
+
+  const isSongHiFi = core.isSongHiFi;
 
   const activeSong = core.activeDeck === 0 ? core.deck0Song : core.deck1Song;
   const isAlbumArtSong = isAlbumArtTrack(activeSong || currentSong);
@@ -678,7 +680,8 @@ const Player = React.forwardRef(function Player({
                 )}
                 <audio
                   id="deck-0-audio"
-                  src={core.deck0Song?.stream_url || (core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl)}
+                  ref={core.deck0AudioRef}
+                  src={core.deck0Song?.blob_url || core.deck0Song?.stream_url || (core.deck0Song?.is_local ? convertFileSrc(core.deck0Song.file_path) : core.streamUrl)}
                   preload="auto"
                   autoPlay={core.activeDeck === 0}
                   onPlay={() => {
@@ -689,6 +692,13 @@ const Player = React.forwardRef(function Player({
                   }}
                   onEnded={() => {
                     core.handleAudioDeckEnded?.(0);
+                  }}
+                  onProgress={(e) => {
+                    if (core.activeDeck === 0 && e.target.buffered.length > 0 && e.target.duration > 0) {
+                      const end = e.target.buffered.end(e.target.buffered.length - 1);
+                      const pct = Math.min(100, Math.round((end / e.target.duration) * 100));
+                      core.setBufferedPercent?.(pct);
+                    }
                   }}
                   onTimeUpdate={(e) => {
                     if (core.activeDeck === 0 && !core.isDragging) {
@@ -719,6 +729,12 @@ const Player = React.forwardRef(function Player({
                         try { e.target.currentTime = targetStart; } catch (_) {}
                       }
                       e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
+                      const playPromise = e.target.play();
+                      if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                          core.handleAudioDeckPlay?.(0);
+                        }).catch(() => {});
+                      }
                     } else {
                       e.target.volume = 0;
                     }
@@ -726,13 +742,18 @@ const Player = React.forwardRef(function Player({
                   onError={(e) => {
                     const err = e?.target?.error;
                     if (err && err.code === 1) return; // MEDIA_ERR_ABORTED - ignored
-                    console.warn("Deck 0 audio element error:", err?.code, err?.message);
-                    core.handleStallClear();
 
-                    if (core.activeDeck !== 0) {
-                      core.handleAudioStreamFailure?.(0, e?.target?.currentTime);
+                    const currentSrc = e?.target?.src;
+                    if (!currentSrc || currentSrc === window.location.href || currentSrc === 'about:blank') {
                       return;
                     }
+
+                    if (core.activeDeck !== 0) {
+                      return; // Inactive deck errors must never kill playback
+                    }
+
+                    console.warn("Deck 0 audio element error:", err?.code, err?.message);
+                    core.handleStallClear();
 
                     if (isSongHiFi(core.deck0Song)) {
                       core.handleAudioStreamFailure?.(0, e?.target?.currentTime);
@@ -757,8 +778,13 @@ const Player = React.forwardRef(function Player({
                   onCanPlay={(e) => {
                     if (core.activeDeck === 0) {
                       core.handleStallClear();
-                      if (core.isPlaying && e.target.paused) {
-                        e.target.play().catch(() => {});
+                      const playPromise = e.target.play();
+                      if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                          core.handleAudioDeckPlay?.(0);
+                        }).catch((err) => {
+                          console.warn('[HIFI] Deck 0 onCanPlay play prevented:', err);
+                        });
                       }
                     } else {
                       core.handleAudioDeckReady?.(0);
@@ -799,7 +825,8 @@ const Player = React.forwardRef(function Player({
                 )}
                 <audio
                   id="deck-1-audio"
-                  src={core.deck1Song?.stream_url || (core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl)}
+                  ref={core.deck1AudioRef}
+                  src={core.deck1Song?.blob_url || core.deck1Song?.stream_url || (core.deck1Song?.is_local ? convertFileSrc(core.deck1Song.file_path) : core.streamUrl)}
                   preload="auto"
                   autoPlay={core.activeDeck === 1}
                   onPlay={() => {
@@ -810,6 +837,13 @@ const Player = React.forwardRef(function Player({
                   }}
                   onEnded={() => {
                     core.handleAudioDeckEnded?.(1);
+                  }}
+                  onProgress={(e) => {
+                    if (core.activeDeck === 1 && e.target.buffered.length > 0 && e.target.duration > 0) {
+                      const end = e.target.buffered.end(e.target.buffered.length - 1);
+                      const pct = Math.min(100, Math.round((end / e.target.duration) * 100));
+                      core.setBufferedPercent?.(pct);
+                    }
                   }}
                   onTimeUpdate={(e) => {
                     if (core.activeDeck === 1 && !core.isDragging) {
@@ -840,6 +874,12 @@ const Player = React.forwardRef(function Player({
                         try { e.target.currentTime = targetStart; } catch (_) {}
                       }
                       e.target.volume = core.isMuted ? 0 : (core.masterVolume / 100);
+                      const playPromise = e.target.play();
+                      if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                          core.handleAudioDeckPlay?.(1);
+                        }).catch(() => {});
+                      }
                     } else {
                       e.target.volume = 0;
                     }
@@ -847,13 +887,18 @@ const Player = React.forwardRef(function Player({
                   onError={(e) => {
                     const err = e?.target?.error;
                     if (err && err.code === 1) return; // MEDIA_ERR_ABORTED - ignored
-                    console.warn("Deck 1 audio element error:", err?.code, err?.message);
-                    core.handleStallClear();
 
-                    if (core.activeDeck !== 1) {
-                      core.handleAudioStreamFailure?.(1, e?.target?.currentTime);
+                    const currentSrc = e?.target?.src;
+                    if (!currentSrc || currentSrc === window.location.href || currentSrc === 'about:blank') {
                       return;
                     }
+
+                    if (core.activeDeck !== 1) {
+                      return; // Inactive deck errors must never kill playback
+                    }
+
+                    console.warn("Deck 1 audio element error:", err?.code, err?.message);
+                    core.handleStallClear();
 
                     if (isSongHiFi(core.deck1Song)) {
                       core.handleAudioStreamFailure?.(1, e?.target?.currentTime);
@@ -878,8 +923,13 @@ const Player = React.forwardRef(function Player({
                   onCanPlay={(e) => {
                     if (core.activeDeck === 1) {
                       core.handleStallClear();
-                      if (core.isPlaying && e.target.paused) {
-                        e.target.play().catch(() => {});
+                      const playPromise = e.target.play();
+                      if (playPromise !== undefined) {
+                        playPromise.then(() => {
+                          core.handleAudioDeckPlay?.(1);
+                        }).catch((err) => {
+                          console.warn('[HIFI] Deck 1 onCanPlay play prevented:', err);
+                        });
                       }
                     } else {
                       core.handleAudioDeckReady?.(1);

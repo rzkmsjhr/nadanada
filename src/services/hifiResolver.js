@@ -5,20 +5,19 @@ const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'n
 const MAX_CACHE_ENTRIES = 3000;
 export const HIFI_MATCHER_VERSION = 5;
 
-export const WORKER_FLAC_BASE = 'https://nadanada-yt.kdmp.workers.dev/flac';
+export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
 /**
- * Normalizes any FLAC stream URL to route through the Cloudflare Worker HTTPS proxy.
- * This guarantees:
- * 1. HTTPS on a real public FQDN (satisfies macOS WebKit mixed-content & ATS requirements inside tauri://)
- * 2. Strict Content-Type: audio/flac (prevents WebKit rejection of application/octet-stream)
- * 3. Explicit .flac file extension for AVFoundation/QuickTime media pipeline compatibility.
+ * Normalizes any FLAC stream URL to route directly to Monochrome's audio streaming API
+ * (matching the official Monochrome web client).
+ * Automatically cleans up any legacy worker proxy URLs from cache.
  */
 export function normalizeFlacStreamUrl(url, trackId) {
   if (!url && !trackId) return null;
-  const id = trackId || (typeof url === 'string' ? url.match(/track\/([a-zA-Z0-9_-]+)/)?.[1] : null);
+  const id = trackId 
+    || (typeof url === 'string' ? (url.match(/\/flac\/([a-zA-Z0-9_-]+)(?:\.flac)?/)?.[1] || url.match(/\/track\/([a-zA-Z0-9_-]+)/)?.[1]) : null);
   if (id) {
-    return `${WORKER_FLAC_BASE}/${id}.flac`;
+    return `${TRACKS_BASE_URL}/track/${id}`;
   }
   return url;
 }
@@ -156,30 +155,56 @@ export const YOUTUBE_NOISE_REGEX = /\b(official\s*(?:music\s*)?video|official\s*
 /**
  * Loads persistent cache from localStorage across app restarts.
  */
+// In-memory session tracking for unmatched songs to prevent duplicate API queries
+// without permanently blacklisting songs in persistent localStorage
+export const sessionUnmatchedSet = new Set();
+
 function loadPersistentCache() {
   const map = new Map();
   try {
-    // Purge legacy caches to eliminate any cross-contaminated or artist-mismatched entries
     if (typeof localStorage !== 'undefined') {
       for (const oldKey of LEGACY_STORAGE_KEYS) {
         if (localStorage.getItem(oldKey)) {
           localStorage.removeItem(oldKey);
         }
       }
-    }
 
-    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        for (const item of parsed) {
-          if (Array.isArray(item) && item.length === 2) {
-            map.set(item[0], item[1]);
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        let cleaned = false;
+        if (Array.isArray(parsed)) {
+          for (const item of parsed) {
+            if (Array.isArray(item) && item.length === 2) {
+              const val = item[1];
+              if (val && typeof val === 'object' && val.stream_url) {
+                const normUrl = normalizeFlacStreamUrl(val.stream_url, val.hifi_id);
+                if (normUrl !== val.stream_url) {
+                  val.stream_url = normUrl;
+                  cleaned = true;
+                }
+                map.set(item[0], val);
+              } else {
+                cleaned = true;
+              }
+            }
+          }
+        } else if (typeof parsed === 'object' && parsed !== null) {
+          for (const [k, v] of Object.entries(parsed)) {
+            if (v && typeof v === 'object' && v.stream_url) {
+              const normUrl = normalizeFlacStreamUrl(v.stream_url, v.hifi_id);
+              if (normUrl !== v.stream_url) {
+                v.stream_url = normUrl;
+                cleaned = true;
+              }
+              map.set(k, v);
+            } else {
+              cleaned = true;
+            }
           }
         }
-      } else if (typeof parsed === 'object' && parsed !== null) {
-        for (const [k, v] of Object.entries(parsed)) {
-          map.set(k, v);
+        if (cleaned) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(map.entries())));
         }
       }
     }
@@ -206,6 +231,27 @@ function persistCacheDebounced() {
       console.warn('[HIFI] Failed to persist cache to localStorage:', e);
     }
   }, 350);
+}
+
+let monochromeRateLimitedUntil = 0;
+
+export function reportMonochromeRateLimit(cooldownMs = 60000) {
+  monochromeRateLimitedUntil = Math.max(monochromeRateLimitedUntil, Date.now() + cooldownMs);
+  console.warn(`[HIFI] Monochrome API rate-limit detected. Backing off for ${Math.round(cooldownMs / 1000)}s.`);
+}
+
+export function isMonochromeCoolingDown() {
+  return Date.now() < monochromeRateLimitedUntil;
+}
+
+/**
+ * Records transient Hi-Fi stream failure without destroying persistent cache
+ * or blacklisting valid tracks from future playback attempts.
+ */
+export function markHifiFailed(song) {
+  if (!song) return;
+  // Transient failure is tracked per-playback instance via _hifiFailed.
+  // Preserving hifiCache ensures that the song remains recoverable when the network recovers.
 }
 
 /**
@@ -508,10 +554,12 @@ export function matchTrack(song, results, options = {}) {
  */
 export function getCachedHifi(song) {
   if (!song || !isHifiEligibleTrack(song)) return null;
-  if (song.id && isUserYoutubeForced(song.id)) return null;
+  if (song._hifiFailed || song._userForcedYoutube) return null;
+  if (song.id && (isUserYoutubeForced(song.id) || sessionUnmatchedSet.has(String(song.id)) || sessionUnmatchedSet.has(`id:${song.id}`))) return null;
   const idKey = song.id ? String(song.id) : null;
   const { title, artist } = cleanSongTitle(song.title, song.channel);
   const textKey = title && artist ? `${artist.toLowerCase()}:::${title.toLowerCase()}` : null;
+  if (textKey && (sessionUnmatchedSet.has(textKey) || sessionUnmatchedSet.has(`text:${textKey}`))) return null;
 
   let cached = (idKey && hifiCache.get(idKey)) || (textKey && hifiCache.get(textKey)) || null;
   if (!cached || !cached.stream_url) return null;
@@ -574,6 +622,20 @@ export function sanitizeLegacyHifiTrack(s) {
   // Local/downloaded files are always preserved
   if (s.is_local || s.file_path) return s;
 
+  // If track failed Hi-Fi or was marked unmatched this session, ensure it stays as clean YouTube
+  if (s._hifiFailed || (s.id && (sessionUnmatchedSet.has(String(s.id)) || sessionUnmatchedSet.has(`id:${s.id}`))) || (s.hifi_id && sessionUnmatchedSet.has(String(s.hifi_id)))) {
+    return {
+      ...s,
+      stream_url: null,
+      blob_url: null,
+      source: null,
+      hifi_id: null,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _hifiFailed: true
+    };
+  }
+
   // If the track is not eligible for Hi-Fi (e.g. video), strip any stream_url and mark checked
   if (!isHifiEligibleTrack(s)) {
     if (s.stream_url || s.source === 'monochrome' || s.hifi_id || !s._hifiChecked || s._hifiVersion !== HIFI_MATCHER_VERSION) {
@@ -614,6 +676,17 @@ export function sanitizeLegacyHifiTrack(s) {
       };
     }
   }
+  // If track has a stream_url, normalize it to direct Monochrome URL
+  if (s.stream_url && typeof s.stream_url === 'string') {
+    const normUrl = normalizeFlacStreamUrl(s.stream_url, s.hifi_id || s.id);
+    if (normUrl !== s.stream_url) {
+      s = {
+        ...s,
+        stream_url: normUrl
+      };
+    }
+  }
+
   // Native Monochrome tracks (where id === hifi_id or searched directly from Monochrome) are preserved
   if (s.source === 'monochrome' && (!s.hifi_id || String(s.hifi_id) === String(s.id))) {
     return s;
@@ -703,28 +776,31 @@ export async function resolveHifiForTrack(song, options = {}) {
     return true;
   };
 
+  if (!ignoreBlacklist) {
+    if (idKey && sessionUnmatchedSet.has(idKey)) return null;
+    if (textKey && sessionUnmatchedSet.has(textKey)) return null;
+  }
+
   // Check persistent cache with artist, version & duration validation
   if (!ignoreBlacklist && idKey && hifiCache.has(idKey)) {
     const cached = hifiCache.get(idKey);
-    if (cached === null) return null;
-    if (isValidCached(cached)) {
+    if (cached && isValidCached(cached)) {
       return {
-    ...cached,
-    stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
-  };
+        ...cached,
+        stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+      };
     } else {
       hifiCache.delete(idKey);
     }
   }
   if (!ignoreBlacklist && textKey && hifiCache.has(textKey)) {
     const cached = hifiCache.get(textKey);
-    if (cached === null) return null;
-    if (isValidCached(cached)) {
+    if (cached && isValidCached(cached)) {
       if (idKey) hifiCache.set(idKey, cached);
       return {
-    ...cached,
-    stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
-  };
+        ...cached,
+        stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+      };
     } else {
       hifiCache.delete(textKey);
     }
@@ -732,9 +808,8 @@ export async function resolveHifiForTrack(song, options = {}) {
 
   if (!title) {
     if (!ignoreBlacklist) {
-      if (idKey) hifiCache.set(idKey, null);
-      if (textKey) hifiCache.set(textKey, null);
-      persistCacheDebounced();
+      if (idKey) sessionUnmatchedSet.add(idKey);
+      if (textKey) sessionUnmatchedSet.add(textKey);
     }
     return null;
   }
@@ -745,6 +820,9 @@ export async function resolveHifiForTrack(song, options = {}) {
   }
 
   const promise = (async () => {
+    if (!ignoreBlacklist && isMonochromeCoolingDown()) {
+      return null;
+    }
     const query = `${artist} ${title}`.trim();
     try {
       const results = await api.searchMonochrome(query, 'song');
@@ -767,15 +845,18 @@ export async function resolveHifiForTrack(song, options = {}) {
         return hifiData;
       }
     } catch (e) {
+      const errMsg = String(e?.message || e || '');
+      if (errMsg.includes('429') || errMsg.includes('rate') || errMsg.includes('Too Many')) {
+        reportMonochromeRateLimit(60000);
+      }
       console.warn('[HIFI] Error querying Monochrome for:', query, e);
       return null;
     }
 
-    // Cache negative result so we never re-query unmatched songs on restart
+    // Remember negative result in memory for current session
     if (!ignoreBlacklist) {
-      if (idKey) hifiCache.set(idKey, null);
-      if (textKey) hifiCache.set(textKey, null);
-      persistCacheDebounced();
+      if (idKey) sessionUnmatchedSet.add(idKey);
+      if (textKey) sessionUnmatchedSet.add(textKey);
     }
     return null;
   })();

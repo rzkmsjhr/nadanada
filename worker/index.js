@@ -199,6 +199,17 @@ export default {
           headers: forwardHeaders,
         });
 
+        if (!upstreamRes.ok && upstreamRes.status !== 206) {
+          const errHeaders = new Headers(upstreamRes.headers);
+          errHeaders.set('Access-Control-Allow-Origin', '*');
+          errHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+          return new Response(upstreamRes.body, {
+            status: upstreamRes.status,
+            statusText: upstreamRes.statusText,
+            headers: errHeaders,
+          });
+        }
+
         const responseHeaders = new Headers(upstreamRes.headers);
         responseHeaders.set('Content-Type', 'audio/flac');
         responseHeaders.set('Content-Disposition', `inline; filename="${trackId}.flac"`);
