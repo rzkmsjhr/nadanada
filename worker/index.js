@@ -176,6 +176,53 @@ export default {
       });
     }
 
+    // Hi-Fi Lossless FLAC Audio Proxy
+    // Solves macOS WebKit MIME rejection (application/octet-stream) and Mixed Content (tauri://)
+    if (url.pathname.startsWith('/flac/')) {
+      const filename = url.pathname.replace(/^\/flac\//, '');
+      const trackId = filename.replace(/\.flac$/i, '').trim();
+
+      if (!trackId) {
+        return new Response('Missing track ID', { status: 400 });
+      }
+
+      const upstreamUrl = `https://tracks.monochrome.st/track/${trackId}`;
+      const forwardHeaders = new Headers();
+      const range = request.headers.get('Range');
+      if (range) forwardHeaders.set('Range', range);
+      forwardHeaders.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36');
+      forwardHeaders.set('Accept', '*/*');
+
+      try {
+        const upstreamRes = await fetch(upstreamUrl, {
+          method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+          headers: forwardHeaders,
+        });
+
+        const responseHeaders = new Headers(upstreamRes.headers);
+        responseHeaders.set('Content-Type', 'audio/flac');
+        responseHeaders.set('Content-Disposition', `inline; filename="${trackId}.flac"`);
+        responseHeaders.set('Access-Control-Allow-Origin', '*');
+        responseHeaders.set('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges, ETag');
+        responseHeaders.set('Accept-Ranges', 'bytes');
+        responseHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
+
+        return new Response(upstreamRes.body, {
+          status: upstreamRes.status,
+          statusText: upstreamRes.statusText,
+          headers: responseHeaders,
+        });
+      } catch (err) {
+        return new Response(`Failed to proxy FLAC stream: ${err.message}`, {
+          status: 502,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Access-Control-Allow-Origin': '*',
+          },
+        });
+      }
+    }
+
     if (url.pathname === '/embed' || url.pathname.startsWith('/embed?') || url.pathname === '/embed/') {
       return new Response(EMBED_HTML, {
         headers: {

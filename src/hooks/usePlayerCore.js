@@ -1134,13 +1134,18 @@ export function usePlayerCore({
       return;
     }
 
-    // 3. Transient network glitch on active Hi-Fi stream: attempt seamless recovery (up to 2 times)
+    // 3. Audio stream error handling
     const audioEl = document.getElementById(deckIndex === 0 ? 'deck-0-audio' : 'deck-1-audio');
     const pos = Math.max(0, failedTime || currentTime || 0);
+    const errorCode = audioEl?.error?.code;
 
-    if (attempts < 2 && audioEl && isSongHiFi(deckSong)) {
+    // Fast-fail: If the failure happened right at startup (pos < 1.0s) or is an unsupported format error (code 4),
+    // retrying will never succeed and just causes an annoying freeze/delay. Fall back to YouTube immediately (0ms).
+    const isFatalOrInitialFailure = pos < 1.0 || errorCode === 4 || errorCode === 2;
+
+    if (!isFatalOrInitialFailure && attempts < 1 && audioEl && isSongHiFi(deckSong)) {
       streamRecoveryAttemptsRef.current[sId] = attempts + 1;
-      console.warn(`[HIFI] Audio stream network glitch at ${pos.toFixed(1)}s for "${deckSong.title}". Attempting auto-recovery (${attempts + 1}/2)...`);
+      console.warn(`[HIFI] Transient audio stream hiccup at ${pos.toFixed(1)}s for "${deckSong.title}". Attempting quick recovery...`);
       setTimeout(() => {
         try {
           audioEl.load();
@@ -1154,12 +1159,15 @@ export function usePlayerCore({
         } catch (e) {
           handleAudioStreamFailure(deckIndex, pos);
         }
-      }, 400);
+      }, 100);
       return;
     }
 
     // 4. Recovery failed or stream dead: fallback seamlessly to YouTube at current position!
     console.warn(`[HIFI] Hi-Fi stream interrupted for "${deckSong.title}". Seamlessly falling back to YouTube at ${pos.toFixed(1)}s without modal error.`);
+    if (audioEl) {
+      try { audioEl.pause(); } catch (_) {}
+    }
 
     const fallbackSong = {
       ...deckSong,
@@ -1174,6 +1182,25 @@ export function usePlayerCore({
       setDeck0Song(fallbackSong);
     } else {
       setDeck1Song(fallbackSong);
+    }
+
+    // If this track originated from Monochrome without an 11-char YouTube ID, resolve its YouTube video counterpart
+    const isYtId = Boolean(deckSong.id && /^[a-zA-Z0-9_-]{11}$/.test(deckSong.id));
+    if (!isYtId && api.searchYouTube) {
+      const q = `${deckSong.title || ''} ${deckSong.channel || deckSong.artist || ''}`.trim();
+      api.searchYouTube(q, 'song').then(res => {
+        const topYt = res?.[0];
+        if (topYt && topYt.id) {
+          const ytSong = {
+            ...fallbackSong,
+            id: topYt.id,
+            stream_url: null,
+            source: null,
+          };
+          if (deckIndex === 0) setDeck0Song(ytSong);
+          else setDeck1Song(ytSong);
+        }
+      }).catch(e => console.warn('[HIFI] YouTube search fallback error:', e));
     }
 
     setCurrentTime(pos);

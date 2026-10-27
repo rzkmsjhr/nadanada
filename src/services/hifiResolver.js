@@ -5,6 +5,24 @@ const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'n
 const MAX_CACHE_ENTRIES = 3000;
 export const HIFI_MATCHER_VERSION = 5;
 
+export const WORKER_FLAC_BASE = 'https://nadanada-yt.kdmp.workers.dev/flac';
+
+/**
+ * Normalizes any FLAC stream URL to route through the Cloudflare Worker HTTPS proxy.
+ * This guarantees:
+ * 1. HTTPS on a real public FQDN (satisfies macOS WebKit mixed-content & ATS requirements inside tauri://)
+ * 2. Strict Content-Type: audio/flac (prevents WebKit rejection of application/octet-stream)
+ * 3. Explicit .flac file extension for AVFoundation/QuickTime media pipeline compatibility.
+ */
+export function normalizeFlacStreamUrl(url, trackId) {
+  if (!url && !trackId) return null;
+  const id = trackId || (typeof url === 'string' ? url.match(/track\/([a-zA-Z0-9_-]+)/)?.[1] : null);
+  if (id) {
+    return `${WORKER_FLAC_BASE}/${id}.flac`;
+  }
+  return url;
+}
+
 /**
  * Known upstream streaming catalog IDs where the original recording was overwritten
  * by the distributor with a modern remake/re-recorded version featuring different vocalists.
@@ -540,7 +558,10 @@ export function getCachedHifi(song) {
     }
   }
 
-  return cached;
+  return {
+    ...cached,
+    stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+  };
 }
 
 /**
@@ -646,7 +667,7 @@ export async function resolveHifiForTrack(song, options = {}) {
     (!song.hifi_id || String(song.hifi_id) === String(song.id) || song._hifiVersion === HIFI_MATCHER_VERSION)
   ) {
     return {
-      stream_url: song.stream_url,
+      stream_url: normalizeFlacStreamUrl(song.stream_url, song.hifi_id || song.id),
       source: 'monochrome',
       hifi_id: song.hifi_id || song.id,
       title: song.title,
@@ -687,7 +708,10 @@ export async function resolveHifiForTrack(song, options = {}) {
     const cached = hifiCache.get(idKey);
     if (cached === null) return null;
     if (isValidCached(cached)) {
-      return cached;
+      return {
+    ...cached,
+    stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+  };
     } else {
       hifiCache.delete(idKey);
     }
@@ -697,7 +721,10 @@ export async function resolveHifiForTrack(song, options = {}) {
     if (cached === null) return null;
     if (isValidCached(cached)) {
       if (idKey) hifiCache.set(idKey, cached);
-      return cached;
+      return {
+    ...cached,
+    stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+  };
     } else {
       hifiCache.delete(textKey);
     }
@@ -724,7 +751,7 @@ export async function resolveHifiForTrack(song, options = {}) {
       const matched = matchTrack(song, results, { ignoreBlacklist });
       if (matched && matched.stream_url) {
         const hifiData = {
-          stream_url: matched.stream_url,
+          stream_url: normalizeFlacStreamUrl(matched.stream_url, matched.id),
           source: 'monochrome',
           hifi_id: matched.id,
           title: matched.title,
