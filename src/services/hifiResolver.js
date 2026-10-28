@@ -1,23 +1,35 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v5';
-const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'nadanada-hifi-cache-v3', 'nadanada-hifi-cache-v4'];
+const STORAGE_KEY = 'nadanada-hifi-cache-v6';
+const LEGACY_STORAGE_KEYS = ['nadanada-hifi-cache', 'nadanada-hifi-cache-v2', 'nadanada-hifi-cache-v3', 'nadanada-hifi-cache-v4', 'nadanada-hifi-cache-v5'];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 5;
+export const HIFI_MATCHER_VERSION = 6;
 
+export const WORKER_FLAC_URL = 'https://nadanada-yt.kdmp.workers.dev/flac';
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
 /**
- * Normalizes any FLAC stream URL to route directly to Monochrome's audio streaming API
- * (matching the official Monochrome web client).
- * Automatically cleans up any legacy worker proxy URLs from cache.
+ * Normalizes any FLAC stream URL to route via the Cloudflare Worker proxy
+ * with proper audio/flac MIME type, CORS, and Range headers.
+ * Extracts the exact stream target ID (recording_id if present in url, or trackId).
  */
 export function normalizeFlacStreamUrl(url, trackId) {
   if (!url && !trackId) return null;
-  const id = trackId 
-    || (typeof url === 'string' ? (url.match(/\/flac\/([a-zA-Z0-9_-]+)(?:\.flac)?/)?.[1] || url.match(/\/track\/([a-zA-Z0-9_-]+)/)?.[1]) : null);
-  if (id) {
-    return `${TRACKS_BASE_URL}/track/${id}`;
+  if (typeof url === 'string' && url.startsWith(WORKER_FLAC_URL) && url.endsWith('.flac')) {
+    return url;
+  }
+  let targetId = null;
+  if (typeof url === 'string') {
+    const match = url.match(/\/flac\/([a-zA-Z0-9_-]+)(?:\.flac)?/i) || url.match(/\/track\/([a-zA-Z0-9_-]+)/i);
+    if (match && match[1]) {
+      targetId = match[1];
+    }
+  }
+  if (!targetId && trackId) {
+    targetId = trackId;
+  }
+  if (targetId) {
+    return `${WORKER_FLAC_URL}/${targetId}.flac`;
   }
   return url;
 }

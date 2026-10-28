@@ -3,6 +3,7 @@ use serde::Deserialize;
 use crate::models::Video;
 
 const TRACKS_BASE_URL: &str = "https://tracks.monochrome.st";
+const WORKER_FLAC_URL: &str = "https://nadanada-yt.kdmp.workers.dev/flac";
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
@@ -210,7 +211,7 @@ pub async fn search_monochrome(
             let artwork = t.artwork.or(t.cover).unwrap_or_default();
             let duration_str = t.duration.map(format_duration).unwrap_or_default();
             let stream_target_id = t.recording_id.clone().unwrap_or_else(|| track_id.clone());
-            let stream_url = format!("{}/track/{}", TRACKS_BASE_URL, stream_target_id);
+            let stream_url = format!("{}/{}.flac", WORKER_FLAC_URL, stream_target_id);
 
             results.push(Video {
                 id: track_id,
@@ -285,7 +286,8 @@ pub async fn get_monochrome_album(release_id: String) -> Result<Vec<Video>, Stri
             .unwrap_or_else(|| album_artwork.clone());
 
         let duration_str = t.duration.map(format_duration).unwrap_or_default();
-        let stream_url = format!("{}/track/{}", TRACKS_BASE_URL, track_id);
+        let stream_target_id = t.recording_id.clone().unwrap_or_else(|| track_id.clone());
+        let stream_url = format!("{}/{}.flac", WORKER_FLAC_URL, stream_target_id);
 
         results.push(Video {
             id: track_id,

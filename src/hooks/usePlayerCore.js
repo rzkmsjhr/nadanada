@@ -345,6 +345,11 @@ export function usePlayerCore({
       setDeck1Song(null);
       const inAudioEl = document.getElementById('deck-0-audio');
       if (inAudioEl) {
+        if (inAudioEl.error || (inAudioEl.networkState === 3 && inAudioEl.readyState === 0)) {
+          console.warn('[CROSSFADE] Incoming deck 0 audio is in error/no-source state. Triggering immediate fallback.');
+          handleAudioStreamFailure(0, 0);
+          return;
+        }
         if (inAudioEl.paused) {
           try { inAudioEl.play().catch(() => {}); } catch (e) {}
         }
@@ -376,6 +381,11 @@ export function usePlayerCore({
       setDeck0Song(null);
       const inAudioEl = document.getElementById('deck-1-audio');
       if (inAudioEl) {
+        if (inAudioEl.error || (inAudioEl.networkState === 3 && inAudioEl.readyState === 0)) {
+          console.warn('[CROSSFADE] Incoming deck 1 audio is in error/no-source state. Triggering immediate fallback.');
+          handleAudioStreamFailure(1, 0);
+          return;
+        }
         if (inAudioEl.paused) {
           try { inAudioEl.play().catch(() => {}); } catch (e) {}
         }
@@ -549,12 +559,19 @@ export function usePlayerCore({
   
   const handleStallStart = () => {
     setIsBuffering(true);
-    if (currentSong && !isAudioElementPlayback(currentSong) && !stallTimeoutRef.current) {
+    if (currentSong && !stallTimeoutRef.current) {
       stallTimeoutRef.current = setTimeout(() => {
-        console.warn("Audio stream stalled for 25s. Skipping.");
-        if (hasNext) onNext();
-        else if (onError) onError("Stream stalled and failed to recover.");
-      }, 25000);
+        const activeSong = (activeDeckRef.current === 0 ? deck0Song : deck1Song) || currentSong;
+        if (isSongHiFi(activeSong)) {
+          console.warn("[HIFI] Audio stream stalled for 10s. Falling back to YouTube.");
+          handleAudioStreamFailure(activeDeckRef.current, currentTime);
+        } else if (hasNext) {
+          console.warn("Audio stream stalled for 20s. Skipping.");
+          onNext();
+        } else if (onError) {
+          onError("Stream stalled and failed to recover.");
+        }
+      }, isSongHiFi((activeDeckRef.current === 0 ? deck0Song : deck1Song) || currentSong) ? 10000 : 25000);
     }
   };
 
@@ -925,6 +942,30 @@ export function usePlayerCore({
       } catch (e) {}
     }
   }, [currentTime, duration, currentSong]);
+
+  // Hi-Fi Playback Watchdog: If audio element is supposed to be playing but currentTime remains
+  // stuck at 0.0s for >4s or enters error/dead state, automatically recover to YouTube!
+  useEffect(() => {
+    if (!isPlaying || isCrossfadingRef.current || isCrossfadeRampingRef.current) return;
+    const activeSong = (activeDeckRef.current === 0 ? deck0Song : deck1Song) || currentSong;
+    if (!isSongHiFi(activeSong)) return;
+
+    const timer = setTimeout(() => {
+      const audioEl = document.getElementById(activeDeckRef.current === 0 ? 'deck-0-audio' : 'deck-1-audio');
+      if (audioEl) {
+        if (
+          audioEl.error ||
+          (audioEl.networkState === 3 && audioEl.readyState === 0) ||
+          (audioEl.currentTime === 0 && !audioEl.ended && isPlaying)
+        ) {
+          console.warn('[HIFI-WATCHDOG] Audio element stuck at 0:00 or in error state while playing. Falling back to YouTube.');
+          handleAudioStreamFailure(activeDeckRef.current, 0);
+        }
+      }
+    }, 4000);
+
+    return () => clearTimeout(timer);
+  }, [isPlaying, activeDeck, deck0Song?.id, deck1Song?.id, currentTime]);
 
   const togglePlay = () => {
     const activeDeckSong = (activeDeckRef.current === 0 ? deck0Song : deck1Song) || currentSong;
@@ -1302,6 +1343,20 @@ export function usePlayerCore({
       };
       if (deckIndex === 0) setDeck0Song(fallbackSong);
       else setDeck1Song(fallbackSong);
+
+      const inactiveAudioEl = document.getElementById(`deck-${deckIndex}-audio`);
+      if (inactiveAudioEl) {
+        try {
+          inactiveAudioEl.pause();
+          inactiveAudioEl.removeAttribute('src');
+          inactiveAudioEl.load();
+        } catch (_) {}
+      }
+
+      crossfadeSongRef.current = fallbackSong;
+      isPreloadingNextRef.current = false;
+      hasPreloadedNextRef.current = true;
+      if (onSongHifiFailed) onSongHifiFailed(deckSong);
       return;
     }
 
@@ -1317,8 +1372,8 @@ export function usePlayerCore({
     const pos = Math.max(0, failedTime || currentTime || 0);
     const errorCode = audioEl?.error?.code;
 
-    // Fatal check: format error, unsupported source at start, or repeated failure at startup
-    const isInitialFatal = (pos < 1.5 && attempts >= 1) || errorCode === 3 || (errorCode === 4 && pos < 1.0 && attempts >= 1);
+    // Fatal check: format error (4), decode error (3), or repeatedly failing at startup
+    const isInitialFatal = (pos < 1.5 && attempts >= 1) || errorCode === 3 || errorCode === 4;
 
     if (!isInitialFatal && attempts < 2 && audioEl && isSongHiFi(deckSong) && !failedHifiSongIdsRef.current.has(sId)) {
       streamRecoveryAttemptsRef.current[sId] = attempts + 1;

@@ -748,16 +748,16 @@ const Player = React.forwardRef(function Player({
                       return;
                     }
 
-                    if (core.activeDeck !== 0) {
-                      return; // Inactive deck errors must never kill playback
-                    }
-
                     console.warn("Deck 0 audio element error:", err?.code, err?.message);
                     core.handleStallClear();
 
                     if (isSongHiFi(core.deck0Song)) {
                       core.handleAudioStreamFailure?.(0, e?.target?.currentTime);
                       return;
+                    }
+
+                    if (core.activeDeck !== 0) {
+                      return; // Inactive deck errors for local files are ignored
                     }
 
                     if (core.deck0Song?.is_local) {
@@ -893,16 +893,16 @@ const Player = React.forwardRef(function Player({
                       return;
                     }
 
-                    if (core.activeDeck !== 1) {
-                      return; // Inactive deck errors must never kill playback
-                    }
-
                     console.warn("Deck 1 audio element error:", err?.code, err?.message);
                     core.handleStallClear();
 
                     if (isSongHiFi(core.deck1Song)) {
                       core.handleAudioStreamFailure?.(1, e?.target?.currentTime);
                       return;
+                    }
+
+                    if (core.activeDeck !== 1) {
+                      return; // Inactive deck errors for local files are ignored
                     }
 
                     if (core.deck1Song?.is_local) {

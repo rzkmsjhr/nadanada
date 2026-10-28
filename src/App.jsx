@@ -817,7 +817,9 @@ function App() {
       if ((s.id && s.id === targetId) || (targetHifiId && s.hifi_id === targetHifiId) || (s.queueId && s.queueId === failedSong.queueId)) {
         return {
           ...s,
+          stream_url: null,
           blob_url: null,
+          source: null,
           _hifiFailed: true,
           _userForcedYoutube: false,
           _hifiChecked: true,
@@ -830,7 +832,9 @@ function App() {
     if (restoredSong && (restoredSong.id === targetId || (targetHifiId && restoredSong.hifi_id === targetHifiId))) {
       setRestoredSong(prev => prev ? {
         ...prev,
+        stream_url: null,
         blob_url: null,
+        source: null,
         _hifiFailed: true,
         _userForcedYoutube: false,
         _hifiChecked: true,
