@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
-import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack, isHifiEligibleTrack } from '../services/hifiResolver';
+import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack, isHifiEligibleTrack, reportMonochromeRateLimit, isMonochromeCoolingDown } from '../services/hifiResolver';
 
 // Global cache for captions across song transitions and component re-renders
 const globalCaptionsMap = new Map();
@@ -816,6 +816,7 @@ export function usePlayerCore({
     if (!isHifiEnabled || !nextSong?.stream_url || !nextSong?.id) return;
     if (isCrossfadingRef.current || isCrossfadeRampingRef.current) return;
     if (!isPreloadingNextRef.current && !hasPreloadedNextRef.current) return;
+    if (isMonochromeCoolingDown()) return; // Don't upgrade preload if Monochrome is actively in 429 cooldown
 
     const inactiveDeck = 1 - activeDeckRef.current;
     const inactiveDeckSong = inactiveDeck === 0 ? deck0Song : deck1Song;
@@ -1332,6 +1333,7 @@ export function usePlayerCore({
     // 1. Inactive deck (e.g. background preloading during crossfade)
     if (deckIndex !== activeDeckRef.current) {
       console.warn(`[HIFI] Preload audio stream failed on inactive deck ${deckIndex} for "${deckSong.title}". Falling back preload to YouTube.`);
+      reportMonochromeRateLimit(45000);
       const fallbackSong = {
         ...deckSong,
         stream_url: null,
@@ -1421,6 +1423,9 @@ export function usePlayerCore({
       : errorCode === 2 
       ? 'Network Connection Interrupted' 
       : `Error Code ${errorCode || 'Unknown'}`;
+    if (errorCode === 4) {
+      reportMonochromeRateLimit(45000);
+    }
     console.warn(`[HIFI-FALLBACK] Hi-Fi stream failed for "${deckSong.title}" (${deckSong.channel}). Reason: ${errDesc}. Seamlessly falling back to YouTube audio at ${pos.toFixed(1)}s.`);
     failedHifiSongIdsRef.current.add(sId);
     if (deckSong.id) failedHifiSongIdsRef.current.add(String(deckSong.id));

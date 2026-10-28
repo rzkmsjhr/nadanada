@@ -192,11 +192,17 @@ export default {
       if (range) forwardHeaders.set('Range', range);
       forwardHeaders.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36');
       forwardHeaders.set('Accept', '*/*');
+      forwardHeaders.set('Origin', 'https://monochrome.st');
+      forwardHeaders.set('Referer', 'https://monochrome.st/');
 
       try {
         const upstreamRes = await fetch(upstreamUrl, {
           method: request.method === 'HEAD' ? 'HEAD' : 'GET',
           headers: forwardHeaders,
+          cf: {
+            cacheEverything: true,
+            cacheTtl: 604800,
+          },
         });
 
         if (!upstreamRes.ok && upstreamRes.status !== 206) {

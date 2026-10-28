@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { resolveHifiForTrack, HIFI_MATCHER_VERSION, isHifiEligibleTrack } from '../services/hifiResolver';
+import { resolveHifiForTrack, HIFI_MATCHER_VERSION, isHifiEligibleTrack, isMonochromeCoolingDown } from '../services/hifiResolver';
 
 function isNativeMonochromeItem(s) {
   return Boolean(s && s.source === 'monochrome' && s.stream_url && (!s.hifi_id || String(s.hifi_id) === String(s.id)));
@@ -84,15 +84,19 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                     _hifiVersion: HIFI_MATCHER_VERSION
                   };
                 } else {
-                  console.log(`[HIFI-QUEUE] Checked "${song.title}": No Hi-Fi stream available, keeping YouTube source.`);
-                  updated[matchIdx] = {
-                    ...updated[matchIdx],
-                    stream_url: null,
-                    source: null,
-                    hifi_id: null,
-                    _hifiChecked: true,
-                    _hifiVersion: HIFI_MATCHER_VERSION
-                  };
+                  if (isMonochromeCoolingDown()) {
+                    console.log(`[HIFI-QUEUE] Skipped Hi-Fi check for "${song.title}" (Monochrome cooling down). Preserving YouTube temporarily.`);
+                  } else {
+                    console.log(`[HIFI-QUEUE] Checked "${song.title}": No Hi-Fi stream available, keeping YouTube source.`);
+                    updated[matchIdx] = {
+                      ...updated[matchIdx],
+                      stream_url: null,
+                      source: null,
+                      hifi_id: null,
+                      _hifiChecked: true,
+                      _hifiVersion: HIFI_MATCHER_VERSION
+                    };
+                  }
                 }
               }
             }
@@ -117,7 +121,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
       if (remainingIndices.length === 0) return;
 
       for (const idx of remainingIndices) {
-        if (isCancelled) break;
+        if (isCancelled || isMonochromeCoolingDown()) break;
         const song = playlist[idx];
         if (!needsHifiCheck(song, inFlightRef.current)) continue;
 
@@ -148,7 +152,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                 _hifiChecked: true,
                 _hifiVersion: HIFI_MATCHER_VERSION
               };
-            } else {
+            } else if (!isMonochromeCoolingDown()) {
               updated[matchIdx] = {
                 ...updated[matchIdx],
                 stream_url: null,
