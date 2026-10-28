@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
-let cachedEmbedPort = null;
+export const DEFAULT_EMBED_PORT = 24242;
+let cachedEmbedPort = DEFAULT_EMBED_PORT;
 
 export const api = {
   // Playlists
@@ -16,6 +17,17 @@ export const api = {
   // Monochrome / Hi-Fi (FLAC)
   searchMonochrome: (query, searchType = 'song') => invoke('search_monochrome', { query, searchType }),
   getMonochromeAlbum: (releaseId) => invoke('get_monochrome_album', { releaseId }),
+  resolveHifiTrack: (songId, title, channel = null, duration = null, itemType = null, isrc = null) =>
+    invoke('resolve_hifi_track', {
+      songId: songId ? String(songId) : null,
+      title: title || '',
+      channel: channel || null,
+      duration: duration ? String(duration) : null,
+      itemType: itemType || null,
+      isrc: isrc || null,
+    }),
+  getHifiStreamUrl: (trackId) => invoke('get_hifi_stream_url', { trackId: String(trackId) }),
+  clearHifiDiskCache: () => invoke('clear_hifi_disk_cache'),
   
   // Spotify / Charts
   getSpotifyPlaylist: (playlistId) => invoke('get_spotify_playlist', { playlistId }),

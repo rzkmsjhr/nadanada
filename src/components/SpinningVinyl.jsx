@@ -65,7 +65,7 @@ export function isAlbumArtTrack(song) {
   }
 
   // 3. Local offline files or direct audio streams (like Monochrome/FLAC) are always audio tracks with album art
-  if (song.is_local || song.source === 'monochrome' || song.is_monochrome || song.stream_url) return true;
+  if (song.is_local || song.source === 'monochrome' || song.source === 'kuwo' || song.is_monochrome || song.stream_url) return true;
 
   // 4. YouTube Topic channels are auto-generated audio releases with static album art
   if (channel.endsWith('- topic') || channel === 'topic') {

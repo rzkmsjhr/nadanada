@@ -92,6 +92,7 @@ pub fn clear_cached_data(app_handle: tauri::AppHandle) -> Result<bool, String> {
             let _ = std::fs::remove_dir_all(chords_dir);
         }
     }
+    let _ = crate::hifi::clear_hifi_disk_cache();
     Ok(true)
 }
 

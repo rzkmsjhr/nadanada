@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../services/api';
-import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack, isHifiEligibleTrack, reportMonochromeRateLimit, isMonochromeCoolingDown } from '../services/hifiResolver';
+import { parseDurationToSecs, hifiCache, getCachedHifi, resolveHifiForTrack, isHifiEligibleTrack, reportMonochromeRateLimit, isMonochromeCoolingDown, normalizeFlacStreamUrl } from '../services/hifiResolver';
 
 // Global cache for captions across song transitions and component re-renders
 const globalCaptionsMap = new Map();
@@ -638,6 +638,12 @@ export function usePlayerCore({
 
       // Check hifiCache before mounting so if FLAC stream is available, it starts directly as FLAC!
       let songToLoad = currentSong;
+      if (songToLoad && songToLoad.stream_url && !songToLoad.is_local) {
+        const freshUrl = normalizeFlacStreamUrl(songToLoad.stream_url, songToLoad.hifi_id);
+        if (freshUrl && freshUrl !== songToLoad.stream_url) {
+          songToLoad = { ...songToLoad, stream_url: freshUrl };
+        }
+      }
       const isFailedOrForced = Boolean(
         songToLoad._userForcedYoutube ||
         failedHifiSongIdsRef.current.has(String(songToLoad.id)) ||
@@ -1333,7 +1339,7 @@ export function usePlayerCore({
     // 1. Inactive deck (e.g. background preloading during crossfade)
     if (deckIndex !== activeDeckRef.current) {
       console.warn(`[HIFI] Preload audio stream failed on inactive deck ${deckIndex} for "${deckSong.title}". Falling back preload to YouTube.`);
-      reportMonochromeRateLimit(45000);
+      // Avoid broad lockout on local stream failure
       const fallbackSong = {
         ...deckSong,
         stream_url: null,
@@ -1424,7 +1430,7 @@ export function usePlayerCore({
       ? 'Network Connection Interrupted' 
       : `Error Code ${errorCode || 'Unknown'}`;
     if (errorCode === 4) {
-      reportMonochromeRateLimit(45000);
+      // Avoid broad lockout on local stream failure
     }
     console.warn(`[HIFI-FALLBACK] Hi-Fi stream failed for "${deckSong.title}" (${deckSong.channel}). Reason: ${errDesc}. Seamlessly falling back to YouTube audio at ${pos.toFixed(1)}s.`);
     failedHifiSongIdsRef.current.add(sId);

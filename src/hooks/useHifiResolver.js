@@ -10,7 +10,7 @@ function needsHifiCheck(s, inFlightSet) {
   if (s._userForcedYoutube || s._hifiFailed) return false;
   if (!isHifiEligibleTrack(s)) return false;
   if (isNativeMonochromeItem(s)) return false;
-  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) return false;
+  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION && s.stream_url) return false;
   return true;
 }
 
@@ -78,7 +78,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                   updated[matchIdx] = {
                     ...updated[matchIdx],
                     stream_url: hifi.stream_url,
-                    source: 'monochrome',
+                    source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
                     hifi_id: hifi.hifi_id,
                     _hifiChecked: true,
                     _hifiVersion: HIFI_MATCHER_VERSION
@@ -107,20 +107,16 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
       if (isCancelled) return;
 
-      // 2. Remaining songs in queue order (resolved sequentially to avoid rate-limiting)
-      const remainingIndices = [];
-      for (let i = 0; i < playlist.length; i++) {
-        if (!immediateIndices.includes(i)) {
-          const song = playlist[i];
-          if (needsHifiCheck(song, inFlightRef.current)) {
-            remainingIndices.push(i);
-          }
-        }
-      }
+      // 2. Prepare next 2 upcoming tracks in queue ahead of time (resolved sequentially)
+      const lookaheadIndices = [currentIndex + 2, currentIndex + 3].filter(idx => {
+        if (idx < 0 || idx >= playlist.length) return false;
+        const s = playlist[idx];
+        return needsHifiCheck(s, inFlightRef.current);
+      });
 
-      if (remainingIndices.length === 0) return;
+      if (lookaheadIndices.length === 0) return;
 
-      for (const idx of remainingIndices) {
+      for (const idx of lookaheadIndices) {
         if (isCancelled || isMonochromeCoolingDown()) break;
         const song = playlist[idx];
         if (!needsHifiCheck(song, inFlightRef.current)) continue;
@@ -147,7 +143,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
               updated[matchIdx] = {
                 ...updated[matchIdx],
                 stream_url: hifi.stream_url,
-                source: 'monochrome',
+                source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
                 hifi_id: hifi.hifi_id,
                 _hifiChecked: true,
                 _hifiVersion: HIFI_MATCHER_VERSION

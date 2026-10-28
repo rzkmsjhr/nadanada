@@ -736,7 +736,7 @@ function App() {
   const handleToggleTrackHifi = useCallback(async (song) => {
     if (!song) return;
     const songId = song.id;
-    const isCurrentHifi = Boolean(song.stream_url || song.source === 'monochrome');
+    const isCurrentHifi = Boolean(song.stream_url || song.source === 'monochrome' || song.source === 'kuwo');
 
     if (isCurrentHifi) {
       setUserYoutubeForced(songId, true);

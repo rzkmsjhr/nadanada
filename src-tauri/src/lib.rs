@@ -7,6 +7,7 @@ pub mod server;
 pub mod youtube;
 pub mod lyrics;
 pub mod monochrome;
+pub mod hifi;
 
 use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
@@ -110,7 +111,10 @@ pub fn run() {
             youtube::get_artist_details,
             youtube::get_artist_top_songs,
             monochrome::search_monochrome,
-            monochrome::get_monochrome_album
+            monochrome::get_monochrome_album,
+            hifi::resolve_hifi_track,
+            hifi::get_hifi_stream_url,
+            hifi::clear_hifi_disk_cache
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

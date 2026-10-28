@@ -90,7 +90,7 @@ export default function PlayerControls({
                 {currentSong ? currentSong.title : 'Waiting for music...'}
               </h3>
               {currentSong && isHifiEnabled && !currentSong.is_local && isHifiEligibleTrack(currentSong) && (() => {
-                const isHiFi = Boolean(isPlayingHifi !== undefined ? isPlayingHifi : (currentSong.source === 'monochrome' || currentSong.stream_url));
+                const isHiFi = Boolean(isPlayingHifi !== undefined ? isPlayingHifi : (currentSong.source === 'monochrome' || currentSong.source === 'kuwo' || currentSong.stream_url));
                 const isForcedYt = Boolean(currentSong._userForcedYoutube);
                 const isUpstreamMismatch = isKnownUpstreamMismatch(currentSong);
 

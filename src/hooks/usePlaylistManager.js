@@ -98,6 +98,28 @@ export function usePlaylistManager({
     loadPlaylists();
   }, [api]);
 
+  // Eagerly warm the initial restored tracks on app launch so playback starts in Hi-Fi instantly
+  useEffect(() => {
+    if (!isHifiEnabled || !playlist || playlist.length === 0) return;
+    const initialSlice = playlist.slice(currentIndex, currentIndex + 2);
+    if (initialSlice.length === 0) return;
+    resolveInitialPlaylistTracks(initialSlice, 2).then(warmed => {
+      if (!warmed || warmed.length === 0) return;
+      setPlaylist(prev => {
+        let changed = false;
+        const updated = [...prev];
+        warmed.forEach((wSong, i) => {
+          const targetIdx = currentIndex + i;
+          if (targetIdx < updated.length && wSong.stream_url && updated[targetIdx].stream_url !== wSong.stream_url) {
+            updated[targetIdx] = { ...updated[targetIdx], ...wSong };
+            changed = true;
+          }
+        });
+        return changed ? updated : prev;
+      });
+    }).catch(() => {});
+  }, []);
+
   const lastMainPlaylistIndexRef = useRef(currentIndex);
 
   useEffect(() => {
