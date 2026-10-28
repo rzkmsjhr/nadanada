@@ -74,6 +74,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
               if (matchIdx !== -1 && (updated[matchIdx]._hifiVersion !== HIFI_MATCHER_VERSION || !updated[matchIdx]._hifiChecked)) {
                 changed = true;
                 if (hifi && hifi.stream_url) {
+                  console.log(`[HIFI-QUEUE] Upgraded "${song.title}" to Hi-Fi FLAC stream`);
                   updated[matchIdx] = {
                     ...updated[matchIdx],
                     stream_url: hifi.stream_url,
@@ -83,6 +84,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                     _hifiVersion: HIFI_MATCHER_VERSION
                   };
                 } else {
+                  console.log(`[HIFI-QUEUE] Checked "${song.title}": No Hi-Fi stream available, keeping YouTube source.`);
                   updated[matchIdx] = {
                     ...updated[matchIdx],
                     stream_url: null,

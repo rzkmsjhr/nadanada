@@ -1414,7 +1414,14 @@ export function usePlayerCore({
     }
 
     // 4. Recovery exhausted or fatal: fall back to YouTube for this playback without polluting persistent cache
-    console.warn(`[HIFI] Hi-Fi recovery exhausted (${attempts} attempts) for "${deckSong.title}". Seamlessly falling back to YouTube at ${pos.toFixed(1)}s without modal error.`);
+    const errDesc = errorCode === 4 
+      ? 'HTTP 429 Rate Limited or Unsupported Media Source' 
+      : errorCode === 3 
+      ? 'Decode Error' 
+      : errorCode === 2 
+      ? 'Network Connection Interrupted' 
+      : `Error Code ${errorCode || 'Unknown'}`;
+    console.warn(`[HIFI-FALLBACK] Hi-Fi stream failed for "${deckSong.title}" (${deckSong.channel}). Reason: ${errDesc}. Seamlessly falling back to YouTube audio at ${pos.toFixed(1)}s.`);
     failedHifiSongIdsRef.current.add(sId);
     if (deckSong.id) failedHifiSongIdsRef.current.add(String(deckSong.id));
     if (deckSong.hifi_id) failedHifiSongIdsRef.current.add(String(deckSong.hifi_id));

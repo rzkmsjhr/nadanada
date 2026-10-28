@@ -748,7 +748,9 @@ const Player = React.forwardRef(function Player({
                       return;
                     }
 
-                    console.warn("Deck 0 audio element error:", err?.code, err?.message);
+                    const errMap = { 1: 'MEDIA_ERR_ABORTED', 2: 'MEDIA_ERR_NETWORK', 3: 'MEDIA_ERR_DECODE', 4: 'MEDIA_ERR_SRC_NOT_SUPPORTED' };
+                    const errName = errMap[err?.code] || `CODE_${err?.code}`;
+                    console.warn(`[HIFI-AUDIO] Deck 0 error: ${errName} (${err?.message || 'HTTP error or unsupported stream'}) on URL: ${currentSrc}`);
                     core.handleStallClear();
 
                     if (isSongHiFi(core.deck0Song)) {
@@ -893,7 +895,9 @@ const Player = React.forwardRef(function Player({
                       return;
                     }
 
-                    console.warn("Deck 1 audio element error:", err?.code, err?.message);
+                    const errMap = { 1: 'MEDIA_ERR_ABORTED', 2: 'MEDIA_ERR_NETWORK', 3: 'MEDIA_ERR_DECODE', 4: 'MEDIA_ERR_SRC_NOT_SUPPORTED' };
+                    const errName = errMap[err?.code] || `CODE_${err?.code}`;
+                    console.warn(`[HIFI-AUDIO] Deck 1 error: ${errName} (${err?.message || 'HTTP error or unsupported stream'}) on URL: ${currentSrc}`);
                     core.handleStallClear();
 
                     if (isSongHiFi(core.deck1Song)) {

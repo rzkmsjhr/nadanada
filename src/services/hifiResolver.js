@@ -797,9 +797,11 @@ export async function resolveHifiForTrack(song, options = {}) {
   if (!ignoreBlacklist && idKey && hifiCache.has(idKey)) {
     const cached = hifiCache.get(idKey);
     if (cached && isValidCached(cached)) {
+      const normUrl = normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id);
+      console.log(`[HIFI] Cache HIT for "${song.title}" (${cached.artist}) -> ${normUrl}`);
       return {
         ...cached,
-        stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+        stream_url: normUrl
       };
     } else {
       hifiCache.delete(idKey);
@@ -808,10 +810,12 @@ export async function resolveHifiForTrack(song, options = {}) {
   if (!ignoreBlacklist && textKey && hifiCache.has(textKey)) {
     const cached = hifiCache.get(textKey);
     if (cached && isValidCached(cached)) {
+      const normUrl = normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id);
+      console.log(`[HIFI] Cache HIT for "${song.title}" (${cached.artist}) -> ${normUrl}`);
       if (idKey) hifiCache.set(idKey, cached);
       return {
         ...cached,
-        stream_url: normalizeFlacStreamUrl(cached.stream_url, cached.hifi_id)
+        stream_url: normUrl
       };
     } else {
       hifiCache.delete(textKey);
@@ -833,15 +837,20 @@ export async function resolveHifiForTrack(song, options = {}) {
 
   const promise = (async () => {
     if (!ignoreBlacklist && isMonochromeCoolingDown()) {
+      const remainingSecs = Math.max(1, Math.round((monochromeRateLimitedUntil - Date.now()) / 1000));
+      console.warn(`[HIFI] Monochrome API cooling down (${remainingSecs}s remaining). Skipping search for "${song.title}". Using YouTube.`);
       return null;
     }
     const query = `${artist} ${title}`.trim();
     try {
+      console.log(`[HIFI] Searching Monochrome catalog for: "${query}" (target: "${song.title}" by ${artist})...`);
       const results = await api.searchMonochrome(query, 'song');
       const matched = matchTrack(song, results, { ignoreBlacklist });
       if (matched && matched.stream_url) {
+        const streamUrl = normalizeFlacStreamUrl(matched.stream_url, matched.id);
+        console.log(`[HIFI] Match found for "${song.title}": "${matched.title}" by ${matched.channel} (ID: ${matched.id}) -> Stream URL: ${streamUrl}`);
         const hifiData = {
-          stream_url: normalizeFlacStreamUrl(matched.stream_url, matched.id),
+          stream_url: streamUrl,
           source: 'monochrome',
           hifi_id: matched.id,
           title: matched.title,
@@ -855,13 +864,17 @@ export async function resolveHifiForTrack(song, options = {}) {
           persistCacheDebounced();
         }
         return hifiData;
+      } else {
+        console.log(`[HIFI] No matching track found on Monochrome for "${query}". Preserving YouTube.`);
       }
     } catch (e) {
       const errMsg = String(e?.message || e || '');
       if (errMsg.includes('429') || errMsg.includes('rate') || errMsg.includes('Too Many')) {
+        console.warn(`[HIFI] Monochrome search API rate-limited (HTTP 429: "oooooooooooooooooof beep boop") while querying "${query}". Entering 60s cooldown.`);
         reportMonochromeRateLimit(60000);
+      } else {
+        console.warn('[HIFI] Error querying Monochrome for:', query, e);
       }
-      console.warn('[HIFI] Error querying Monochrome for:', query, e);
       return null;
     }
 
