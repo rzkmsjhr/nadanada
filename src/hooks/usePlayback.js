@@ -49,12 +49,9 @@ export function usePlayback({
     }
   };
 
-  const handleNext = async (isManual = false) => {
+  const handleNext = (isManual = false) => {
     if (previewSong) setPreviewSong(null);
     if (restoredSong) setRestoredSong(null);
-    if (isManual === true) {
-      await safeFadeOut(180);
-    }
     if (isShuffle) {
       if (playlist.length <= 1) return;
       
@@ -81,7 +78,7 @@ export function usePlayback({
   const handleManualNext = () => handleNext(true);
   const handleAutoNext = () => handleNext(false);
 
-  const handlePrevious = async () => {
+  const handlePrevious = () => {
     if (previewSong) setPreviewSong(null);
     if (restoredSong) setRestoredSong(null);
     if (isShuffle) {
@@ -99,7 +96,6 @@ export function usePlayback({
         }
         
         setShuffleHistory(newHistory);
-        await safeFadeOut(180);
         if (prevIdx !== -1) {
           setCurrentIndex(prevIdx);
         } else {
@@ -107,13 +103,11 @@ export function usePlayback({
         }
       } else {
         if (currentIndex > 0) {
-          await safeFadeOut(180);
           setCurrentIndex(currentIndex - 1);
         }
       }
     } else {
       if (currentIndex > 0) {
-        await safeFadeOut(180);
         setCurrentIndex(currentIndex - 1);
       }
     }

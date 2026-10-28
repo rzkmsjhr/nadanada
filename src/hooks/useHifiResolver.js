@@ -35,7 +35,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
     let isCancelled = false;
 
-    const runResolver = async () => {
+    // Debounce resolver by 150ms during rapid track skipping to avoid triggering Monochrome rate limits
+    const timer = setTimeout(async () => {
       // 1. Resolve immediate top priorities (current + next song) in parallel first!
       const immediateIndices = [currentIndex, currentIndex + 1].filter(idx => {
         if (idx < 0 || idx >= playlist.length) return false;
@@ -59,6 +60,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
             }
           })
         );
+
+        if (isCancelled) return;
 
         // Always commit completed in-flight resolutions to playlist so concurrent playlist updates
         // (such as Endless Play appending a track) never drop an already-resolved song!
@@ -126,6 +129,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
           inFlightRef.current.delete(song.id);
         }
 
+        if (isCancelled) break;
+
         if (isHifiEnabledRef.current) {
           setPlaylist(prev => {
             const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
@@ -157,12 +162,11 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
         if (isCancelled) break;
       }
-    };
-
-    runResolver();
+    }, 150);
 
     return () => {
       isCancelled = true;
+      clearTimeout(timer);
     };
   }, [playlist, currentIndex, isHifiEnabled, setPlaylist]);
 }
