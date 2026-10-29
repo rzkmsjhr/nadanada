@@ -223,6 +223,14 @@ pub fn score_track_candidate(
         return 0;
     }
 
+    // 1b. Reject unwanted feature/remake in candidate title if target did not ask for it
+    let lower_target = format!("{} {}", target_artist, target_title).to_lowercase();
+    let lower_cand_title = cand_title.to_lowercase();
+    if (lower_cand_title.contains("feat.") || lower_cand_title.contains("feat ") || lower_cand_title.contains("ft.") || lower_cand_title.contains("ft "))
+        && !lower_target.contains("feat") && !lower_target.contains("ft.") && !lower_target.contains("ft ") {
+        return 0;
+    }
+
     // 2. Exact ISRC match is definitive
     if let (Some(t_isrc), Some(c_isrc)) = (target_isrc, cand_isrc) {
         let t_clean = t_isrc.trim().to_lowercase();
@@ -237,7 +245,7 @@ pub fn score_track_candidate(
         return 0;
     }
 
-    let mut score = 50; // Base score for artist match
+    let mut score: u32 = 50; // Base score for artist match
 
     // 4. Title comparison
     let target_clean = clean_string(target_title);
@@ -342,21 +350,32 @@ pub fn score_track_candidate(
         }
     }
 
-    // 5. Duration comparison
+    // 5. Duration comparison (Strict length validation for both Kuwo and Monochrome)
     if target_dur_secs > 0 && cand_dur_secs > 0 {
         let diff = (target_dur_secs as i64 - cand_dur_secs as i64).abs();
-        if diff <= 3 {
-            score += 25;
-        } else if diff <= 7 {
-            score += 10;
-        } else if diff > 20 {
-            // Significant duration difference penalizes score
-            if score >= 30 {
-                score -= 30;
-            } else {
-                score = 0;
-            }
+        
+        // Maximum allowed discrepancy is 15s (or up to 5% for long tracks >300s, max 25s)
+        let max_allowed_diff = (target_dur_secs as f64 * 0.05).clamp(15.0, 25.0) as i64;
+        if diff > max_allowed_diff {
+            // Track length is too different (e.g. 3:01 vs 4:28 is a short edit, radio edit, or different version)
+            return 0;
         }
+
+        if diff <= 2 {
+            score += 40; // Exact match down to 2s
+        } else if diff <= 4 {
+            score += 25; // Close match
+        } else if diff <= 7 {
+            score += 10; // Acceptable padding / fade difference
+        } else if diff <= 12 {
+            score = score.saturating_sub(15);
+        } else {
+            // 13s to max_allowed_diff: heavy penalty
+            score = score.saturating_sub(45);
+        }
+    } else if target_dur_secs > 0 && cand_dur_secs == 0 {
+        // Target duration is known but candidate has no duration info
+        score = score.saturating_sub(20);
     }
 
     score
@@ -448,5 +467,38 @@ mod tests {
             None,
         );
         assert!(score >= 120, "Score was {}", score);
+    }
+
+    #[test]
+    fn test_duration_disqualification() {
+        // "Sempurna" original is 268s (4:28).
+        // Neillusion remake on Kuwo/Monochrome is 181s (3:01).
+        // It must be rejected (score == 0).
+        let score = score_track_candidate(
+            "Sempurna",
+            "Andra And The Backbone",
+            268,
+            None,
+            "163245492",
+            "Sempurna(feat. Andra & the Backbone)",
+            "Neillusion&Andra & The Backbone",
+            181,
+            None,
+        );
+        assert_eq!(score, 0, "Mismatched duration/remake must be rejected, got score {}", score);
+
+        // Correct 268s original track must score high (>= 180)
+        let original_score = score_track_candidate(
+            "Sempurna",
+            "Andra And The Backbone",
+            268,
+            None,
+            "172473323077242880",
+            "Sempurna",
+            "Andra & The Backbone",
+            268,
+            Some("IDAB30600441"),
+        );
+        assert!(original_score >= 180, "Original track must score high, got {}", original_score);
     }
 }

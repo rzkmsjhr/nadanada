@@ -1,6 +1,6 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v8';
+const STORAGE_KEY = 'nadanada-hifi-cache-v9';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
@@ -8,10 +8,11 @@ const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache-v4',
   'nadanada-hifi-cache-v5',
   'nadanada-hifi-cache-v6',
-  'nadanada-hifi-cache-v7'
+  'nadanada-hifi-cache-v7',
+  'nadanada-hifi-cache-v8'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 8;
+export const HIFI_MATCHER_VERSION = 9;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
@@ -375,7 +376,7 @@ export async function resolveHifiForTrack(song, options = {}) {
         song.id,
         song.title,
         song.channel || song.artist,
-        song.duration,
+        song.duration || (song.duration_ms ? String(Math.round(song.duration_ms / 1000)) : null),
         song.item_type,
         song.isrc
       );

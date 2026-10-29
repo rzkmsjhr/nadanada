@@ -26,8 +26,9 @@ pub fn parse_duration_to_secs(dur: Option<&str>) -> u64 {
         _ => return 0,
     };
 
-    if let Ok(num) = s.parse::<u64>() {
-        return if num > 1000 { num / 1000 } else { num };
+    if let Ok(f) = s.parse::<f64>() {
+        let num = f.round() as u64;
+        return if num > 10000 { num / 1000 } else { num };
     }
 
     let parts: Vec<&str> = s.split(':').collect();
