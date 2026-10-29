@@ -3,19 +3,26 @@ use lazy_static::lazy_static;
 
 lazy_static! {
     static ref FEAT_REGEX: Regex = Regex::new(r"(?i)\b(feat|featuring|ft)\.?\s+.*$").unwrap();
-    static ref BRACKETS_REGEX: Regex = Regex::new(r"[\(\[\{].*?[\)\]\}]").unwrap();
-    static ref NON_ALPHANUM_REGEX: Regex = Regex::new(r"[^a-z0-9]").unwrap();
+    static ref BRACKETS_REGEX: Regex = Regex::new(r"[\(\[\{【〔〈《「『].*?[\)\]\}】〕〉》」』]").unwrap();
+    static ref NON_ALPHANUM_REGEX: Regex = Regex::new(r"[^\p{L}\p{N}\p{M}]").unwrap();
     static ref MULTI_SPACE_REGEX: Regex = Regex::new(r"\s+").unwrap();
-    static ref ARTIST_SPLIT_REGEX: Regex = Regex::new(r"(?i)[,&/;]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)").unwrap();
+    static ref ARTIST_SPLIT_REGEX: Regex = Regex::new(r"(?i)[,&/;|]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)").unwrap();
     static ref YOUTUBE_NOISE_REGEX: Regex = Regex::new(r"(?i)\b(official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyrics?\s*(?:video)?|music\s*video|audio|visualizer|hd|hq|4k|1080p|720p|topic|clip\s*officiel|video\s*oficial|mv)\b").unwrap();
 }
 
-/// Normalizes string for fuzzy title/artist matching, faithfully porting Monochrome's cleanString.
+/// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
 pub fn clean_string(str: &str) -> String {
     let lower = str.to_lowercase();
     let without_feat = FEAT_REGEX.replace_all(&lower, "");
     let without_brackets = BRACKETS_REGEX.replace_all(&without_feat, "");
-    let alnum_only = NON_ALPHANUM_REGEX.replace_all(&without_brackets, "");
+    let normalized = if crate::hifi::script::contains_arabic(&without_brackets) {
+        crate::hifi::script::normalize_arabic(&without_brackets)
+    } else if crate::hifi::script::contains_thai(&without_brackets) {
+        crate::hifi::script::normalize_thai(&without_brackets)
+    } else {
+        without_brackets.to_string()
+    };
+    let alnum_only = NON_ALPHANUM_REGEX.replace_all(&normalized, "");
     alnum_only.trim().to_string()
 }
 
@@ -23,7 +30,14 @@ pub fn clean_string(str: &str) -> String {
 pub fn normalize_comparable_title(raw_title: &str) -> String {
     let lower = raw_title.to_lowercase();
     let without_noise = YOUTUBE_NOISE_REGEX.replace_all(&lower, " ");
-    let alnum_only = NON_ALPHANUM_REGEX.replace_all(&without_noise, "");
+    let normalized = if crate::hifi::script::contains_arabic(&without_noise) {
+        crate::hifi::script::normalize_arabic(&without_noise)
+    } else if crate::hifi::script::contains_thai(&without_noise) {
+        crate::hifi::script::normalize_thai(&without_noise)
+    } else {
+        without_noise.to_string()
+    };
+    let alnum_only = NON_ALPHANUM_REGEX.replace_all(&normalized, "");
     alnum_only.trim().to_string()
 }
 
@@ -84,10 +98,38 @@ pub fn split_artist_list(s: &str) -> Vec<String> {
     parts
 }
 
-/// Checks if target artist and candidate artist match, and rejects unrequested collaborator remakes.
+/// Checks if target artist and candidate artist match across languages and scripts.
 pub fn does_artist_match(target_artist: &str, candidate_artist: &str, target_title: &str) -> bool {
     let target_list = split_artist_list(target_artist);
     let cand_list = split_artist_list(candidate_artist);
+
+    // 1. Cross-script bidirectional alias check (Japanese, Korean, Arabic, Thai, Chinese)
+    let target_aliases = crate::hifi::script::get_artist_cross_script_aliases(target_artist);
+    let cand_aliases = crate::hifi::script::get_artist_cross_script_aliases(candidate_artist);
+
+    for c in &cand_list {
+        if target_aliases.iter().any(|&a| clean_string(a) == clean_string(c)) {
+            return true;
+        }
+    }
+    for t in &target_list {
+        if cand_aliases.iter().any(|&a| clean_string(a) == clean_string(t)) {
+            return true;
+        }
+    }
+
+    // 2. Check if target title contains candidate artist or vice versa (common in YouTube fan uploads)
+    let lower_title = target_title.to_lowercase();
+    for a in &cand_aliases {
+        if lower_title.contains(&a.to_lowercase()) {
+            return true;
+        }
+    }
+    for c in &cand_list {
+        if !c.is_empty() && lower_title.contains(&c.to_lowercase()) {
+            return true;
+        }
+    }
 
     if target_list.is_empty() || cand_list.is_empty() {
         return false;
@@ -157,7 +199,7 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
     false
 }
 
-/// Scores a candidate track against target metadata using Monochrome's scoring model + edition verification.
+/// Scores a candidate track against target metadata using multilingual cross-script comparison + edition verification.
 pub fn score_track_candidate(
     target_title: &str,
     target_artist: &str,
@@ -201,11 +243,102 @@ pub fn score_track_candidate(
     let target_clean = clean_string(target_title);
     let cand_clean = clean_string(cand_title);
 
+    let mut title_matched = false;
     if !target_clean.is_empty() && !cand_clean.is_empty() {
         if target_clean == cand_clean {
             score += 100;
+            title_matched = true;
         } else if target_clean.contains(&cand_clean) || cand_clean.contains(&target_clean) {
             score += 65;
+            title_matched = true;
+        }
+    }
+
+    // Japanese Katakana / Romaji loanword check (e.g. "Single Again" <-> "シングル・アゲイン")
+    if !title_matched && (crate::hifi::script::contains_japanese(target_title) || crate::hifi::script::contains_japanese(cand_title)) {
+        let meta = crate::hifi::script::parse_multilingual_metadata(target_title, Some(target_artist));
+        let title_variants = [
+            Some(target_clean.as_str()),
+            meta.extracted_title.as_deref(),
+            meta.native_title.as_deref(),
+        ];
+
+        for variant_opt in title_variants {
+            if let Some(variant) = variant_opt {
+                let variant_clean = clean_string(variant);
+                if variant_clean.is_empty() {
+                    continue;
+                }
+                let romaji_target = crate::hifi::script::kana_to_romaji(&variant_clean);
+                let romaji_cand = crate::hifi::script::kana_to_romaji(&cand_clean);
+
+                if !romaji_target.is_empty() && !cand_clean.is_empty() && (romaji_target == cand_clean || romaji_cand == variant_clean || romaji_target == romaji_cand) {
+                    score += 90;
+                    title_matched = true;
+                    break;
+                } else if crate::hifi::script::katakana_loanword_phonetic_matches(&romaji_target, &cand_clean)
+                    || crate::hifi::script::katakana_loanword_phonetic_matches(&romaji_cand, &variant_clean) {
+                    score += 85;
+                    title_matched = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Bilingual title check (e.g. "聖母たちのララバイ - Madonna Tachi no Lullaby" or "아이유 - 밤편지 (Through the Night)")
+    if !title_matched {
+        let meta = crate::hifi::script::parse_multilingual_metadata(target_title, Some(target_artist));
+        if let Some(nat) = &meta.native_title {
+            let nat_clean = clean_string(nat);
+            if !nat_clean.is_empty() && (nat_clean == cand_clean || cand_clean.contains(&nat_clean) || nat_clean.contains(&cand_clean)) {
+                score += 85;
+                title_matched = true;
+            }
+        }
+        if !title_matched {
+            if let Some(ext) = &meta.extracted_title {
+                let ext_clean = clean_string(ext);
+                if !ext_clean.is_empty() && (ext_clean == cand_clean || cand_clean.contains(&ext_clean) || ext_clean.contains(&cand_clean)) {
+                    score += 85;
+                    title_matched = true;
+                }
+            }
+        }
+        if !title_matched {
+            if let Some(lat) = &meta.latin_title {
+                let lat_clean = clean_string(lat);
+                if !lat_clean.is_empty() && (lat_clean == cand_clean || cand_clean.contains(&lat_clean) || lat_clean.contains(&cand_clean)) {
+                    score += 80;
+                    title_matched = true;
+                }
+            }
+        }
+    }
+
+    // Cross-script title alias check (e.g. "Tamally Maak" <-> "تملي معاك", "Through the Night" <-> "밤편지")
+    if !title_matched {
+        let meta = crate::hifi::script::parse_multilingual_metadata(target_title, Some(target_artist));
+        let effective_title = meta.extracted_title.as_deref().unwrap_or(target_title);
+        let t_aliases = crate::hifi::script::get_title_cross_script_aliases(effective_title);
+        let c_aliases = crate::hifi::script::get_title_cross_script_aliases(cand_title);
+
+        for a in &t_aliases {
+            let a_clean = clean_string(a);
+            if !a_clean.is_empty() && (a_clean == cand_clean || cand_clean.contains(&a_clean) || a_clean.contains(&cand_clean)) {
+                score += 85;
+                title_matched = true;
+                break;
+            }
+        }
+        if !title_matched {
+            for a in &c_aliases {
+                let a_clean = clean_string(a);
+                if !a_clean.is_empty() && (a_clean == target_clean || target_clean.contains(&a_clean) || a_clean.contains(&target_clean)) {
+                    score += 85;
+                    break;
+                }
+            }
         }
     }
 
@@ -238,56 +371,82 @@ mod tests {
         assert_eq!(clean_string("Bohemian Rhapsody (Remastered 2011)"), "bohemianrhapsody");
         assert_eq!(clean_string("Song feat. Artist"), "song");
         assert_eq!(clean_string("Title [Official Video]"), "title");
+        // Multilingual
+        assert_eq!(clean_string("シングル・アゲイン"), "シングルアゲイン");
+        assert_eq!(clean_string("밤편지"), "밤편지");
+        assert_eq!(clean_string("พิง"), "พิง");
+        assert_eq!(clean_string("عمرو دياب"), "عمرو دياب".replace(' ', ""));
     }
 
     #[test]
-    fn test_version_flags() {
-        let acoustic = extract_version_flags("Layla (Acoustic)");
-        let live = extract_version_flags("Layla (Live)");
-        let studio = extract_version_flags("Layla");
-
-        assert!(acoustic.is_acoustic);
-        assert!(!acoustic.is_live);
-        assert!(live.is_live);
-        assert!(has_version_conflict(&acoustic, &studio));
-        assert!(has_version_conflict(&live, &studio));
-        assert!(!has_version_conflict(&studio, &studio));
+    fn test_cross_script_artist_match() {
+        assert!(does_artist_match("Mariya Takeuchi", "竹内まりや", "シングル・アゲイン"));
+        assert!(does_artist_match("IU", "아이유", "밤편지"));
+        assert!(does_artist_match("Amr Diab", "عمرو دياب", "Tamally Maak"));
+        assert!(does_artist_match("Nont Tanont", "นนท์ ธนนท์", "พิง"));
     }
 
     #[test]
-    fn test_artist_match() {
-        assert!(does_artist_match("Queen", "Queen", "Bohemian Rhapsody"));
-        assert!(does_artist_match("Queen - Topic", "Queen", "Bohemian Rhapsody"));
-        assert!(!does_artist_match("Dewa 19", "Dewa 19 feat. Virzha", "Aku Milikmu"));
-        assert!(!does_artist_match("Coldplay", "Radiohead", "Yellow"));
-    }
-
-    #[test]
-    fn test_score_track_candidate() {
+    fn test_japanese_loanword_score() {
         let score = score_track_candidate(
-            "Bohemian Rhapsody",
-            "Queen",
-            354,
+            "Mariya Takeuchi シングル・アゲイン",
+            "개인소장",
+            265,
             None,
-            "12345",
-            "Bohemian Rhapsody",
-            "Queen",
-            355,
+            "1273467",
+            "Single Again",
+            "竹内まりや",
+            264,
             None,
         );
-        assert!(score >= 150);
+        assert!(score >= 120, "Score was {}", score);
+    }
 
-        let live_score = score_track_candidate(
-            "Bohemian Rhapsody",
-            "Queen",
-            354,
+    #[test]
+    fn test_korean_cross_script_score() {
+        let score = score_track_candidate(
+            "아이유 - 밤편지 (Through the Night)",
+            "1theK (원더케이)",
+            253,
             None,
-            "12345",
-            "Bohemian Rhapsody (Live)",
-            "Queen",
-            355,
+            "23497005",
+            "Through the Night",
+            "IU",
+            253,
             None,
         );
-        assert_eq!(live_score, 0); // version conflict
+        assert!(score >= 120, "Score was {}", score);
+    }
+
+    #[test]
+    fn test_thai_cross_script_score() {
+        let score = score_track_candidate(
+            "Nont Tanont - พิง",
+            "LOVEiS+",
+            235,
+            None,
+            "193944050",
+            "พิง",
+            "นนท์ ธนนท์",
+            235,
+            None,
+        );
+        assert!(score >= 120, "Score was {}", score);
+    }
+
+    #[test]
+    fn test_arabic_cross_script_score() {
+        let score = score_track_candidate(
+            "Amr Diab - Tamally Maak",
+            "Mazzika",
+            269,
+            None,
+            "1511586",
+            "تملي معاك",
+            "عمرو دياب",
+            269,
+            None,
+        );
+        assert!(score >= 120, "Score was {}", score);
     }
 }

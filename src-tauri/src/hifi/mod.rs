@@ -2,6 +2,7 @@ pub mod cache;
 pub mod instances;
 pub mod kuwo;
 pub mod matcher;
+pub mod script;
 
 use serde::{Deserialize, Serialize};
 use crate::server::EMBED_PORT;
@@ -81,12 +82,8 @@ pub fn is_eligible_track(title: &str, channel: Option<&str>, item_type: Option<&
         return false;
     }
 
-    if c.ends_with("- topic") || c == "topic" || it == "song" {
-        return true;
-    }
-
-    // Default: allow songs, disallow arbitrary uploads
-    false
+    // Allow songs and music uploads; candidate matcher verifies duration and artist/title match
+    true
 }
 
 #[tauri::command]
@@ -176,20 +173,19 @@ pub async fn resolve_hifi_track(
         }));
     }
 
-    let query = format!(
-        "{} {}",
-        channel_str.replace("- Topic", "").replace("- topic", "").trim(),
-        clean_title
-    )
-    .trim()
-    .to_string();
+    let meta = script::parse_multilingual_metadata(clean_title, Some(channel_str));
+    let queries = if !meta.search_queries.is_empty() {
+        meta.search_queries
+    } else {
+        vec![format!("{} {}", channel_str, clean_title)]
+    };
 
-    // 2. Primary Provider: flac.music.hi.cn (Kuwo lossless FLAC)
-    eprintln!("[HIFI RESOLVE] Querying primary provider (flac.music.hi.cn) for: {}", query);
-    match kuwo::search_kuwo(&query, 8).await {
-        Ok(candidates) => {
-            let mut best_kuwo: Option<(kuwo::KuwoCandidateTrack, kuwo::KuwoMinfo, u32)> = None;
+    // 2. Primary Provider: flac.music.hi.cn (Kuwo lossless FLAC multi-query)
+    let mut best_kuwo: Option<(kuwo::KuwoCandidateTrack, kuwo::KuwoMinfo, u32)> = None;
 
+    for (q_idx, query) in queries.iter().take(3).enumerate() {
+        eprintln!("[HIFI RESOLVE] [Pass {}] Querying Kuwo for: {}", q_idx + 1, query);
+        if let Ok(candidates) = kuwo::search_kuwo(query, 8).await {
             for cand in candidates {
                 let flac_info = match cand.get_flac_info() {
                     Some(f) => f,
@@ -225,8 +221,17 @@ pub async fn resolve_hifi_track(
                     }
                 }
             }
+        }
 
-            if let Some((cand, flac_info, score)) = best_kuwo {
+        // Early exit on definitive high-confidence match
+        if let Some((_, _, s)) = &best_kuwo {
+            if *s >= 120 {
+                break;
+            }
+        }
+    }
+
+    if let Some((cand, flac_info, score)) = best_kuwo {
                 let song_id = cand.get_id();
                 let bitrate = flac_info.bitrate_str();
                 let time_val = cand.time.clone().unwrap_or(serde_json::Value::Null);
@@ -276,19 +281,15 @@ pub async fn resolve_hifi_track(
                         eprintln!("[HIFI RESOLVE] Kuwo getUrl error: {}. Falling back to Monochrome.", e);
                     }
                 }
-            } else {
-                eprintln!("[HIFI RESOLVE] Kuwo search returned no matching candidate >= 85. Falling back to Monochrome.");
-            }
-        }
-        Err(e) => {
-            eprintln!("[HIFI RESOLVE] Kuwo primary search failed: {}. Falling back to Monochrome.", e);
-        }
+    } else {
+        eprintln!("[HIFI RESOLVE] Kuwo search returned no matching candidate >= 85. Falling back to Monochrome.");
     }
 
     // 3. Fallback Provider: Monochrome Instance Pool
-    eprintln!("[HIFI RESOLVE] Searching fallback Monochrome instance pool for: {}", query);
+    let fallback_query = queries.first().map(|s| s.as_str()).unwrap_or(clean_title);
+    eprintln!("[HIFI RESOLVE] Searching fallback Monochrome instance pool for: {}", fallback_query);
 
-    let candidates = match instances::search_tracks_pool(&query, 12).await {
+    let candidates = match instances::search_tracks_pool(fallback_query, 12).await {
         Ok(tracks) => tracks,
         Err(e) => {
             eprintln!("[HIFI RESOLVE] Monochrome upstream search failed: {}", e);

@@ -1,16 +1,17 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v7';
+const STORAGE_KEY = 'nadanada-hifi-cache-v8';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
   'nadanada-hifi-cache-v3',
   'nadanada-hifi-cache-v4',
   'nadanada-hifi-cache-v5',
-  'nadanada-hifi-cache-v6'
+  'nadanada-hifi-cache-v6',
+  'nadanada-hifi-cache-v7'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 7;
+export const HIFI_MATCHER_VERSION = 8;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
@@ -133,10 +134,8 @@ export function isHifiEligibleTrack(song) {
   if (VIDEO_TITLE_KEYWORDS.some(k => title.includes(k))) return false;
   if (/\b(mv|m\/v)\b/i.test(title)) return false;
 
-  if (channel.endsWith('- topic') || channel === 'topic') return true;
-  if (itemType === 'song') return true;
-
-  return false;
+  // Allow songs and music uploads; Rust matcher verifies duration and artist/title match
+  return true;
 }
 
 export const sessionUnmatchedSet = new Set();
