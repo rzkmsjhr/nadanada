@@ -182,6 +182,8 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "168589766881927168", // Dewa 19 feat. Virzha - Aku Milikmu
         "168395069831774208", // Dewa 19 - Tak Kan Ada Cinta Yang Lain (2021 Ello)
         "168395062953115648", // Dewa 19 - Mahameru (2021 Virzha)
+        "162001181",          // Kuwo fake tag: Panem. The Land sound-alike cover of Portugal. The Man - Feel It Still
+        "kuwo_162001181",
     ];
 
     if mismatches.contains(&id) {
@@ -267,9 +269,22 @@ pub fn score_track_candidate(
         return 0;
     }
 
-    // Check tribute / karaoke
-    let is_cand_tribute = cand_album_lower.contains("tribute") || cand_title_lower.contains("tribute");
-    let is_target_tribute = target_album_lower.contains("tribute") || target_title_lower.contains("tribute");
+    // Check tribute / karaoke / sound-alike / cover
+    let is_cand_tribute = cand_album_lower.contains("tribute")
+        || cand_album_lower.contains("karaoke")
+        || cand_title_lower.contains("tribute")
+        || cand_title_lower.contains("karaoke")
+        || cand_title_lower.contains("originally performed by")
+        || cand_title_lower.contains("made popular by")
+        || cand_title_lower.contains("in the style of")
+        || cand_title_lower.contains("(cover)")
+        || cand_title_lower.contains("[cover]");
+    let is_target_tribute = target_album_lower.contains("tribute")
+        || target_album_lower.contains("karaoke")
+        || target_title_lower.contains("tribute")
+        || target_title_lower.contains("karaoke")
+        || target_title_lower.contains("originally performed by")
+        || target_title_lower.contains("made popular by");
     if is_cand_tribute && !is_target_tribute {
         return 0;
     }

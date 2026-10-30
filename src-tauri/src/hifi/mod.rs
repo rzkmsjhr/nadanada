@@ -477,4 +477,22 @@ mod tests {
             let _ = std::fs::remove_file(fake_track_path);
         });
     }
+
+    #[test]
+    fn test_feel_it_still_resolution() {
+        tauri::async_runtime::block_on(async {
+            let res = resolve_hifi_track(
+                None,
+                "Feel It Still".to_string(),
+                Some("Portugal. The Man".to_string()),
+                Some("2:45".to_string()),
+                None,
+                None,
+                Some("Woodstock".to_string()),
+            ).await.unwrap();
+            let track = res.expect("Should resolve track");
+            assert_ne!(track.hifi_id, "kuwo_162001181");
+            assert_ne!(track.hifi_id, "kuwo_300232622");
+        });
+    }
 }
