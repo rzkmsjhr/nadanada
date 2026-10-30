@@ -199,17 +199,19 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
     false
 }
 
-/// Scores a candidate track against target metadata using multilingual cross-script comparison + edition verification.
+/// Scores a candidate track against target metadata using multilingual cross-script comparison + edition verification + album comparison.
 pub fn score_track_candidate(
     target_title: &str,
     target_artist: &str,
     target_dur_secs: u64,
     target_isrc: Option<&str>,
+    target_album: Option<&str>,
     cand_id: &str,
     cand_title: &str,
     cand_artist: &str,
     cand_dur_secs: u64,
     cand_isrc: Option<&str>,
+    cand_album: Option<&str>,
 ) -> u32 {
     // 0. Check upstream mismatch blacklist
     if is_known_upstream_mismatch(cand_id, cand_title, cand_artist) {
@@ -228,6 +230,47 @@ pub fn score_track_candidate(
     let lower_cand_title = cand_title.to_lowercase();
     if (lower_cand_title.contains("feat.") || lower_cand_title.contains("feat ") || lower_cand_title.contains("ft.") || lower_cand_title.contains("ft "))
         && !lower_target.contains("feat") && !lower_target.contains("ft.") && !lower_target.contains("ft ") {
+        return 0;
+    }
+
+    // 1c. Album and title edition conflict checks (Re-recorded, live, tribute, etc.)
+    let cand_album_lower = cand_album.unwrap_or("").to_lowercase();
+    let target_album_lower = target_album.unwrap_or("").to_lowercase();
+    let cand_title_lower = cand_title.to_lowercase();
+    let target_title_lower = target_title.to_lowercase();
+
+    // Check re-recorded / rerecorded / re-record
+    let is_cand_rerecorded = cand_album_lower.contains("re-record")
+        || cand_album_lower.contains("rerecord")
+        || cand_title_lower.contains("re-record")
+        || cand_title_lower.contains("rerecord");
+    let is_target_rerecorded = target_album_lower.contains("re-record")
+        || target_album_lower.contains("rerecord")
+        || target_title_lower.contains("re-record")
+        || target_title_lower.contains("rerecord");
+    if is_cand_rerecorded && !is_target_rerecorded {
+        return 0;
+    }
+
+    // Check live / in concert
+    let is_cand_live = cand_album_lower.contains("live")
+        || cand_album_lower.contains("in concert")
+        || cand_title_lower.contains("live at")
+        || cand_title_lower.contains("(live)")
+        || cand_title_lower.contains("[live]")
+        || cand_title_lower.ends_with(" - live")
+        || cand_title_lower.contains(" live version");
+    let is_target_live = target_album_lower.contains("live")
+        || target_album_lower.contains("in concert")
+        || target_title_lower.contains("live");
+    if is_cand_live && !is_target_live {
+        return 0;
+    }
+
+    // Check tribute / karaoke
+    let is_cand_tribute = cand_album_lower.contains("tribute") || cand_title_lower.contains("tribute");
+    let is_target_tribute = target_album_lower.contains("tribute") || target_title_lower.contains("tribute");
+    if is_cand_tribute && !is_target_tribute {
         return 0;
     }
 
@@ -378,6 +421,19 @@ pub fn score_track_candidate(
         score = score.saturating_sub(20);
     }
 
+    // 6. Album comparison bonus
+    if let (Some(t_alb), Some(c_alb)) = (target_album, cand_album) {
+        let t_clean = clean_string(t_alb);
+        let c_clean = clean_string(c_alb);
+        if !t_clean.is_empty() && !c_clean.is_empty() {
+            if t_clean == c_clean {
+                score += 60; // Exact album match (e.g. "No Protection" == "No Protection")
+            } else if t_clean.contains(&c_clean) || c_clean.contains(&t_clean) {
+                score += 35; // Partial album match
+            }
+        }
+    }
+
     score
 }
 
@@ -412,10 +468,12 @@ mod tests {
             "개인소장",
             265,
             None,
+            None,
             "1273467",
             "Single Again",
             "竹内まりや",
             264,
+            None,
             None,
         );
         assert!(score >= 120, "Score was {}", score);
@@ -428,10 +486,12 @@ mod tests {
             "1theK (원더케이)",
             253,
             None,
+            None,
             "23497005",
             "Through the Night",
             "IU",
             253,
+            None,
             None,
         );
         assert!(score >= 120, "Score was {}", score);
@@ -444,10 +504,12 @@ mod tests {
             "LOVEiS+",
             235,
             None,
+            None,
             "193944050",
             "พิง",
             "นนท์ ธนนท์",
             235,
+            None,
             None,
         );
         assert!(score >= 120, "Score was {}", score);
@@ -460,10 +522,12 @@ mod tests {
             "Mazzika",
             269,
             None,
+            None,
             "1511586",
             "تملي معاك",
             "عمرو دياب",
             269,
+            None,
             None,
         );
         assert!(score >= 120, "Score was {}", score);
@@ -479,10 +543,12 @@ mod tests {
             "Andra And The Backbone",
             268,
             None,
+            None,
             "163245492",
             "Sempurna(feat. Andra & the Backbone)",
             "Neillusion&Andra & The Backbone",
             181,
+            None,
             None,
         );
         assert_eq!(score, 0, "Mismatched duration/remake must be rejected, got score {}", score);
@@ -493,12 +559,51 @@ mod tests {
             "Andra And The Backbone",
             268,
             None,
+            Some("Andra And The BackBone"),
             "172473323077242880",
             "Sempurna",
             "Andra & The Backbone",
             268,
             Some("IDAB30600441"),
+            Some("Andra and The BackBone"),
         );
         assert!(original_score >= 180, "Original track must score high, got {}", original_score);
+    }
+
+    #[test]
+    fn test_album_matching_and_rerecorded_disqualification() {
+        // Starship - "Nothing's Gonna Stop Us Now"
+        // Target album: "No Protection"
+        // 1. Re-recorded version candidate from compilation MUST be disqualified (score == 0)
+        let rerecorded_score = score_track_candidate(
+            "Nothing's Gonna Stop Us Now",
+            "Starship",
+            266,
+            None,
+            Some("No Protection"),
+            "45079884",
+            "Nothing's Gonna Stop Us Now",
+            "Starship",
+            264,
+            None,
+            Some("Greatest Hits of the '80s (Re-Recorded Versions)"),
+        );
+        assert_eq!(rerecorded_score, 0, "Re-recorded album track must be disqualified");
+
+        // 2. Official "No Protection" album track gets album match bonus (>= 220)
+        let official_score = score_track_candidate(
+            "Nothing's Gonna Stop Us Now",
+            "Starship",
+            266,
+            None,
+            Some("No Protection"),
+            "1930566",
+            "Nothing's Gonna Stop Us Now",
+            "Starship",
+            270,
+            None,
+            Some("No Protection"),
+        );
+        assert!(official_score >= 220, "Official album match must score >= 220, got {}", official_score);
     }
 }

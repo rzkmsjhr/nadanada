@@ -770,14 +770,15 @@ function App() {
     } else {
       setUserYoutubeForced(songId, false);
       try {
-        const resolved = await resolveHifiForTrack(song, { ignoreBlacklist: true, ignoreUserYoutubeForced: true });
+        const resolved = await resolveHifiForTrack(song, { ignoreBlacklist: true, ignoreUserYoutubeForced: true, forceRefresh: true });
         if (resolved && resolved.stream_url) {
+          const resolvedSource = resolved.source || 'kuwo';
           setPlaylist(prev => prev.map(s => {
             if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
               return {
                 ...s,
                 stream_url: resolved.stream_url,
-                source: 'monochrome',
+                source: resolvedSource,
                 hifi_id: resolved.hifi_id,
                 _hifiFailed: false,
                 _userForcedYoutube: false,
@@ -792,7 +793,7 @@ function App() {
             setRestoredSong(prev => prev ? {
               ...prev,
               stream_url: resolved.stream_url,
-              source: 'monochrome',
+              source: resolvedSource,
               hifi_id: resolved.hifi_id,
               _hifiFailed: false,
               _userForcedYoutube: false,

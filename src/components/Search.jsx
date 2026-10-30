@@ -250,19 +250,32 @@ export default function Search({ onAdd, onAddMultiple, playlist, onError, onPlay
       </form>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
-        {results.map((video) => (
-          <SongResultItem
-            key={video.id}
-            video={video}
-            playlist={playlist}
-            onAdd={onAdd}
-            handleAddAlbum={handleAddAlbum}
-            loadingAlbumId={loadingAlbumId}
-            onPlayPreview={onPlayPreview}
-            onStopPreview={onStopPreview}
-            isPreviewing={previewSongId === video.id}
-          />
-        ))}
+        {results
+          .filter(video => {
+            if (searchType === 'song') {
+              return !video.is_playlist && video.item_type !== 'album' && video.item_type !== 'video';
+            }
+            if (searchType === 'video') {
+              return !video.is_playlist && video.item_type === 'video';
+            }
+            if (searchType === 'album') {
+              return video.is_playlist || video.item_type === 'album';
+            }
+            return true;
+          })
+          .map((video) => (
+            <SongResultItem
+              key={video.id}
+              video={video}
+              playlist={playlist}
+              onAdd={onAdd}
+              handleAddAlbum={handleAddAlbum}
+              loadingAlbumId={loadingAlbumId}
+              onPlayPreview={onPlayPreview}
+              onStopPreview={onStopPreview}
+              isPreviewing={previewSongId === video.id}
+            />
+          ))}
       </div>
     </div>
   );

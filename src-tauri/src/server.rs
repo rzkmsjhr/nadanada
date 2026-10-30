@@ -39,7 +39,15 @@ impl<R: Read, W: Write> TeeReader<R, W> {
 
 impl<R: Read, W: Write> Read for TeeReader<R, W> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let n = self.reader.read(buf)?;
+        let n = match self.reader.read(buf) {
+            Ok(n) => n,
+            Err(e) => {
+                if let Some(id) = &self.track_id {
+                    eprintln!("[HIFI PROXY] Upstream read ERROR for {}: {}", id, e);
+                }
+                return Err(e);
+            }
+        };
         if n > 0 {
             if let Some(w) = self.writer.as_mut() {
                 if let Err(e) = w.write_all(&buf[..n]) {
@@ -79,6 +87,7 @@ impl<R: Read, W: Write> Read for TeeReader<R, W> {
 impl<R: Read, W: Write> Drop for TeeReader<R, W> {
     fn drop(&mut self) {
         if let Some(id) = self.track_id.take() {
+            eprintln!("[HIFI PROXY] Stream connection closed for {} (streamed: {:.2} MB)", id, self.total_written as f64 / 1_048_576.0);
             cache::release_download_lock(&id);
         }
     }
@@ -125,10 +134,15 @@ fn handle_hifi_stream(request: Request, track_id: String) {
         .find(|h| h.field.as_str().as_str().eq_ignore_ascii_case("range"))
         .map(|h| h.value.as_str().to_string());
 
+    eprintln!("[HIFI PROXY] Client request: track_id={}, range={:?}", track_id, range_header);
+
     // 1. Check disk cache first (100% offline playback with 0ms network latency)
     if let Some(cached_path) = cache::get_cached_track_path(&track_id) {
         if let Ok(metadata) = fs::metadata(&cached_path) {
             let file_len = metadata.len();
+            let is_mp3 = cached_path.extension().map(|e| e == "mp3").unwrap_or(false);
+            let content_type = if is_mp3 { "audio/mpeg" } else { "audio/flac" };
+
             if let Ok(mut file) = File::open(&cached_path) {
                 if let Some(range_str) = &range_header {
                     if let Some((start, end)) = parse_range(range_str, file_len) {
@@ -139,7 +153,7 @@ fn handle_hifi_stream(request: Request, track_id: String) {
                         let resp = Response::new(
                             StatusCode(206),
                             vec![
-                                Header::from_bytes(&b"Content-Type"[..], &b"audio/flac"[..]).unwrap(),
+                                Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
                                 Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap(),
                                 Header::from_bytes(
                                     &b"Content-Range"[..],
@@ -167,7 +181,7 @@ fn handle_hifi_stream(request: Request, track_id: String) {
                 let resp = Response::new(
                     StatusCode(200),
                     vec![
-                        Header::from_bytes(&b"Content-Type"[..], &b"audio/flac"[..]).unwrap(),
+                        Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
                         Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap(),
                         Header::from_bytes(
                             &b"Content-Length"[..],
@@ -187,10 +201,18 @@ fn handle_hifi_stream(request: Request, track_id: String) {
         }
     }
 
+    eprintln!("[HIFI PROXY] Cache MISS for {}. Requesting from upstream source...", track_id);
     // 2. Not cached: stream from upstream (Kuwo CDN or Monochrome pool) and tee to disk cache
     let upstream_result = if track_id.starts_with("kuwo_") {
         if let Some(direct_url) = cache::get_direct_url(&track_id) {
-            kuwo::get_kuwo_stream(&direct_url, range_header.as_deref())
+            let res = kuwo::get_kuwo_stream(&direct_url, range_header.as_deref());
+            if let Err(ref e) = res {
+                if e.contains("410") || e.contains("403") {
+                    eprintln!("[HIFI PROXY] Kuwo direct URL expired for {} ({}). Evicting from cache.", track_id, e);
+                    cache::clear_direct_url(&track_id);
+                }
+            }
+            res
         } else {
             Err(format!("Kuwo direct stream URL not found in cache for {}", track_id))
         }
@@ -202,9 +224,18 @@ fn handle_hifi_stream(request: Request, track_id: String) {
         Ok((upstream_resp, content_len, content_range)) => {
             let is_partial = content_range.is_some() || range_header.is_some();
             let status = if is_partial { StatusCode(206) } else { StatusCode(200) };
+            eprintln!("[HIFI PROXY] Upstream OK for {}: status={}, len={:?}, range={:?}", track_id, status.0, content_len, content_range);
+
+            let is_mp3 = if let Some(direct_url) = cache::get_direct_url(&track_id) {
+                direct_url.contains(".mp3")
+            } else {
+                false
+            };
+            let content_type = if is_mp3 { "audio/mpeg" } else { "audio/flac" };
+            let file_ext = if is_mp3 { "mp3" } else { "flac" };
 
             let mut headers = vec![
-                Header::from_bytes(&b"Content-Type"[..], &b"audio/flac"[..]).unwrap(),
+                Header::from_bytes(&b"Content-Type"[..], content_type.as_bytes()).unwrap(),
                 Header::from_bytes(&b"Accept-Ranges"[..], &b"bytes"[..]).unwrap(),
                 Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap(),
                 Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"*"[..]).unwrap(),
@@ -229,8 +260,8 @@ fn handle_hifi_stream(request: Request, track_id: String) {
 
             if is_from_beginning && cache::try_acquire_download_lock(&track_id) {
                 let cache_dir = cache::get_cache_dir();
-                let temp_path = cache_dir.join(format!("{}.flac.part", track_id));
-                let final_path = cache_dir.join(format!("{}.flac", track_id));
+                let temp_path = cache_dir.join(format!("{}.{}.part", track_id, file_ext));
+                let final_path = cache_dir.join(format!("{}.{}", track_id, file_ext));
 
                 if let Ok(file_writer) = File::create(&temp_path) {
                     let tee = TeeReader::new(

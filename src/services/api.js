@@ -17,7 +17,7 @@ export const api = {
   // Monochrome / Hi-Fi (FLAC)
   searchMonochrome: (query, searchType = 'song') => invoke('search_monochrome', { query, searchType }),
   getMonochromeAlbum: (releaseId) => invoke('get_monochrome_album', { releaseId }),
-  resolveHifiTrack: (songId, title, channel = null, duration = null, itemType = null, isrc = null) =>
+  resolveHifiTrack: (songId, title, channel = null, duration = null, itemType = null, isrc = null, album = null) =>
     invoke('resolve_hifi_track', {
       songId: songId ? String(songId) : null,
       title: title || '',
@@ -25,6 +25,7 @@ export const api = {
       duration: duration ? String(duration) : null,
       itemType: itemType || null,
       isrc: isrc || null,
+      album: album || null,
     }),
   getHifiStreamUrl: (trackId) => invoke('get_hifi_stream_url', { trackId: String(trackId) }),
   clearHifiDiskCache: () => invoke('clear_hifi_disk_cache'),

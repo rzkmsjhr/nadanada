@@ -330,7 +330,7 @@ const inFlightPromises = new Map();
  * candidate fuzzy scoring, edition verification, and local disk proxying.
  */
 export async function resolveHifiForTrack(song, options = {}) {
-  const { ignoreBlacklist = false, ignoreUserYoutubeForced = false } = options;
+  const { ignoreBlacklist = false, ignoreUserYoutubeForced = false, forceRefresh = false } = options;
   if (!song || song.is_local || song.file_path) return null;
   if (!isHifiEligibleTrack(song)) return null;
   if (!ignoreUserYoutubeForced && ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube)) return null;
@@ -359,9 +359,11 @@ export async function resolveHifiForTrack(song, options = {}) {
   }
 
   // Fast synchronous memory cache check
-  const cached = getCachedHifi(song);
-  if (cached && cached.stream_url) {
-    return cached;
+  if (!forceRefresh) {
+    const cached = getCachedHifi(song);
+    if (cached && cached.stream_url) {
+      return cached;
+    }
   }
 
   const dedupeKey = idKey || textKey || song.title;
@@ -371,14 +373,28 @@ export async function resolveHifiForTrack(song, options = {}) {
 
   const promise = (async () => {
     try {
-      console.log(`[HIFI] Resolving Hi-Fi via Rust engine for "${song.title}" (${song.channel})...`);
+      let effectiveAlbum = song.album || song.album_name || null;
+      if (!effectiveAlbum && song.id && typeof window !== 'undefined') {
+        try {
+          const rawCache = localStorage.getItem('nadanada_album_cache');
+          if (rawCache) {
+            const parsed = JSON.parse(rawCache);
+            if (parsed[song.id]?.album) {
+              effectiveAlbum = parsed[song.id].album;
+            }
+          }
+        } catch (_) {}
+      }
+
+      console.log(`[HIFI] Resolving Hi-Fi via Rust engine for "${song.title}" (${song.channel}) [album: ${effectiveAlbum || 'unknown'}]...`);
       const res = await api.resolveHifiTrack(
         song.id,
         song.title,
         song.channel || song.artist,
         song.duration || (song.duration_ms ? String(Math.round(song.duration_ms / 1000)) : null),
         song.item_type,
-        song.isrc
+        song.isrc,
+        effectiveAlbum
       );
 
       if (res && res.stream_url && res.hifi_id) {

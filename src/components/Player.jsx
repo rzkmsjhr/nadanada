@@ -771,11 +771,11 @@ const Player = React.forwardRef(function Player({
                       if (onError) onError("Audio stream interrupted.");
                     }
                   }}
-                  onWaiting={() => {
-                    if (core.activeDeck === 0) core.handleStallStart();
+                  onWaiting={(e) => {
+                    if (core.activeDeck === 0 && !e?.target?.paused) core.handleStallStart();
                   }}
-                  onStalled={() => {
-                    if (core.activeDeck === 0) core.handleStallStart();
+                  onStalled={(e) => {
+                    if (core.activeDeck === 0 && !e?.target?.paused) core.handleStallStart();
                   }}
                   onCanPlay={(e) => {
                     if (core.activeDeck === 0) {
@@ -918,11 +918,11 @@ const Player = React.forwardRef(function Player({
                       if (onError) onError("Audio stream interrupted.");
                     }
                   }}
-                  onWaiting={() => {
-                    if (core.activeDeck === 1) core.handleStallStart();
+                  onWaiting={(e) => {
+                    if (core.activeDeck === 1 && !e?.target?.paused) core.handleStallStart();
                   }}
-                  onStalled={() => {
-                    if (core.activeDeck === 1) core.handleStallStart();
+                  onStalled={(e) => {
+                    if (core.activeDeck === 1 && !e?.target?.paused) core.handleStallStart();
                   }}
                   onCanPlay={(e) => {
                     if (core.activeDeck === 1) {

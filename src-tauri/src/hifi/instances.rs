@@ -1,7 +1,13 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex;
+use lazy_static::lazy_static;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT, RANGE};
 use serde::Deserialize;
+
+lazy_static! {
+    static ref UPSTREAM_STREAM_MUTEX: Mutex<()> = Mutex::new(());
+}
 
 const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
@@ -87,6 +93,16 @@ pub fn pace_request_blocking() {
 pub struct RawTracksResponse {
     #[serde(default)]
     pub tracks: Vec<RawCandidateTrack>,
+    #[serde(default)]
+    pub releases: Vec<RawReleaseItem>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct RawReleaseItem {
+    pub id: Option<String>,
+    #[serde(default, rename = "releaseId")]
+    pub release_id: Option<String>,
+    pub title: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -111,6 +127,10 @@ pub struct RawCandidateTrack {
     pub artwork: Option<String>,
     #[serde(default)]
     pub cover: Option<String>,
+    #[serde(default, rename = "releaseId")]
+    pub release_id: Option<String>,
+    #[serde(default)]
+    pub album_title: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -153,6 +173,10 @@ impl RawCandidateTrack {
             None => 0,
         }
     }
+
+    pub fn get_album_name(&self) -> Option<&str> {
+        self.album_title.as_deref()
+    }
 }
 
 pub fn create_async_client() -> Result<reqwest::Client, String> {
@@ -173,7 +197,7 @@ pub fn create_blocking_client() -> Result<reqwest::blocking::Client, String> {
 
     reqwest::blocking::Client::builder()
         .default_headers(headers)
-        .timeout(std::time::Duration::from_secs(6))
+        .connect_timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to create reqwest blocking client: {}", e))
 }
@@ -196,7 +220,7 @@ pub async fn search_tracks_pool(query: &str, limit: usize) -> Result<Vec<RawCand
             }
         }
 
-        let url = format!("{}/search/tracks?q={}&limit={}", instance.base_url, encoded_query, limit);
+        let url = format!("{}/search?q={}&limit={}", instance.base_url, encoded_query, limit);
         match client.get(&url).send().await {
             Ok(resp) => {
                 let status = resp.status();
@@ -204,7 +228,25 @@ pub async fn search_tracks_pool(query: &str, limit: usize) -> Result<Vec<RawCand
                     match resp.json::<RawTracksResponse>().await {
                         Ok(parsed) => {
                             instance.record_success();
-                            return Ok(parsed.tracks);
+                            let release_map: std::collections::HashMap<String, String> = parsed
+                                .releases
+                                .into_iter()
+                                .filter_map(|r| {
+                                    let title = r.title?;
+                                    let id = r.release_id.or(r.id)?;
+                                    Some((id, title))
+                                })
+                                .collect();
+
+                            let mut tracks = parsed.tracks;
+                            for t in &mut tracks {
+                                if let Some(ref rid) = t.release_id {
+                                    if let Some(alb) = release_map.get(rid) {
+                                        t.album_title = Some(alb.clone());
+                                    }
+                                }
+                            }
+                            return Ok(tracks);
                         }
                         Err(e) => {
                             instance.record_failure(false);
@@ -234,6 +276,7 @@ pub fn get_stream_upstream(
     track_id: &str,
     range_header: Option<&str>,
 ) -> Result<(reqwest::blocking::Response, Option<u64>, Option<String>), String> {
+    let _guard = UPSTREAM_STREAM_MUTEX.lock().map_err(|e| e.to_string())?;
     pace_request_blocking();
     let client = create_blocking_client()?;
 

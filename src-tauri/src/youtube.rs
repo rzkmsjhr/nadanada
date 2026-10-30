@@ -87,6 +87,18 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         || channel_lower.contains("vevo")
         || default_type == "video";
 
+    let item_type = if default_type == "song" {
+        "song".to_string()
+    } else if default_type == "video" {
+        "video".to_string()
+    } else if default_type == "album" {
+        "album".to_string()
+    } else if is_video {
+        "video".to_string()
+    } else {
+        default_type.to_string()
+    };
+
     Some(Video {
         id: video_id,
         title,
@@ -96,7 +108,7 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         is_playlist: false,
         track_count: None,
         first_video_id: None,
-        item_type: Some(if is_video { "video".to_string() } else { default_type.to_string() }),
+        item_type: Some(item_type),
         stream_url: None,
         source: None,
     })
@@ -302,11 +314,22 @@ async fn scrape_regular_youtube_search(
                 if let Some(contents) = section.pointer("/itemSectionRenderer/contents").and_then(|c| c.as_array()) {
                     for item in contents {
                         if let Some(video) = item.get("videoRenderer") {
+                            // If user is searching albums, skip single videos
+                            if search_type == Some("album") {
+                                continue;
+                            }
+
                             let id = video.get("videoId").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let title = video.pointer("/title/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let thumbnail = video.pointer("/thumbnail/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let duration = video.pointer("/lengthText/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let channel = video.pointer("/ownerText/runs/0/text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                            let item_type = if search_type == Some("song") {
+                                "song".to_string()
+                            } else {
+                                "video".to_string()
+                            };
 
                             if !id.is_empty() && !title.is_empty() && !videos.iter().any(|existing: &Video| existing.id == id) {
                                 videos.push(Video {
@@ -318,12 +341,17 @@ async fn scrape_regular_youtube_search(
                                     is_playlist: false,
                                     track_count: None,
                                     first_video_id: None,
-                                    item_type: Some("video".to_string()),
+                                    item_type: Some(item_type),
                                     stream_url: None,
                                     source: None,
                                 });
                             }
                         } else if let Some(playlist) = item.get("playlistRenderer") {
+                            // If user is searching songs or videos, skip playlists/albums
+                            if search_type == Some("song") || search_type == Some("video") {
+                                continue;
+                            }
+
                             let id = playlist.get("playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let title = playlist.pointer("/title/simpleText").and_then(|v| v.as_str()).unwrap_or("").to_string();
                             let thumbnail = playlist.pointer("/thumbnails/0/thumbnails/0/url").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -347,6 +375,11 @@ async fn scrape_regular_youtube_search(
                                 });
                             }
                         } else if let Some(lockup) = item.get("lockupViewModel") {
+                            // If user is searching songs or videos, skip playlists/albums
+                            if search_type == Some("song") || search_type == Some("video") {
+                                continue;
+                            }
+
                             let lockup_str = lockup.to_string();
 
                             let mut id = lockup.pointer("/metadata/lockupMetadataViewModel/metadata/runs/0/navigationEndpoint/watchEndpoint/playlistId").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -809,7 +842,12 @@ fn score_search_candidate(v: &Video, query_words: &[&str], raw_query: &str) -> i
 
     // Title mismatch penalty:
     if !title_matched {
-        score += 500;
+        if !artist_matched {
+            score += 500;
+        } else {
+            // Channel/artist matched the query (e.g. searching an artist like "The Beatles")
+            score += 50;
+        }
     }
 
     // Artist mismatch penalty:
@@ -863,100 +901,86 @@ pub async fn search_youtube(
     search_type: Option<String>,
 ) -> Result<Vec<Video>, String> {
     let st = search_type.as_deref();
+    let clean_query = clean_title_for_matching(&query);
+    let effective_query = if (query.contains('(') || query.contains('[')) && !clean_query.is_empty() {
+        clean_query.clone()
+    } else {
+        query.clone()
+    };
 
-    // Clean query of embedded furigana/parentheses for matching
-    // e.g. "縁(えにし)の糸 Mariya Takeuchi" -> "縁の糸 mariya takeuchi"
-    // If searching specifically for videos, query regular YouTube video search directly
+    // 1. Dedicated Videos Search: return VIDEOS ONLY
     if st == Some("video") {
-        match scrape_regular_youtube_search(&query, Some("video")).await {
-            Ok(results) if !results.is_empty() => {
-                return Ok(results);
+        match scrape_regular_youtube_search(&effective_query, Some("video")).await {
+            Ok(mut results) if !results.is_empty() => {
+                results.retain(|v| !v.is_playlist && v.item_type.as_deref() == Some("video"));
+                if !results.is_empty() {
+                    return Ok(results);
+                }
             }
             Ok(_) => {
-                println!("search_youtube: 0 regular YouTube video results for {:?}, falling back to YTM", query);
+                println!("search_youtube: 0 regular YouTube video results for {:?}, falling back to YTM", effective_query);
             }
             Err(e) => {
                 println!("search_youtube: regular YouTube video search error ({}), falling back to YTM", e);
             }
         }
         // Fallback to YTM video search if regular YouTube scraping failed
-        return search_youtube_music(&query, Some("video")).await;
+        if let Ok(mut results) = search_youtube_music(&effective_query, Some("video")).await {
+            results.retain(|v| !v.is_playlist && v.item_type.as_deref() == Some("video"));
+            return Ok(results);
+        }
+        return Ok(Vec::new());
     }
 
-    let clean_query = clean_title_for_matching(&query);
+    // 2. Dedicated Album Search: return ALBUMS ONLY
+    if st == Some("album") {
+        if let Ok(mut results) = search_youtube_music(&effective_query, Some("album")).await {
+            results.retain(|v| v.is_playlist || v.item_type.as_deref() == Some("album"));
+            if !results.is_empty() {
+                return Ok(results);
+            }
+        }
+        // Fallback to regular YouTube search for albums/playlists
+        if let Ok(mut results) = scrape_regular_youtube_search(&effective_query, Some("album")).await {
+            results.retain(|v| v.is_playlist || v.item_type.as_deref() == Some("album"));
+            return Ok(results);
+        }
+        return Ok(Vec::new());
+    }
 
-    // 1. Primary: Search YouTube Music ("song", "album", or "video" typed)
-    match search_youtube_music(&query, st).await {
+    // 3. Dedicated Song Search (st == Some("song") or None): return SONGS ONLY
+    match search_youtube_music(&effective_query, Some("song")).await {
         Ok(mut results) if !results.is_empty() => {
-            if st.is_none() || st == Some("song") {
+            // Strictly retain songs only, never mix in videos or albums
+            results.retain(|v| !v.is_playlist && v.item_type.as_deref() == Some("song"));
+
+            if !results.is_empty() {
                 let query_words: Vec<&str> = clean_query
                     .split_whitespace()
                     .filter(|w| !w.is_empty())
                     .collect();
 
                 if query_words.len() >= 2 {
-                    // Check if any song strongly matches BOTH title and channel/artist.
-                    // A strong match requires:
-                    // 1) Candidate is a song and NOT karaoke / derivative
-                    // 2) Duration is <= 10 minutes (600s)
-                    // 3) Clean title matches at least one query word
-                    // 4) Artist is matched either directly or via cross-script matching
-                    let has_strong_match = results.iter().any(|v| {
-                        if v.item_type.as_deref() != Some("song") {
-                            return false;
-                        }
-                        if is_karaoke_or_derivative(&v.title, &v.channel, &query) {
-                            return false;
-                        }
-                        if parse_duration_secs(&v.duration) > 600 {
-                            return false;
-                        }
-                        let clean_title = clean_title_for_matching(&v.title);
-
-                        let has_query_significant = query_words.iter().any(|&w| !is_title_stopword(w) && w.chars().count() >= 3);
-                        let title_matched = if has_query_significant {
-                            query_words.iter().any(|&w| !is_title_stopword(w) && w.chars().count() >= 3 && title_matches_term(&clean_title, w))
-                        } else {
-                            query_words.iter().any(|&w| title_matches_term(&clean_title, w))
-                        };
-                        if !title_matched {
-                            return false;
-                        }
-
-                        let channel_matched = artist_matches_query(&v.channel, &v.title, &query);
-
-                        title_matched && channel_matched
-                    });
-
-                    // ONLY fall back to video search if NO strong song match exists
-                    // (e.g. Mariya Takeuchi's Single Again / Oh No Oh Yes which are only on video)
-                    if !has_strong_match {
-                        if let Ok(video_results) = search_youtube_music(&query, Some("video")).await {
-                            for vid in video_results {
-                                if !results.iter().any(|r| r.id == vid.id) {
-                                    results.push(vid);
-                                }
-                            }
-                        }
-                    }
-
-                    // Sort candidates using score_search_candidate:
-                    // Correct tracks (song or video) by the target artist win over covers and wrong songs.
                     results.sort_by_key(|v| score_search_candidate(v, &query_words, &query));
                 }
+                return Ok(results);
             }
-            return Ok(results);
         }
         Ok(_) => {
-            println!("search_youtube: 0 YTM results for {:?}, falling back to video search", query);
+            println!("search_youtube: 0 YTM song results for {:?}, falling back to regular search", effective_query);
         }
         Err(e) => {
-            println!("search_youtube: YTM search error ({}), falling back to video search", e);
+            println!("search_youtube: YTM song search error ({}), falling back to regular search", e);
         }
     }
 
-    // 2. Fallback: Search regular YouTube (video as last resort)
-    scrape_regular_youtube_search(&query, st).await
+    // Fallback: Search regular YouTube for songs (e.g. topic audio tracks)
+    if let Ok(mut results) = scrape_regular_youtube_search(&effective_query, Some("song")).await {
+        results.retain(|v| !v.is_playlist && v.item_type.as_deref() == Some("song"));
+        return Ok(results);
+    }
+
+    Ok(Vec::new())
 }
 
 /// Helper function to space out tracks by the same artist (at least 7 tracks apart)
@@ -2293,11 +2317,32 @@ mod tests {
                 &results[0]
             }
 
-            // 1. OH NO,OH YES! by Mariya Takeuchi (must reject 2Pac mashup and Tokimeki cover)
+            // Helper matching JS Spotify import behavior: queries songs first, and if
+            // no full match exists for rare tracks, queries video results.
+            async fn search_with_spotify_import_fallback(query: &str, expected_title: &str, expected_artist: &str) -> Vec<Video> {
+                let mut results = search_youtube(query.to_string(), Some("song".to_string())).await.unwrap_or_default();
+                let has_full_match = results.iter().any(|v| {
+                    let clean = clean_title_for_matching(&v.title);
+                    let t_clean = clean_title_for_matching(expected_title);
+                    let title_ok = clean.contains(&t_clean) || t_clean.contains(&clean)
+                        || (clean.contains("enishi") && t_clean.contains("enishi"))
+                        || (clean.contains("single") && t_clean.contains("single"));
+                    let artist_ok = artist_matches_query(&v.channel, "", expected_artist);
+                    title_ok && artist_ok && !is_karaoke_or_derivative(&v.title, &v.channel, query)
+                });
+                if !has_full_match {
+                    if let Ok(video_results) = search_youtube(query.to_string(), Some("video".to_string())).await {
+                        let mut combined = video_results;
+                        combined.extend(results);
+                        results = combined;
+                    }
+                }
+                results
+            }
+
+            // 1. OH NO,OH YES! by Mariya Takeuchi (via Spotify import fallback to video)
             let query_ohno = "OH NO,OH YES! Mariya Takeuchi";
-            let results_ohno = search_youtube(query_ohno.to_string(), Some("song".to_string()))
-                .await
-                .expect("Search should succeed");
+            let results_ohno = search_with_spotify_import_fallback(query_ohno, "OH NO,OH YES!", "Mariya Takeuchi").await;
             assert!(!results_ohno.is_empty(), "OH NO,OH YES search should return results");
             println!("OH NO top 10 results:");
             let q_words = &["oh", "no", "oh", "yes", "mariya", "takeuchi"];
@@ -2319,9 +2364,7 @@ mod tests {
             );
 
             // 2. Enishi no Ito by Mariya Takeuchi (parenthetical furigana in query)
-            let results_enishi = search_youtube("縁(えにし)の糸 Mariya Takeuchi".to_string(), Some("song".to_string()))
-                .await
-                .expect("Search should succeed");
+            let results_enishi = search_with_spotify_import_fallback("縁(えにし)の糸 Mariya Takeuchi", "縁の糸 (Enishi no Ito)", "Mariya Takeuchi").await;
             assert!(!results_enishi.is_empty(), "Enishi search should return results");
             let top_enishi = &results_enishi[0];
             println!("Top Enishi result: title={:?}, channel={:?}", top_enishi.title, top_enishi.channel);
@@ -2331,11 +2374,9 @@ mod tests {
                 top_enishi.title
             );
 
-            // 3. Plastic Love by Mariya Takeuchi
+            // 3. Plastic Love by Mariya Takeuchi (via Spotify import fallback to video)
             let query_plastic = "Plastic Love Mariya Takeuchi";
-            let results_plastic = search_youtube(query_plastic.to_string(), Some("song".to_string()))
-                .await
-                .expect("Search should succeed");
+            let results_plastic = search_with_spotify_import_fallback(query_plastic, "Plastic Love", "Mariya Takeuchi").await;
             assert!(!results_plastic.is_empty(), "Plastic Love search should return results");
             let picked_plastic = simulate_spotify_import(&results_plastic, query_plastic, "Mariya Takeuchi");
             println!("Import picked Plastic Love: title={:?}, channel={:?}", picked_plastic.title, picked_plastic.channel);
@@ -2380,12 +2421,9 @@ mod tests {
                 picked_genki.title, picked_genki.channel
             );
 
-            // 6. シングル・アゲイン (Single Again) by Mariya Takeuchi
-            // THE BUG: was picking 僕の街へ (different song, same artist)
+            // 6. シングル・アゲイン (Single Again) by Mariya Takeuchi (via Spotify import fallback to video)
             let query_single = "シングル・アゲイン Mariya Takeuchi";
-            let results_single = search_youtube(query_single.to_string(), Some("song".to_string()))
-                .await
-                .expect("Search should succeed");
+            let results_single = search_with_spotify_import_fallback(query_single, "シングル・アゲイン (Single Again)", "Mariya Takeuchi").await;
             assert!(!results_single.is_empty(), "Single Again search should return results");
             println!("Single Again results top 5:");
             for (i, r) in results_single.iter().take(5).enumerate() {
@@ -2474,6 +2512,35 @@ mod tests {
             assert_eq!(results_breakbot[0].channel, "Breakbot");
             assert!(results_breakbot[0].title.contains("Baby I'm Yours"));
             assert_eq!(results_breakbot[0].item_type.as_deref(), Some("song"));
+
+            // 11. The Beatles - search songs should return "songs" only, 0 videos!
+            let results_beatles = search_youtube("the beatles".to_string(), Some("song".to_string()))
+                .await
+                .expect("Beatles song search should succeed");
+            assert!(!results_beatles.is_empty(), "Beatles search should return songs");
+            for (i, v) in results_beatles.iter().enumerate() {
+                assert_eq!(v.item_type.as_deref(), Some("song"), "Track [{}] '{:?}' must be song, not video", i, v.title);
+                assert!(!v.is_playlist, "Track [{}] must not be playlist", i);
+            }
+
+            // 12. The Beatles - search videos should return "video" only, 0 songs!
+            let results_beatles_vid = search_youtube("the beatles".to_string(), Some("video".to_string()))
+                .await
+                .expect("Beatles video search should succeed");
+            assert!(!results_beatles_vid.is_empty(), "Beatles video search should return videos");
+            for (i, v) in results_beatles_vid.iter().enumerate() {
+                assert_eq!(v.item_type.as_deref(), Some("video"), "Track [{}] '{:?}' must be video, not song", i, v.title);
+                assert!(!v.is_playlist, "Track [{}] must not be playlist", i);
+            }
+
+            // 13. The Beatles - search album should return albums/playlists only!
+            let results_beatles_alb = search_youtube("the beatles".to_string(), Some("album".to_string()))
+                .await
+                .expect("Beatles album search should succeed");
+            assert!(!results_beatles_alb.is_empty(), "Beatles album search should return albums");
+            for (i, v) in results_beatles_alb.iter().enumerate() {
+                assert!(v.is_playlist || v.item_type.as_deref() == Some("album"), "Track [{}] '{:?}' must be album/playlist", i, v.title);
+            }
         });
     }
 

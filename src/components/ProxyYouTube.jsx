@@ -38,7 +38,10 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     playVideo: () => sendCommand('play'),
     pauseVideo: () => sendCommand('pause'),
     stopVideo: () => sendCommand('stop'),
-    seekTo: (seconds) => sendCommand('seekTo', { value: seconds }),
+    seekTo: (seconds) => {
+      latestTime.current = seconds;
+      sendCommand('seekTo', { value: seconds });
+    },
     setVolume: (vol) => sendCommand('setVolume', { value: vol }),
     mute: () => sendCommand('mute'),
     unMute: () => sendCommand('unmute'),
@@ -52,7 +55,10 @@ const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptio
     playerProxy.current.playVideo = () => sendCommand('play');
     playerProxy.current.pauseVideo = () => sendCommand('pause');
     playerProxy.current.stopVideo = () => sendCommand('stop');
-    playerProxy.current.seekTo = (seconds) => sendCommand('seekTo', { value: seconds });
+    playerProxy.current.seekTo = (seconds) => {
+      latestTime.current = seconds;
+      sendCommand('seekTo', { value: seconds });
+    };
     playerProxy.current.setVolume = (vol) => sendCommand('setVolume', { value: vol });
     playerProxy.current.mute = () => sendCommand('mute');
     playerProxy.current.unMute = () => sendCommand('unmute');

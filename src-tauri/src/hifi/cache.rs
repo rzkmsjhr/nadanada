@@ -58,13 +58,31 @@ pub fn set_direct_url(track_id: String, url: String) {
     }
 }
 
+pub fn clear_direct_url(track_id: &str) {
+    if let Ok(mut lock) = DIRECT_URLS.lock() {
+        lock.remove(track_id);
+        let path = get_cache_dir().join("urls.json");
+        if let Ok(json) = serde_json::to_string(&*lock) {
+            let _ = fs::write(path, json);
+        }
+    }
+}
+
 pub fn get_cached_track_path(track_id: &str) -> Option<PathBuf> {
-    let path = get_cache_dir().join(format!("{}.flac", track_id));
-    if path.is_file() {
-        if let Ok(metadata) = fs::metadata(&path) {
+    let flac_path = get_cache_dir().join(format!("{}.flac", track_id));
+    if flac_path.is_file() {
+        if let Ok(metadata) = fs::metadata(&flac_path) {
             // Require at least 50KB for a valid audio file
             if metadata.len() > 50_000 {
-                return Some(path);
+                return Some(flac_path);
+            }
+        }
+    }
+    let mp3_path = get_cache_dir().join(format!("{}.mp3", track_id));
+    if mp3_path.is_file() {
+        if let Ok(metadata) = fs::metadata(&mp3_path) {
+            if metadata.len() > 50_000 {
+                return Some(mp3_path);
             }
         }
     }

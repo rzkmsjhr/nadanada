@@ -134,7 +134,7 @@ export default function PlayerControls({
                     : (currentSong._hifiFailed
                       ? 'Playing YouTube audio (Lossless FLAC stream was temporarily unavailable). Click to retry Hi-Fi (FLAC).'
                       : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).');
-                  const labelText = isUpstreamMismatch ? 'Original (YouTube)' : (currentSong._hifiFailed ? 'YouTube' : 'YouTube (Original)');
+                  const labelText = 'YouTube';
 
                   return (
                     <button

@@ -106,6 +106,7 @@ pub async fn resolve_hifi_track(
     duration: Option<String>,
     item_type: Option<String>,
     isrc: Option<String>,
+    album: Option<String>,
 ) -> Result<Option<HifiTrackResult>, String> {
     let clean_title = title.trim();
     if clean_title.is_empty() {
@@ -114,6 +115,7 @@ pub async fn resolve_hifi_track(
 
     let channel_str = channel.as_deref().unwrap_or("");
     let item_type_str = item_type.as_deref();
+    let target_album = album.as_deref();
 
     // Check eligibility
     if !is_eligible_track(clean_title, Some(channel_str), item_type_str) {
@@ -184,7 +186,7 @@ pub async fn resolve_hifi_track(
     // 2. Primary Provider: flac.music.hi.cn (Kuwo lossless FLAC multi-query)
     let mut best_kuwo: Option<(kuwo::KuwoCandidateTrack, kuwo::KuwoMinfo, u32)> = None;
 
-    for (q_idx, query) in queries.iter().take(3).enumerate() {
+    for (q_idx, query) in queries.iter().take(6).enumerate() {
         eprintln!("[HIFI RESOLVE] [Pass {}] Querying Kuwo for: {}", q_idx + 1, query);
         if let Ok(candidates) = kuwo::search_kuwo(query, 8).await {
             for cand in candidates {
@@ -205,11 +207,13 @@ pub async fn resolve_hifi_track(
                     channel_str,
                     dur_secs,
                     isrc.as_deref(),
+                    target_album,
                     &cand_id,
                     cand_title,
                     cand_artist,
                     cand_dur,
                     None,
+                    cand.album_name.as_deref(),
                 );
 
                 if score >= 85 {
@@ -226,7 +230,7 @@ pub async fn resolve_hifi_track(
 
         // Early exit on definitive high-confidence match
         if let Some((_, _, s)) = &best_kuwo {
-            if *s >= 120 {
+            if *s >= 180 {
                 break;
             }
         }
@@ -238,7 +242,8 @@ pub async fn resolve_hifi_track(
                 let time_val = cand.time.clone().unwrap_or(serde_json::Value::Null);
                 let sign_val = cand.sign.as_deref().unwrap_or("");
 
-                match kuwo::get_kuwo_flac_url(&song_id, &time_val, sign_val, &bitrate).await {
+                let format = flac_info.format.as_deref().unwrap_or("flac");
+                match kuwo::get_kuwo_flac_url(&song_id, &time_val, sign_val, &bitrate, format).await {
                     Ok(direct_url) => {
                         let hifi_id = format!("kuwo_{}", song_id);
                         let matched_title = cand.name.clone().unwrap_or_else(|| clean_title.to_string());
@@ -319,11 +324,13 @@ pub async fn resolve_hifi_track(
             channel_str,
             dur_secs,
             isrc.as_deref(),
+                    target_album,
             &cand_id,
             cand_title,
             &cand_artist,
             cand_dur,
             cand_isrc,
+            cand.get_album_name(),
         );
 
         if score >= 85 {
@@ -404,6 +411,7 @@ mod tests {
                 Some("5:55".to_string()),
                 Some("song".to_string()),
                 None,
+                Some("A Night at the Opera".to_string()),
             ).await;
 
             match res {

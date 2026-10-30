@@ -91,9 +91,10 @@ impl KuwoCandidateTrack {
         }
     }
 
-    /// Finds the highest-bitrate FLAC option available for this candidate.
+    /// Finds the highest-bitrate FLAC or HQ audio option available for this candidate.
     pub fn get_flac_info(&self) -> Option<KuwoMinfo> {
         if let Some(infos) = &self.minfo {
+            // 1. Prefer Lossless FLAC SQ
             let flacs: Vec<&KuwoMinfo> = infos
                 .iter()
                 .filter(|m| {
@@ -106,6 +107,24 @@ impl KuwoCandidateTrack {
 
             if !flacs.is_empty() {
                 let best = flacs.into_iter().max_by_key(|m| {
+                    m.bitrate_str().parse::<u32>().unwrap_or(0)
+                });
+                return best.cloned();
+            }
+
+            // 2. Fall back to High-Quality MP3 (e.g. 320k or 128k)
+            let mp3s: Vec<&KuwoMinfo> = infos
+                .iter()
+                .filter(|m| {
+                    m.format
+                        .as_deref()
+                        .map(|f| f.eq_ignore_ascii_case("mp3"))
+                        .unwrap_or(false)
+                })
+                .collect();
+
+            if !mp3s.is_empty() {
+                let best = mp3s.into_iter().max_by_key(|m| {
                     m.bitrate_str().parse::<u32>().unwrap_or(0)
                 });
                 return best.cloned();
@@ -185,12 +204,13 @@ pub async fn search_kuwo(query: &str, size: usize) -> Result<Vec<KuwoCandidateTr
     Ok(list)
 }
 
-/// Fetches the direct CDN FLAC stream URL from flac.music.hi.cn.
+/// Fetches the direct CDN audio stream URL from flac.music.hi.cn.
 pub async fn get_kuwo_flac_url(
     song_id: &str,
     time: &serde_json::Value,
     sign: &str,
     bitrate: &str,
+    format: &str,
 ) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(6))
@@ -203,9 +223,12 @@ pub async fn get_kuwo_flac_url(
         _ => String::new(),
     };
 
+    let fmt = if format.trim().is_empty() { "flac" } else { format.trim() };
+
     let body = format!(
-        "platform=kuwo&songid={}&format=flac&bitrate={}&time={}&sign={}",
+        "platform=kuwo&songid={}&format={}&bitrate={}&time={}&sign={}",
         urlencoding::encode(song_id),
+        urlencoding::encode(fmt),
         urlencoding::encode(bitrate),
         urlencoding::encode(&time_str),
         urlencoding::encode(sign)
@@ -259,7 +282,7 @@ pub fn get_kuwo_stream(
     headers.insert(USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(15))
         .default_headers(headers)
         .build()
         .map_err(|e| format!("Failed to create blocking client: {}", e))?;
@@ -306,9 +329,15 @@ mod tests {
             let flac_info = first.get_flac_info().expect("Should have FLAC format");
             let time_val = first.time.clone().unwrap_or(serde_json::Value::Null);
             let sign_val = first.sign.as_deref().unwrap_or("");
-            let u = get_kuwo_flac_url(&first.get_id(), &time_val, sign_val, &flac_info.bitrate_str())
-                .await
-                .unwrap();
+            let u = get_kuwo_flac_url(
+                &first.get_id(),
+                &time_val,
+                sign_val,
+                &flac_info.bitrate_str(),
+                flac_info.format.as_deref().unwrap_or("flac"),
+            )
+            .await
+            .unwrap();
             println!("FLAC Stream URL: {}", u);
             assert!(u.contains(".flac") || u.contains("trackmedia"));
             (u, first.clone())
