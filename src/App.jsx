@@ -190,6 +190,7 @@ function App() {
   const currentTimeRef = useRef(0);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const hasAddedSongInSearchRef = useRef(false);
+  const isTogglingHifiRef = useRef(false);
 
   const handleTimeUpdate = (time) => {
     currentTimeRef.current = time;
@@ -734,16 +735,32 @@ function App() {
 
 
   const handleToggleTrackHifi = useCallback(async (song) => {
-    if (!song) return;
-    const songId = song.id;
-    const isCurrentHifi = Boolean(song.stream_url || song.source === 'monochrome' || song.source === 'kuwo');
+    if (!song || isTogglingHifiRef.current) return;
+    isTogglingHifiRef.current = true;
+    try {
+      const songId = song.id;
+      const isCurrentHifi = Boolean(song.stream_url || song.source === 'monochrome' || song.source === 'kuwo');
 
-    if (isCurrentHifi) {
-      setUserYoutubeForced(songId, true);
-      setPlaylist(prev => prev.map(s => {
-        if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
-          return {
-            ...s,
+      if (isCurrentHifi) {
+        setUserYoutubeForced(songId, true);
+        setPlaylist(prev => prev.map(s => {
+          if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
+            return {
+              ...s,
+              stream_url: null,
+              source: null,
+              hifi_id: null,
+              _userForcedYoutube: true,
+              _hifiChecked: true,
+              _hifiVersion: HIFI_MATCHER_VERSION,
+              _manualSourceSwitch: Date.now()
+            };
+          }
+          return s;
+        }));
+        if (restoredSong && restoredSong.id === songId) {
+          setRestoredSong(prev => prev ? {
+            ...prev,
             stream_url: null,
             source: null,
             hifi_id: null,
@@ -751,32 +768,33 @@ function App() {
             _hifiChecked: true,
             _hifiVersion: HIFI_MATCHER_VERSION,
             _manualSourceSwitch: Date.now()
-          };
+          } : null);
         }
-        return s;
-      }));
-      if (restoredSong && restoredSong.id === songId) {
-        setRestoredSong(prev => prev ? {
-          ...prev,
-          stream_url: null,
-          source: null,
-          hifi_id: null,
-          _userForcedYoutube: true,
-          _hifiChecked: true,
-          _hifiVersion: HIFI_MATCHER_VERSION,
-          _manualSourceSwitch: Date.now()
-        } : null);
-      }
-    } else {
-      setUserYoutubeForced(songId, false);
-      try {
-        const resolved = await resolveHifiForTrack(song, { ignoreBlacklist: true, ignoreUserYoutubeForced: true, forceRefresh: true });
-        if (resolved && resolved.stream_url) {
-          const resolvedSource = resolved.source || 'kuwo';
-          setPlaylist(prev => prev.map(s => {
-            if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
-              return {
-                ...s,
+      } else {
+        setUserYoutubeForced(songId, false);
+        try {
+          const resolved = await resolveHifiForTrack(song, { ignoreBlacklist: true, ignoreUserYoutubeForced: true, forceRefresh: true });
+          if (resolved && resolved.stream_url) {
+            const resolvedSource = resolved.source || 'kuwo';
+            setPlaylist(prev => prev.map(s => {
+              if ((s.queueId && s.queueId === song.queueId) || (s.id && s.id === songId)) {
+                return {
+                  ...s,
+                  stream_url: resolved.stream_url,
+                  source: resolvedSource,
+                  hifi_id: resolved.hifi_id,
+                  _hifiFailed: false,
+                  _userForcedYoutube: false,
+                  _hifiChecked: true,
+                  _hifiVersion: HIFI_MATCHER_VERSION,
+                  _manualSourceSwitch: Date.now()
+                };
+              }
+              return s;
+            }));
+            if (restoredSong && restoredSong.id === songId) {
+              setRestoredSong(prev => prev ? {
+                ...prev,
                 stream_url: resolved.stream_url,
                 source: resolvedSource,
                 hifi_id: resolved.hifi_id,
@@ -785,27 +803,17 @@ function App() {
                 _hifiChecked: true,
                 _hifiVersion: HIFI_MATCHER_VERSION,
                 _manualSourceSwitch: Date.now()
-              };
+              } : null);
             }
-            return s;
-          }));
-          if (restoredSong && restoredSong.id === songId) {
-            setRestoredSong(prev => prev ? {
-              ...prev,
-              stream_url: resolved.stream_url,
-              source: resolvedSource,
-              hifi_id: resolved.hifi_id,
-              _hifiFailed: false,
-              _userForcedYoutube: false,
-              _hifiChecked: true,
-              _hifiVersion: HIFI_MATCHER_VERSION,
-              _manualSourceSwitch: Date.now()
-            } : null);
           }
+        } catch (e) {
+          console.warn('[HIFI] Manual toggle to Hi-Fi failed:', e);
         }
-      } catch (e) {
-        console.warn('[HIFI] Manual toggle to Hi-Fi failed:', e);
       }
+    } finally {
+      setTimeout(() => {
+        isTogglingHifiRef.current = false;
+      }, 500);
     }
   }, [restoredSong, setPlaylist]);
 

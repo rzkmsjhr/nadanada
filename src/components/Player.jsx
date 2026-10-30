@@ -327,7 +327,7 @@ const Player = React.forwardRef(function Player({
                 }}>
                   <ProxyYouTube
                     key="deck-0"
-                    videoId={core.deck0Song.id}
+                    videoId={core.deck0Song.youtube_id || core.deck0Song.id}
                     onCaptionsReceived={core.handleCaptionsReceived}
                     opts={{
                       ...opts,
@@ -418,7 +418,7 @@ const Player = React.forwardRef(function Player({
                 }}>
                   <ProxyYouTube
                     key="deck-1"
-                    videoId={core.deck1Song.id}
+                    videoId={core.deck1Song.youtube_id || core.deck1Song.id}
                     onCaptionsReceived={core.handleCaptionsReceived}
                     opts={{
                       ...opts,

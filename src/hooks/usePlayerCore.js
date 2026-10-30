@@ -1362,8 +1362,14 @@ export function usePlayerCore({
   const streamRecoveryAttemptsRef = useRef({});
   const streamRecoveryTimersRef = useRef({});
   const failedHifiSongIdsRef = useRef(new Set());
+  const lastFailureCallTimeRef = useRef(0);
 
   const handleAudioStreamFailure = (deckIndex, failedTime = 0) => {
+    const now = Date.now();
+    if (now - lastFailureCallTimeRef.current < 600) {
+      return;
+    }
+    lastFailureCallTimeRef.current = now;
     const deckSong = deckIndex === 0 ? deck0Song : deck1Song;
     if (!deckSong) return;
 
@@ -1517,7 +1523,8 @@ export function usePlayerCore({
         if (topYt && topYt.id) {
           const ytSong = {
             ...fallbackSong,
-            id: topYt.id,
+            id: deckSong.id,
+            youtube_id: topYt.id,
             stream_url: null,
             blob_url: null,
             source: null,

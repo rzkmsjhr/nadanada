@@ -186,7 +186,7 @@ pub async fn resolve_hifi_track(
     // 2. Primary Provider: flac.music.hi.cn (Kuwo lossless FLAC multi-query)
     let mut best_kuwo: Option<(kuwo::KuwoCandidateTrack, kuwo::KuwoMinfo, u32)> = None;
 
-    for (q_idx, query) in queries.iter().take(6).enumerate() {
+    for (q_idx, query) in queries.iter().take(4).enumerate() {
         eprintln!("[HIFI RESOLVE] [Pass {}] Querying Kuwo for: {}", q_idx + 1, query);
         if let Ok(candidates) = kuwo::search_kuwo(query, 8).await {
             for cand in candidates {
@@ -230,7 +230,7 @@ pub async fn resolve_hifi_track(
 
         // Early exit on definitive high-confidence match
         if let Some((_, _, s)) = &best_kuwo {
-            if *s >= 180 {
+            if *s >= 140 {
                 break;
             }
         }

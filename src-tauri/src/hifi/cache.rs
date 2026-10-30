@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Instant;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +22,8 @@ lazy_static! {
     static ref UNMATCHED_CACHE: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
     static ref ACTIVE_DOWNLOADS: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
     static ref DIRECT_URLS: Mutex<HashMap<String, String>> = Mutex::new(load_persisted_urls());
+    static ref FAILED_UPSTREAMS: Mutex<HashMap<String, (Instant, String)>> = Mutex::new(HashMap::new());
+    static ref RECENT_ATTEMPTS: Mutex<HashMap<String, Instant>> = Mutex::new(HashMap::new());
 }
 
 pub fn get_cache_dir() -> PathBuf {
@@ -136,6 +139,51 @@ pub fn try_acquire_download_lock(track_id: &str) -> bool {
 pub fn release_download_lock(track_id: &str) {
     if let Ok(mut lock) = ACTIVE_DOWNLOADS.lock() {
         lock.remove(track_id);
+    }
+}
+
+/// Checks if a track failed recently and is in cooldown (60s default, 300s for HTTP 429).
+pub fn is_in_failure_cooldown(track_id: &str) -> Option<String> {
+    let mut lock = FAILED_UPSTREAMS.lock().ok()?;
+    if let Some((failed_at, err_msg)) = lock.get(track_id) {
+        let cooldown_secs = if err_msg.contains("429") { 300 } else { 60 };
+        if failed_at.elapsed().as_secs() < cooldown_secs {
+            return Some(err_msg.clone());
+        }
+    }
+    lock.remove(track_id);
+    None
+}
+
+/// Records that an upstream fetch for a track failed, entering cooldown.
+pub fn record_upstream_failure(track_id: &str, err_msg: &str) {
+    if let Ok(mut lock) = FAILED_UPSTREAMS.lock() {
+        lock.insert(track_id.to_string(), (Instant::now(), err_msg.to_string()));
+    }
+    let dir = get_cache_dir();
+    let _ = fs::remove_file(dir.join(format!("{}.flac.part", track_id)));
+    let _ = fs::remove_file(dir.join(format!("{}.mp3.part", track_id)));
+}
+
+/// Clears any upstream failure cooldown for a track (e.g. manual user retry).
+pub fn clear_upstream_failure(track_id: &str) {
+    if let Ok(mut lock) = FAILED_UPSTREAMS.lock() {
+        lock.remove(track_id);
+    }
+}
+
+/// Rate-limits upstream attempts per track: allows at most 1 request per 2.5 seconds per track.
+pub fn check_and_record_rate_limit(track_id: &str) -> bool {
+    if let Ok(mut lock) = RECENT_ATTEMPTS.lock() {
+        if let Some(last) = lock.get(track_id) {
+            if last.elapsed().as_millis() < 2500 {
+                return false; // Rate-limited!
+            }
+        }
+        lock.insert(track_id.to_string(), Instant::now());
+        true
+    } else {
+        true
     }
 }
 

@@ -10,7 +10,7 @@ function needsHifiCheck(s, inFlightSet) {
   if (s._userForcedYoutube || s._hifiFailed) return false;
   if (!isHifiEligibleTrack(s)) return false;
   if (isNativeMonochromeItem(s)) return false;
-  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION && s.stream_url) return false;
+  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) return false;
   return true;
 }
 
