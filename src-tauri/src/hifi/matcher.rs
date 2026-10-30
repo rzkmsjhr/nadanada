@@ -175,7 +175,7 @@ pub fn does_artist_match(target_artist: &str, candidate_artist: &str, target_tit
     true
 }
 
-/// Known upstream catalog IDs where original master was replaced with a modern remake
+/// Known upstream catalog IDs where original master was replaced with a modern remake or mislabeled audio
 pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool {
     let mismatches = [
         "168395054749057024", // Dewa 19 - Aku Milikmu (2021 Virzha)
@@ -184,6 +184,10 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "168395062953115648", // Dewa 19 - Mahameru (2021 Virzha)
         "162001181",          // Kuwo fake tag: Panem. The Land sound-alike cover of Portugal. The Man - Feel It Still
         "kuwo_162001181",
+        "228981606",          // Kuwo mislabeled: Andra & The Backbone - Main Hati (audio is actually Kepayang)
+        "kuwo_228981606",
+        "228983127",          // Kuwo mislabeled: Andra & The Backbone - Kepayang (audio is actually Hitamku)
+        "kuwo_228983127",
     ];
 
     if mismatches.contains(&id) {
@@ -402,10 +406,17 @@ pub fn score_track_candidate(
                 let a_clean = clean_string(a);
                 if !a_clean.is_empty() && (a_clean == target_clean || target_clean.contains(&a_clean) || a_clean.contains(&target_clean)) {
                     score += 85;
+                    title_matched = true;
                     break;
                 }
             }
         }
+    }
+
+    // A candidate track MUST match the song title. Without a title match,
+    // a song from the same artist/album cannot be considered the same track.
+    if !title_matched {
+        return 0;
     }
 
     // 5. Duration comparison (Strict length validation for both Kuwo and Monochrome)
@@ -620,5 +631,56 @@ mod tests {
             Some("No Protection"),
         );
         assert!(official_score >= 220, "Official album match must score >= 220, got {}", official_score);
+    }
+
+    #[test]
+    fn test_title_match_required_and_mislabeled_kuwo() {
+        // 1. Different title from same artist and album MUST score 0 (not allowed by album match alone)
+        let diff_title_score = score_track_candidate(
+            "Main Hati",
+            "Andra And The Backbone",
+            174,
+            None,
+            Some("Season 2"),
+            "non_blacklisted_id",
+            "Kepayang",
+            "Andra And The Backbone",
+            174,
+            None,
+            Some("Season 2"),
+        );
+        assert_eq!(diff_title_score, 0, "Different title on same album must score 0");
+
+        // 2. Mislabeled Kuwo track IDs must be rejected by is_known_upstream_mismatch
+        let kuwo_main_hati_score = score_track_candidate(
+            "Main Hati",
+            "Andra And The Backbone",
+            174,
+            None,
+            Some("Season 2"),
+            "kuwo_228981606",
+            "Main Hati",
+            "Andra & The Backbone",
+            174,
+            None,
+            Some("Season 2"),
+        );
+        assert_eq!(kuwo_main_hati_score, 0, "Corrupt Kuwo Main Hati ID must be rejected");
+
+        // 3. Genuine Tidal track for Main Hati must score >= 180
+        let tidal_score = score_track_candidate(
+            "Main Hati",
+            "Andra And The Backbone",
+            239,
+            None,
+            Some("Season 2"),
+            "165836656720859136",
+            "Main Hati",
+            "Andra & The Backbone",
+            238,
+            Some("IDAB30800008"),
+            Some("Season 2"),
+        );
+        assert!(tidal_score >= 180, "Genuine Tidal track must score >= 180, got {}", tidal_score);
     }
 }
