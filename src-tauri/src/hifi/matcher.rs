@@ -8,6 +8,10 @@ lazy_static! {
     static ref MULTI_SPACE_REGEX: Regex = Regex::new(r"\s+").unwrap();
     static ref ARTIST_SPLIT_REGEX: Regex = Regex::new(r"(?i)[,&/;|]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)").unwrap();
     static ref YOUTUBE_NOISE_REGEX: Regex = Regex::new(r"(?i)\b(official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyrics?\s*(?:video)?|music\s*video|audio|visualizer|hd|hq|4k|1080p|720p|topic|clip\s*officiel|video\s*oficial|mv)\b").unwrap();
+    static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix)\b").unwrap();
+    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b").unwrap();
+    static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged)\b").unwrap();
+    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke)\b").unwrap();
 }
 
 /// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
@@ -51,15 +55,16 @@ pub struct VersionFlags {
     pub is_orchestral: bool,
 }
 
-pub fn extract_version_flags(title: &str) -> VersionFlags {
-    let s = title.to_lowercase();
+pub fn extract_version_flags(title: &str, album: Option<&str>) -> VersionFlags {
+    let s = format!("{} {}", title, album.unwrap_or(""));
+    let s_lower = s.to_lowercase();
     VersionFlags {
-        is_acoustic: s.contains("acoustic"),
-        is_live: s.contains("live"),
-        is_remix: s.contains("remix") || s.contains("mix"),
-        is_instrumental: s.contains("instrumental") || s.contains("karaoke"),
-        is_piano: s.contains("piano"),
-        is_orchestral: s.contains("orchestral"),
+        is_acoustic: ACOUSTIC_REGEX.is_match(&s),
+        is_live: LIVE_REGEX.is_match(&s),
+        is_remix: REMIX_REGEX.is_match(&s),
+        is_instrumental: INSTRUMENTAL_REGEX.is_match(&s),
+        is_piano: s_lower.contains("piano version") || s_lower.contains("(piano)") || s_lower.contains("[piano]"),
+        is_orchestral: s_lower.contains("orchestral version") || s_lower.contains("(orchestral)") || s_lower.contains("[orchestral]"),
     }
 }
 
@@ -224,9 +229,9 @@ pub fn score_track_candidate(
         return 0;
     }
 
-    // 1. Version conflict check
-    let target_flags = extract_version_flags(target_title);
-    let cand_flags = extract_version_flags(cand_title);
+    // 1. Version conflict check (across title and album)
+    let target_flags = extract_version_flags(target_title, target_album);
+    let cand_flags = extract_version_flags(cand_title, cand_album);
     if has_version_conflict(&target_flags, &cand_flags) {
         return 0;
     }
@@ -244,6 +249,13 @@ pub fn score_track_candidate(
     let target_album_lower = target_album.unwrap_or("").to_lowercase();
     let cand_title_lower = cand_title.to_lowercase();
     let target_title_lower = target_title.to_lowercase();
+
+    // Check remix / mix (e.g. "Alamak (Dipha Barus Remix)" vs original "Alamak")
+    let is_cand_remix = REMIX_REGEX.is_match(&format!("{} {}", cand_title_lower, cand_album_lower));
+    let is_target_remix = REMIX_REGEX.is_match(&format!("{} {}", target_title_lower, target_album_lower));
+    if is_cand_remix != is_target_remix {
+        return 0;
+    }
 
     // Check re-recorded / rerecorded / re-record
     let is_cand_rerecorded = cand_album_lower.contains("re-record")
@@ -682,5 +694,72 @@ mod tests {
             Some("Season 2"),
         );
         assert!(tidal_score >= 180, "Genuine Tidal track must score >= 180, got {}", tidal_score);
+    }
+
+    #[test]
+    fn test_remix_album_and_title_conflict() {
+        // 1. Target is original "Alamak" by Rizky Febian.
+        // Candidate is "Alamak (Dipha Barus Remix)" album track -> MUST be rejected (score == 0)
+        let remix_score = score_track_candidate(
+            "Alamak",
+            "Rizky Febian, Adrian Khalif",
+            209,
+            None,
+            Some("Alamak"),
+            "518680784",
+            "Alamak",
+            "Rizky Febian&Adrian Khalif",
+            211,
+            None,
+            Some("Alamak (Dipha Barus Remix)"),
+        );
+        assert_eq!(remix_score, 0, "Remix candidate when original requested must score 0, got {}", remix_score);
+
+        // 2. Candidate is original "Alamak" on "Alamak" album -> MUST score >= 200
+        let original_score = score_track_candidate(
+            "Alamak",
+            "Rizky Febian, Adrian Khalif",
+            209,
+            None,
+            Some("Alamak"),
+            "502382878",
+            "Alamak",
+            "Rizky Febian&Adrian Khalif",
+            209,
+            None,
+            Some("Alamak"),
+        );
+        assert!(original_score >= 200, "Original Alamak track must score >= 200, got {}", original_score);
+
+        // 3. Target explicitly requested remix -> original track must score 0, remix must score >= 200
+        let req_remix_original_cand = score_track_candidate(
+            "Alamak (Dipha Barus Remix)",
+            "Rizky Febian, Adrian Khalif",
+            211,
+            None,
+            Some("Alamak (Dipha Barus Remix)"),
+            "502382878",
+            "Alamak",
+            "Rizky Febian&Adrian Khalif",
+            209,
+            None,
+            Some("Alamak"),
+        );
+        assert_eq!(req_remix_original_cand, 0, "Original track must be rejected when remix is requested");
+
+        let req_remix_match = score_track_candidate(
+            "Alamak (Dipha Barus Remix)",
+            "Rizky Febian, Adrian Khalif",
+            211,
+            None,
+            Some("Alamak (Dipha Barus Remix)"),
+            "518680784",
+            "Alamak",
+            "Rizky Febian&Adrian Khalif",
+            211,
+            None,
+            Some("Alamak (Dipha Barus Remix)"),
+        );
+        assert!(req_remix_match >= 200, "Remix match must score >= 200, got {}", req_remix_match);
     }
 }
