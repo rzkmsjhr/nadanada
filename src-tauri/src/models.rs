@@ -19,6 +19,8 @@ pub struct Video {
     pub stream_url: Option<String>,
     #[serde(default)]
     pub source: Option<String>,
+    #[serde(default)]
+    pub album: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

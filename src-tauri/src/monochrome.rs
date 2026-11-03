@@ -172,6 +172,7 @@ pub async fn search_monochrome(
                 item_type: Some("album".to_string()),
                 stream_url: None,
                 source: Some("monochrome".to_string()),
+                album: None,
             });
         }
 
@@ -224,6 +225,7 @@ pub async fn search_monochrome(
                 item_type: Some("song".to_string()),
                 stream_url: Some(stream_url),
                 source: Some("monochrome".to_string()),
+                album: None,
             });
         }
 
@@ -258,6 +260,7 @@ pub async fn get_monochrome_album(release_id: String) -> Result<Vec<Video>, Stri
 
     let album_channel = extract_artist_names(parsed.artist_names, parsed.artists);
     let album_artwork = parsed.artwork.unwrap_or_default();
+    let album_title = parsed.title.clone();
 
     let raw_tracks = match parsed.tracks {
         Some(tracks) => tracks,
@@ -300,6 +303,7 @@ pub async fn get_monochrome_album(release_id: String) -> Result<Vec<Video>, Stri
             item_type: Some("song".to_string()),
             stream_url: Some(stream_url),
             source: Some("monochrome".to_string()),
+            album: album_title.clone(),
         });
     }
 

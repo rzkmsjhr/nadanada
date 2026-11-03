@@ -1,6 +1,6 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v10';
+const STORAGE_KEY = 'nadanada-hifi-cache-v11';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
@@ -10,10 +10,11 @@ const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache-v6',
   'nadanada-hifi-cache-v7',
   'nadanada-hifi-cache-v8',
-  'nadanada-hifi-cache-v9'
+  'nadanada-hifi-cache-v9',
+  'nadanada-hifi-cache-v10'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 10;
+export const HIFI_MATCHER_VERSION = 11;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
@@ -61,7 +62,13 @@ export const KNOWN_UPSTREAM_MISMATCHES = new Set([
   '5266278',            // Maroon 5 - Animals (2015 Victoria's Secret runway music)
   'kuwo_5266278',
   '196763238',          // Imagine Dragons - Demons (TELYKast Remix)
-  'kuwo_196763238'
+  'kuwo_196763238',
+  '198259372',          // Imagine Dragons - Demons (Live From Red Rocks / 2014)
+  'kuwo_198259372',
+  '238687094',          // Imagine Dragons - Demons (Live London Sessions / 2013)
+  'kuwo_238687094',
+  '238687044',          // Imagine Dragons - Demons (TELYKast Remix on Super Deluxe)
+  'kuwo_238687044'
 ]);
 
 export function isUserYoutubeForced(songId) {
@@ -363,11 +370,27 @@ export async function resolveHifiForTrack(song, options = {}) {
     if (textKey && sessionUnmatchedSet.has(textKey)) return null;
   }
 
+  // Resolve effective album upfront so cache check knows if album context changed
+  let effectiveAlbum = song.album || song.album_name || null;
+  if (!effectiveAlbum && song.id && typeof window !== 'undefined') {
+    try {
+      const rawCache = localStorage.getItem('nadanada_album_cache');
+      if (rawCache) {
+        const parsed = JSON.parse(rawCache);
+        if (parsed[song.id]?.album) {
+          effectiveAlbum = parsed[song.id].album;
+        }
+      }
+    } catch (_) {}
+  }
+
   // Fast synchronous memory cache check
   if (!forceRefresh) {
     const cached = getCachedHifi(song);
     if (cached && cached.stream_url) {
-      return cached;
+      if (!effectiveAlbum || cached._resolvedWithAlbum) {
+        return cached;
+      }
     }
   }
 
@@ -378,19 +401,6 @@ export async function resolveHifiForTrack(song, options = {}) {
 
   const promise = (async () => {
     try {
-      let effectiveAlbum = song.album || song.album_name || null;
-      if (!effectiveAlbum && song.id && typeof window !== 'undefined') {
-        try {
-          const rawCache = localStorage.getItem('nadanada_album_cache');
-          if (rawCache) {
-            const parsed = JSON.parse(rawCache);
-            if (parsed[song.id]?.album) {
-              effectiveAlbum = parsed[song.id].album;
-            }
-          }
-        } catch (_) {}
-      }
-
       console.log(`[HIFI] Resolving Hi-Fi via Rust engine for "${song.title}" (${song.channel}) [album: ${effectiveAlbum || 'unknown'}]...`);
       const res = await api.resolveHifiTrack(
         song.id,
@@ -412,7 +422,8 @@ export async function resolveHifiForTrack(song, options = {}) {
           artist: res.artist,
           duration: res.duration || parseDurationToSecs(song.duration),
           is_cached: res.is_cached,
-          _hifiVersion: HIFI_MATCHER_VERSION
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _resolvedWithAlbum: Boolean(effectiveAlbum)
         };
 
         if (idKey) hifiCache.set(idKey, hifiData);

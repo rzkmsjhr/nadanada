@@ -184,11 +184,28 @@ pub async fn resolve_hifi_track(
         let alb_clean = alb.trim();
         if !alb_clean.is_empty() {
             queries.push(format!("{} {} {}", channel_str, clean_title, alb_clean));
+            let de_ch = script::strip_latin_diacritics(channel_str);
+            let de_ti = script::strip_latin_diacritics(clean_title);
+            let de_al = script::strip_latin_diacritics(alb_clean);
+            if de_ch != channel_str || de_ti != clean_title || de_al != alb_clean {
+                let de_alb_query = format!("{} {} {}", de_ch, de_ti, de_al);
+                if !queries.contains(&de_alb_query) {
+                    queries.push(de_alb_query);
+                }
+            }
         }
     }
 
     // 2. Base artist + title query
     let base_query = format!("{} {}", channel_str, clean_title);
+    let de_base = format!(
+        "{} {}",
+        script::strip_latin_diacritics(channel_str),
+        script::strip_latin_diacritics(clean_title)
+    );
+    if de_base != base_query && !queries.contains(&de_base) {
+        queries.push(de_base);
+    }
     if !queries.contains(&base_query) {
         queries.push(base_query);
     }
@@ -205,7 +222,17 @@ pub async fn resolve_hifi_track(
 
     for (q_idx, query) in queries.iter().take(4).enumerate() {
         eprintln!("[HIFI RESOLVE] [Pass {}] Querying Kuwo for: {}", q_idx + 1, query);
-        if let Ok(candidates) = kuwo::search_kuwo(query, 8).await {
+        if let Ok(candidates) = kuwo::search_kuwo(query, 12).await {
+            // Count track title occurrences per album in this batch to detect untagged bonus discs
+            let mut album_title_counts: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+            for c in &candidates {
+                let ct = matcher::clean_string(c.name.as_deref().unwrap_or(""));
+                let ca = matcher::clean_string(c.album_name.as_deref().unwrap_or(""));
+                if !ct.is_empty() && !ca.is_empty() {
+                    *album_title_counts.entry((ct, ca)).or_insert(0) += 1;
+                }
+            }
+
             for cand in candidates {
                 let flac_info = match cand.get_flac_info() {
                     Some(f) => f,
@@ -219,7 +246,7 @@ pub async fn resolve_hifi_track(
                 let cand_artist = cand.artist.as_deref().unwrap_or("");
                 let cand_dur = cand.get_duration_secs();
 
-                let score = matcher::score_track_candidate(
+                let mut score = matcher::score_track_candidate(
                     clean_title,
                     channel_str,
                     dur_secs,
@@ -233,7 +260,18 @@ pub async fn resolve_hifi_track(
                     cand.album_name.as_deref(),
                 );
 
-                if score >= 85 {
+                if score == 0 {
+                    continue;
+                }
+
+                // If album has multiple tracks sharing the identical title (untagged bonus disc cuts), penalize ambiguity
+                let ct = matcher::clean_string(cand_title);
+                let ca = matcher::clean_string(cand.album_name.as_deref().unwrap_or(""));
+                if album_title_counts.get(&(ct, ca)).copied().unwrap_or(0) > 1 {
+                    score = score.saturating_sub(25);
+                }
+
+                if score >= 140 {
                     if let Some((_, _, best_score)) = &best_kuwo {
                         if score > *best_score {
                             best_kuwo = Some((cand, flac_info, score));
@@ -246,7 +284,7 @@ pub async fn resolve_hifi_track(
         }
 
         // Early exit on definitive high-confidence match
-        let early_exit_threshold = if target_album.is_some() { 190 } else { 165 };
+        let early_exit_threshold = if target_album.is_some() { 200 } else { 170 };
         if let Some((_, _, s)) = &best_kuwo {
             if *s >= early_exit_threshold {
                 break;
@@ -306,7 +344,7 @@ pub async fn resolve_hifi_track(
                     }
                 }
     } else {
-        eprintln!("[HIFI RESOLVE] Kuwo search returned no matching candidate >= 85. Falling back to Monochrome.");
+        eprintln!("[HIFI RESOLVE] Kuwo search returned no qualifying lossless studio candidate >= 140. Falling back to Monochrome.");
     }
 
     // 3. Fallback Provider: Monochrome Instance Pool
@@ -351,7 +389,7 @@ pub async fn resolve_hifi_track(
             cand.get_album_name(),
         );
 
-        if score >= 85 {
+        if score >= 140 {
             if let Some((_, best_score)) = &best_match {
                 if score > *best_score {
                     best_match = Some((cand, score));

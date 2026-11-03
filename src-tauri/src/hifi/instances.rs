@@ -186,7 +186,8 @@ pub fn create_async_client() -> Result<reqwest::Client, String> {
 
     reqwest::Client::builder()
         .default_headers(headers)
-        .timeout(std::time::Duration::from_secs(6))
+        .connect_timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_secs(3))
         .build()
         .map_err(|e| format!("Failed to create reqwest async client: {}", e))
 }

@@ -10,7 +10,20 @@ function needsHifiCheck(s, inFlightSet) {
   if (s._userForcedYoutube || s._hifiFailed) return false;
   if (!isHifiEligibleTrack(s)) return false;
   if (isNativeMonochromeItem(s)) return false;
-  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) return false;
+  if (s._hifiChecked && s._hifiVersion === HIFI_MATCHER_VERSION) {
+    if (s._resolvedWithAlbum === false && s.id && typeof window !== 'undefined') {
+      try {
+        const raw = localStorage.getItem('nadanada_album_cache');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed[s.id]?.album) {
+            return true;
+          }
+        }
+      } catch (_) {}
+    }
+    return false;
+  }
   return true;
 }
 
@@ -71,7 +84,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
             let updated = [...prev];
             for (const { song, hifi } of immediateResults) {
               const matchIdx = updated.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
-              if (matchIdx !== -1 && (updated[matchIdx]._hifiVersion !== HIFI_MATCHER_VERSION || !updated[matchIdx]._hifiChecked)) {
+              if (matchIdx !== -1 && (updated[matchIdx]._hifiVersion !== HIFI_MATCHER_VERSION || !updated[matchIdx]._hifiChecked || (updated[matchIdx]._resolvedWithAlbum === false && hifi?._resolvedWithAlbum))) {
                 changed = true;
                 if (hifi && hifi.stream_url) {
                   console.log(`[HIFI-QUEUE] Upgraded "${song.title}" to Hi-Fi FLAC stream`);
@@ -81,7 +94,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                     source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
                     hifi_id: hifi.hifi_id,
                     _hifiChecked: true,
-                    _hifiVersion: HIFI_MATCHER_VERSION
+                    _hifiVersion: HIFI_MATCHER_VERSION,
+                    _resolvedWithAlbum: hifi._resolvedWithAlbum ?? false
                   };
                 } else {
                   if (isMonochromeCoolingDown()) {
@@ -94,7 +108,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                       source: null,
                       hifi_id: null,
                       _hifiChecked: true,
-                      _hifiVersion: HIFI_MATCHER_VERSION
+                      _hifiVersion: HIFI_MATCHER_VERSION,
+                      _resolvedWithAlbum: false
                     };
                   }
                 }
@@ -136,7 +151,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
         if (isHifiEnabledRef.current) {
           setPlaylist(prev => {
             const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
-            if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION)) return prev;
+            if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION && (prev[matchIdx]._resolvedWithAlbum !== false || !hifi?._resolvedWithAlbum))) return prev;
 
             const updated = [...prev];
             if (hifi && hifi.stream_url) {
@@ -146,7 +161,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                 source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
                 hifi_id: hifi.hifi_id,
                 _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION
+                _hifiVersion: HIFI_MATCHER_VERSION,
+                _resolvedWithAlbum: hifi._resolvedWithAlbum ?? false
               };
             } else if (!isMonochromeCoolingDown()) {
               updated[matchIdx] = {
@@ -155,7 +171,8 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
                 source: null,
                 hifi_id: null,
                 _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION
+                _hifiVersion: HIFI_MATCHER_VERSION,
+                _resolvedWithAlbum: false
               };
             }
             return updated;

@@ -49,8 +49,23 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
 
     let mut artist = String::new();
     let mut duration = fixed_dur.to_string();
+    let mut album: Option<String> = None;
 
     if let Some(runs) = flex1_runs {
+        for run in runs {
+            let page_type = run
+                .pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType")
+                .and_then(|v| v.as_str());
+            if page_type == Some("MUSIC_PAGE_TYPE_ALBUM") {
+                if let Some(txt) = run.get("text").and_then(|t| t.as_str()) {
+                    let cleaned = txt.trim();
+                    if !cleaned.is_empty() {
+                        album = Some(cleaned.to_string());
+                    }
+                }
+            }
+        }
+
         let texts: Vec<&str> = runs.iter().filter_map(|x| x.get("text").and_then(|t| t.as_str())).collect();
         let full_meta = texts.concat();
         let parts: Vec<&str> = full_meta.split(" • ").collect();
@@ -65,6 +80,19 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
 
         if let Some(first) = parts.first() {
             artist = first.trim().to_string();
+        }
+
+        if album.is_none() && parts.len() >= 3 {
+            let candidate_album = parts[1].trim();
+            let c_lower = candidate_album.to_lowercase();
+            if !candidate_album.is_empty()
+                && !candidate_album.contains(':')
+                && !c_lower.contains("views")
+                && !c_lower.contains("plays")
+                && !c_lower.contains("subscribers")
+            {
+                album = Some(candidate_album.to_string());
+            }
         }
     }
 
@@ -111,6 +139,7 @@ fn parse_ytm_item_with_type(r: &serde_json::Value, default_type: &str) -> Option
         item_type: Some(item_type),
         stream_url: None,
         source: None,
+        album,
     })
 }
 
@@ -177,6 +206,7 @@ fn parse_ytm_album_item(r: &serde_json::Value) -> Option<Video> {
         item_type: Some("album".to_string()),
         stream_url: None,
         source: None,
+        album: None,
     })
 }
 
@@ -344,6 +374,7 @@ async fn scrape_regular_youtube_search(
                                     item_type: Some(item_type),
                                     stream_url: None,
                                     source: None,
+                                    album: None,
                                 });
                             }
                         } else if let Some(playlist) = item.get("playlistRenderer") {
@@ -372,6 +403,7 @@ async fn scrape_regular_youtube_search(
                                     item_type: Some("album".to_string()),
                                     stream_url: None,
                                     source: None,
+                                    album: None,
                                 });
                             }
                         } else if let Some(lockup) = item.get("lockupViewModel") {
@@ -418,6 +450,7 @@ async fn scrape_regular_youtube_search(
                                     item_type: Some("album".to_string()),
                                     stream_url: None,
                                     source: None,
+                                    album: None,
                                 });
                             }
                         }
@@ -1142,6 +1175,7 @@ async fn get_ytm_mix_internal(video_id: &str) -> Result<Vec<Video>, String> {
                         item_type: Some(if is_video { "video".to_string() } else { "song".to_string() }),
         stream_url: None,
         source: None,
+        album: None,
                     });
                 }
             }
@@ -1233,6 +1267,7 @@ async fn scrape_youtube_mix(video_id: &str) -> Result<Vec<Video>, String> {
                                 item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
         stream_url: None,
         source: None,
+        album: None,
                             });
                         }
                     }
@@ -1467,6 +1502,7 @@ async fn scrape_youtube_playlist(
                                 item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
         stream_url: None,
         source: None,
+        album: None,
                             });
                         }
                     }
@@ -1503,6 +1539,7 @@ async fn scrape_youtube_playlist(
                                     item_type: Some(if is_topic { "song".to_string() } else { "video".to_string() }),
         stream_url: None,
         source: None,
+        album: None,
                                 });
                             }
                         }

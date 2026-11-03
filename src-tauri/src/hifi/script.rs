@@ -52,6 +52,38 @@ pub fn contains_latin(s: &str) -> bool {
     s.chars().any(|c| matches!(c, 'a'..='z' | 'A'..='Z'))
 }
 
+/// Normalizes Latin diacritics / accented characters (e.g., ê->e, é->e, ø->o, ä->a, ñ->n).
+pub fn strip_latin_diacritics(s: &str) -> String {
+    s.chars().map(|c| match c {
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'ā' | 'ă' | 'ą' => 'a',
+        'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' | 'Ā' | 'Ă' | 'Ą' => 'A',
+        'è' | 'é' | 'ê' | 'ë' | 'ē' | 'ĕ' | 'ė' | 'ę' | 'ě' => 'e',
+        'È' | 'É' | 'Ê' | 'Ë' | 'Ē' | 'Ĕ' | 'Ė' | 'Ę' | 'Ě' => 'E',
+        'ì' | 'í' | 'î' | 'ï' | 'ī' | 'ĭ' | 'į' | 'ı' => 'i',
+        'Ì' | 'Í' | 'Î' | 'Ï' | 'Ī' | 'Ĭ' | 'Į' | 'İ' => 'I',
+        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'ø' | 'ō' | 'ŏ' | 'ő' => 'o',
+        'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' | 'Ø' | 'Ō' | 'Ŏ' | 'Ő' => 'O',
+        'ù' | 'ú' | 'û' | 'ü' | 'ū' | 'ŭ' | 'ů' | 'ű' | 'ų' => 'u',
+        'Ù' | 'Ú' | 'Û' | 'Ü' | 'Ū' | 'Ŭ' | 'Ů' | 'Ű' | 'Ų' => 'U',
+        'ý' | 'ỳ' | 'ŷ' | 'ÿ' => 'y',
+        'Ý' | 'Ỳ' | 'Ŷ' | 'Ÿ' => 'Y',
+        'ñ' | 'ń' | 'ņ' | 'ň' => 'n',
+        'Ñ' | 'Ń' | 'Ņ' | 'Ň' => 'N',
+        'ç' | 'ć' | 'ĉ' | 'ċ' | 'č' => 'c',
+        'Ç' | 'Ć' | 'Ĉ' | 'Ċ' | 'Č' => 'C',
+        'ś' | 'ŝ' | 'ş' | 'ș' | 'š' => 's',
+        'Ś' | 'Ŝ' | 'Ş' | 'Ș' | 'Š' => 'S',
+        'ź' | 'ż' | 'ž' => 'z',
+        'Ź' | 'Ż' | 'Ž' => 'Z',
+        'ð' | 'đ' => 'd',
+        'Ð' | 'Đ' => 'D',
+        'ł' => 'l',
+        'Ł' => 'L',
+        'ß' => 's',
+        other => other,
+    }).collect()
+}
+
 /// Normalizes Arabic text by unifying alef variations, teh marbuta, alef maksura,
 /// and stripping harakat (tashkeel short vowels) and tatweel.
 pub fn normalize_arabic(s: &str) -> String {
@@ -661,6 +693,16 @@ pub fn parse_multilingual_metadata(raw_title: &str, raw_channel: Option<&str>) -
         let alias_query = format!("{} {}", alias, effective_title).trim().to_string();
         if !queries.contains(&alias_query) {
             queries.push(alias_query);
+        }
+    }
+
+    // Query Pass 2b: De-accented Latin query (e.g. "Mêlée Built to Last" -> "Melee Built to Last")
+    let deaccent_artist = strip_latin_diacritics(effective_artist);
+    let deaccent_title = strip_latin_diacritics(effective_title);
+    if deaccent_artist != effective_artist || deaccent_title != effective_title {
+        let deaccent_query = format!("{} {}", deaccent_artist, deaccent_title).trim().to_string();
+        if !queries.contains(&deaccent_query) {
+            queries.push(deaccent_query);
         }
     }
 

@@ -91,10 +91,10 @@ impl KuwoCandidateTrack {
         }
     }
 
-    /// Finds the highest-bitrate FLAC or HQ audio option available for this candidate.
+    /// Finds the highest-bitrate lossless FLAC audio option available for this candidate.
+    /// Strictly requires FLAC (no lossy MP3 fallback) to enforce studio/lossless quality.
     pub fn get_flac_info(&self) -> Option<KuwoMinfo> {
         if let Some(infos) = &self.minfo {
-            // 1. Prefer Lossless FLAC SQ
             let flacs: Vec<&KuwoMinfo> = infos
                 .iter()
                 .filter(|m| {
@@ -107,24 +107,6 @@ impl KuwoCandidateTrack {
 
             if !flacs.is_empty() {
                 let best = flacs.into_iter().max_by_key(|m| {
-                    m.bitrate_str().parse::<u32>().unwrap_or(0)
-                });
-                return best.cloned();
-            }
-
-            // 2. Fall back to High-Quality MP3 (e.g. 320k or 128k)
-            let mp3s: Vec<&KuwoMinfo> = infos
-                .iter()
-                .filter(|m| {
-                    m.format
-                        .as_deref()
-                        .map(|f| f.eq_ignore_ascii_case("mp3"))
-                        .unwrap_or(false)
-                })
-                .collect();
-
-            if !mp3s.is_empty() {
-                let best = mp3s.into_iter().max_by_key(|m| {
                     m.bitrate_str().parse::<u32>().unwrap_or(0)
                 });
                 return best.cloned();

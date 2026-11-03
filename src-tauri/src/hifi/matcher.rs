@@ -12,12 +12,14 @@ lazy_static! {
     
     // Universal Edition Classifiers
     static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix|dance\s*mix|dance\s*remix|electro\s*mix)\b").unwrap();
-    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert|live\s*in|live\s*from|tour\s*version|festival\s*live)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场)").unwrap();
+    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert|live\s*in|live\s*from|tour\s*version|festival\s*live|hits\s+alive|alive\s*vol\w*|alive\s*\d{4}|live\s*sessions?|(?:london|red\s*rocks|vegas|mtv\s*unplugged|bbc|spotify|itunes|aol)\s+sessions?)\b|[\(\[\{]\s*(?:live|live\s+[^)\]\}]+)\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场|现场版)").unwrap();
     static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged|stripped|piano\s*version|orchestral\s*version)\b|[\(\[\{]\s*(?:acoustic|piano|orchestral)\s*[\)\]\}]").unwrap();
     static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke|backing\s*track|minus\s*one|off\s*vocal)\b|(伴奏|原版伴奏)").unwrap();
     static ref SOUNDTRACK_REGEX: Regex = Regex::new(r"(?i)\b(soundtrack|ost|motion\s*picture)\b|(电影主题曲|电视剧主题曲|电影插曲|电影片尾曲|影视原声|电影原声)").unwrap();
     static ref RERECORDED_REGEX: Regex = Regex::new(r"(?i)\b(re-record\w*|rerecord\w*|re-cut|recut)\b").unwrap();
     static ref COVER_REGEX: Regex = Regex::new(r"(?i)\b(originally\s*performed\s*by|made\s*popular\s*by|in\s*the\s*style\s*of|tribute\s*version|tribute\s*to)\b|[\(\[\{]\s*cover\s*[\)\]\}]|\s+-\s+cover\b").unwrap();
+    static ref DELUXE_ALBUM_REGEX: Regex = Regex::new(r"(?i)\b(expanded(\s*edition)?|super\s*deluxe(\s*edition)?|deluxe(\s*edition)?|special\s*edition|bonus\s*track\s*edition|anniversary(\s*edition)?|collector('?s)?\s*edition|tour\s*edition)\b").unwrap();
+    static ref COMPILATION_ALBUM_REGEX: Regex = Regex::new(r"(?i)\b(greatest\s*hits|best\s*of|hits\s*vol\w*|volume\s*\d+|vol\.\s*\d+|the\s*collection|anthology|compilation|various\s*artists|essential)\b").unwrap();
 }
 
 /// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
@@ -25,12 +27,13 @@ pub fn clean_string(str: &str) -> String {
     let lower = str.to_lowercase();
     let without_feat = FEAT_REGEX.replace_all(&lower, "");
     let without_brackets = BRACKETS_REGEX.replace_all(&without_feat, "");
-    let normalized = if crate::hifi::script::contains_arabic(&without_brackets) {
-        crate::hifi::script::normalize_arabic(&without_brackets)
-    } else if crate::hifi::script::contains_thai(&without_brackets) {
-        crate::hifi::script::normalize_thai(&without_brackets)
+    let deaccented = crate::hifi::script::strip_latin_diacritics(&without_brackets);
+    let normalized = if crate::hifi::script::contains_arabic(&deaccented) {
+        crate::hifi::script::normalize_arabic(&deaccented)
+    } else if crate::hifi::script::contains_thai(&deaccented) {
+        crate::hifi::script::normalize_thai(&deaccented)
     } else {
-        without_brackets.to_string()
+        deaccented
     };
     let alnum_only = NON_ALPHANUM_REGEX.replace_all(&normalized, "");
     alnum_only.trim().to_string()
@@ -40,12 +43,13 @@ pub fn clean_string(str: &str) -> String {
 pub fn normalize_comparable_title(raw_title: &str) -> String {
     let lower = raw_title.to_lowercase();
     let without_noise = YOUTUBE_NOISE_REGEX.replace_all(&lower, " ");
-    let normalized = if crate::hifi::script::contains_arabic(&without_noise) {
-        crate::hifi::script::normalize_arabic(&without_noise)
-    } else if crate::hifi::script::contains_thai(&without_noise) {
-        crate::hifi::script::normalize_thai(&without_noise)
+    let deaccented = crate::hifi::script::strip_latin_diacritics(&without_noise);
+    let normalized = if crate::hifi::script::contains_arabic(&deaccented) {
+        crate::hifi::script::normalize_arabic(&deaccented)
+    } else if crate::hifi::script::contains_thai(&deaccented) {
+        crate::hifi::script::normalize_thai(&deaccented)
     } else {
-        without_noise.to_string()
+        deaccented
     };
     let alnum_only = NON_ALPHANUM_REGEX.replace_all(&normalized, "");
     alnum_only.trim().to_string()
@@ -111,7 +115,8 @@ fn normalize_artist_token(s: &str) -> String {
     let lower = s.to_lowercase();
     let no_topic = lower.replace("- topic", "").replace("topic", "");
     let no_vevo = no_topic.replace("vevo", "");
-    let alnum = NON_ALPHANUM_REGEX.replace_all(&no_vevo, " ");
+    let deaccented = crate::hifi::script::strip_latin_diacritics(&no_vevo);
+    let alnum = NON_ALPHANUM_REGEX.replace_all(&deaccented, " ");
     let single_spaced = MULTI_SPACE_REGEX.replace_all(&alnum, " ");
     single_spaced.trim().to_string()
 }
@@ -176,7 +181,7 @@ pub fn does_artist_match(target_artist: &str, candidate_artist: &str, target_tit
         let t_no_the = t.strip_prefix("the ").unwrap_or(t).trim();
 
         for c in &cand_list {
-            if t == c {
+            if t == c || clean_string(t) == clean_string(c) {
                 has_primary_match = true;
                 break;
             }
@@ -227,6 +232,12 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "kuwo_5266278",
         "196763238",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix)
         "kuwo_196763238",
+        "198259372",          // Kuwo: Imagine Dragons - Demons (Live From Red Rocks / 2014 mislabeled on Hits Alive Vol.4)
+        "kuwo_198259372",
+        "238687094",          // Kuwo: Imagine Dragons - Demons (Live London Sessions / 2013 on Night Visions Super Deluxe)
+        "kuwo_238687094",
+        "238687044",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix on Night Visions Super Deluxe)
+        "kuwo_238687044",
     ];
 
     if mismatches.contains(&id) {
@@ -429,41 +440,67 @@ pub fn score_track_candidate(
         return 0;
     }
 
-    // 5. Duration comparison (Strict length validation for both Kuwo and Monochrome)
+    // 5. Strict Studio Duration comparison (-Topic and song records match studio duration)
     if target_dur_secs > 0 && cand_dur_secs > 0 {
         let diff = (target_dur_secs as i64 - cand_dur_secs as i64).abs();
         
-        // Maximum allowed discrepancy is 15s (or up to 5% for long tracks >300s, max 25s)
-        let max_allowed_diff = (target_dur_secs as f64 * 0.05).clamp(15.0, 25.0) as i64;
+        // Strict tolerance: max allowed drift is 7s (or up to 2% for long tracks >350s, max 12s)
+        let max_allowed_diff = if target_dur_secs > 350 {
+            (target_dur_secs as f64 * 0.02).clamp(7.0, 12.0) as i64
+        } else {
+            7
+        };
+
         if diff > max_allowed_diff {
-            return 0;
+            return 0; // Alternate take, live version, or unedited audio -> disqualify
         }
 
         if diff <= 2 {
-            score += 40; // Exact match down to 2s
+            score += 40; // Exact studio duration match down to 2s
         } else if diff <= 4 {
-            score += 25; // Close match
-        } else if diff <= 7 {
-            score += 10; // Acceptable padding / fade difference
-        } else if diff <= 12 {
-            score = score.saturating_sub(15);
+            score += 15; // Minor fade/pad variance
         } else {
-            // 13s to max_allowed_diff: heavy penalty
-            score = score.saturating_sub(45);
+            // 5s to 7s: suspect edit/compilation padding penalty
+            score = score.saturating_sub(30);
         }
     } else if target_dur_secs > 0 && cand_dur_secs == 0 {
-        score = score.saturating_sub(20);
+        score = score.saturating_sub(25);
     }
 
-    // 6. Album comparison bonus
-    if let (Some(t_alb), Some(c_alb)) = (target_album, cand_album) {
-        let t_clean = clean_string(t_alb);
-        let c_clean = clean_string(c_alb);
-        if !t_clean.is_empty() && !c_clean.is_empty() {
-            if t_clean == c_clean {
-                score += 60; // Exact album match (e.g. "No Protection" == "No Protection")
-            } else if t_clean.contains(&c_clean) || c_clean.contains(&t_clean) {
-                score += 35; // Partial album match
+    // 6. Tiered Album comparison & compilation penalty
+    if let Some(c_alb) = cand_album {
+        let c_lower = c_alb.to_lowercase();
+        let target_is_comp = target_album
+            .map(|t| COMPILATION_ALBUM_REGEX.is_match(&t.to_lowercase()))
+            .unwrap_or(false);
+
+        // If target is not a compilation, heavily penalize compilation / various-artists candidate albums
+        if !target_is_comp && COMPILATION_ALBUM_REGEX.is_match(&c_lower) {
+            score = score.saturating_sub(45);
+        }
+
+        if let Some(t_alb) = target_album {
+            let t_clean = clean_string(t_alb);
+            let c_clean = clean_string(c_alb);
+            if !t_clean.is_empty() && !c_clean.is_empty() {
+                let t_has_deluxe = DELUXE_ALBUM_REGEX.is_match(&t_alb.to_lowercase());
+                let c_has_deluxe = DELUXE_ALBUM_REGEX.is_match(&c_lower);
+
+                if t_clean == c_clean {
+                    if !t_has_deluxe && c_has_deluxe {
+                        // Candidate is Deluxe / Expanded edition while target requested standard album
+                        score += 30; // Tier 2 bonus
+                    } else {
+                        // Clean exact base album match (e.g. "Night Visions" == "Night Visions")
+                        score += 65; // Tier 1 canonical album bonus
+                    }
+                } else if t_clean.contains(&c_clean) || c_clean.contains(&t_clean) {
+                    if !t_has_deluxe && c_has_deluxe {
+                        score += 20;
+                    } else {
+                        score += 35; // Partial album match
+                    }
+                }
             }
         }
     }
@@ -783,7 +820,7 @@ mod tests {
         let studio_score = score_track_candidate(
             "Demons",
             "Imagine Dragons",
-            176,
+            177,
             None,
             Some("Night Visions"),
             "69494807",
@@ -793,7 +830,39 @@ mod tests {
             None,
             Some("Night Visions"),
         );
-        assert!(studio_score >= 200, "Studio album track must score >= 200, got {}", studio_score);
+        assert!(studio_score >= 250, "Studio album track must score >= 250, got {}", studio_score);
+
+        // 3. Live Red Rocks track (198259372) on Hits Alive Vol.4 must score 0
+        let hits_alive_score = score_track_candidate(
+            "Demons",
+            "Imagine Dragons",
+            177,
+            None,
+            Some("Night Visions"),
+            "198259372",
+            "Demons",
+            "Imagine Dragons",
+            183,
+            None,
+            Some("Hits Alive Vol.4"),
+        );
+        assert_eq!(hits_alive_score, 0, "Hits Alive live cut must score 0, got {}", hits_alive_score);
+
+        // 4. Live London Sessions track (238687094) on Super Deluxe must score 0 due to duration drift > 7s
+        let london_live_score = score_track_candidate(
+            "Demons",
+            "Imagine Dragons",
+            177,
+            None,
+            Some("Night Visions"),
+            "238687094",
+            "Demons",
+            "Imagine Dragons",
+            187,
+            None,
+            Some("Night Visions (Expanded Edition / Super Deluxe)"),
+        );
+        assert_eq!(london_live_score, 0, "London live session must score 0 due to duration drift, got {}", london_live_score);
 
         let movie_cut_score = score_track_candidate(
             "Demons",
@@ -809,5 +878,21 @@ mod tests {
             Some("Continued Silence"),
         );
         assert_eq!(movie_cut_score, 0, "Soundtrack movie promotional cut must score 0 when studio album track is requested");
+
+        // 5. Latin diacritic test: Mêlée (YouTube) vs Melee (Kuwo)
+        let melee_score = score_track_candidate(
+            "Built to Last",
+            "Mêlée",
+            222,
+            None,
+            Some("Built To Last"),
+            "16483587",
+            "Built To Last",
+            "Melee",
+            222,
+            None,
+            Some("Devils & Angels (German Digital Bundle)"),
+        );
+        assert!(melee_score >= 140, "Mêlée Built to Last should match Melee Built to Last with score >= 140, got {}", melee_score);
     }
 }
