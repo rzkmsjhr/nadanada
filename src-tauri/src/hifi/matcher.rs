@@ -9,9 +9,9 @@ lazy_static! {
     static ref ARTIST_SPLIT_REGEX: Regex = Regex::new(r"(?i)[,&/;|]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)").unwrap();
     static ref YOUTUBE_NOISE_REGEX: Regex = Regex::new(r"(?i)\b(official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyrics?\s*(?:video)?|music\s*video|audio|visualizer|hd|hq|4k|1080p|720p|topic|clip\s*officiel|video\s*oficial|mv)\b").unwrap();
     static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix)\b").unwrap();
-    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b").unwrap();
+    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场)").unwrap();
     static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged)\b").unwrap();
-    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke)\b").unwrap();
+    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke)\b|(伴奏|原版伴奏)").unwrap();
 }
 
 /// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
@@ -193,6 +193,8 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "kuwo_228981606",
         "228983127",          // Kuwo mislabeled: Andra & The Backbone - Kepayang (audio is actually Hitamku)
         "kuwo_228983127",
+        "5266278",            // Kuwo: Maroon 5 - Animals (2015 Victoria's Secret runway music, not studio track)
+        "kuwo_5266278",
     ];
 
     if mismatches.contains(&id) {
@@ -270,17 +272,21 @@ pub fn score_track_candidate(
         return 0;
     }
 
-    // Check live / in concert
+    // Check live / in concert / runway broadcast
     let is_cand_live = cand_album_lower.contains("live")
         || cand_album_lower.contains("in concert")
         || cand_title_lower.contains("live at")
         || cand_title_lower.contains("(live)")
         || cand_title_lower.contains("[live]")
         || cand_title_lower.ends_with(" - live")
-        || cand_title_lower.contains(" live version");
+        || cand_title_lower.contains(" live version")
+        || LIVE_REGEX.is_match(&cand_title)
+        || LIVE_REGEX.is_match(&cand_album_lower);
     let is_target_live = target_album_lower.contains("live")
         || target_album_lower.contains("in concert")
-        || target_title_lower.contains("live");
+        || target_title_lower.contains("live")
+        || LIVE_REGEX.is_match(&target_title)
+        || LIVE_REGEX.is_match(&target_album_lower);
     if is_cand_live && !is_target_live {
         return 0;
     }
@@ -761,5 +767,25 @@ mod tests {
             Some("Alamak (Dipha Barus Remix)"),
         );
         assert!(req_remix_match >= 200, "Remix match must score >= 200, got {}", req_remix_match);
+    }
+
+    #[test]
+    fn test_live_runway_broadcast_disqualification() {
+        // Kuwo candidate 5266278 is "Animals-2015年维多利亚的秘密泳装秀秀场音乐" (runway broadcast mix)
+        // It must be rejected when original studio track is requested.
+        let runway_score = score_track_candidate(
+            "Animals",
+            "Maroon 5",
+            232,
+            None,
+            Some("V"),
+            "5266278",
+            "Animals-2015年维多利亚的秘密泳装秀秀场音乐",
+            "Maroon 5",
+            229,
+            None,
+            None,
+        );
+        assert_eq!(runway_score, 0, "Runway broadcast mix must score 0");
     }
 }
