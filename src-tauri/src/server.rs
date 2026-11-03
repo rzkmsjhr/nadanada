@@ -300,6 +300,21 @@ fn handle_hifi_stream(request: Request, track_id: String) {
 
     eprintln!("[HIFI PROXY] Client request: track_id={}, range={:?}", track_id, range_header);
 
+    // 0. Reject immediately if known upstream mismatch / blacklisted edition
+    if crate::hifi::matcher::is_known_upstream_mismatch(&track_id, "", "") {
+        eprintln!("[HIFI PROXY] Fast reject for {} - blacklisted mismatch", track_id);
+        if let Some(cached_path) = cache::get_cached_track_path(&track_id) {
+            let _ = std::fs::remove_file(cached_path);
+        }
+        cache::clear_direct_url(&track_id);
+        let resp = Response::from_string(r#"{"error":"Track is a known mismatch or disqualified edition"}"#)
+            .with_status_code(StatusCode(404))
+            .with_header(Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap())
+            .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], &b"*"[..]).unwrap());
+        let _ = request.respond(resp);
+        return;
+    }
+
     // 1. Check disk cache first (100% offline playback with 0ms network latency & 0 upstream requests)
     if let Some(cached_path) = cache::get_cached_track_path(&track_id) {
         let is_mp3 = cached_path.extension().map(|e| e == "mp3").unwrap_or(false);

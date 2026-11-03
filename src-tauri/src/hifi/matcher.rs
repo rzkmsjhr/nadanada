@@ -195,6 +195,8 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "kuwo_228983127",
         "5266278",            // Kuwo: Maroon 5 - Animals (2015 Victoria's Secret runway music, not studio track)
         "kuwo_5266278",
+        "196763238",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix mislabeled as standard track)
+        "kuwo_196763238",
     ];
 
     if mismatches.contains(&id) {
@@ -476,6 +478,23 @@ pub fn score_track_candidate(
                 score += 35; // Partial album match
             }
         }
+    }
+
+    // 7. Promotional movie tie-in / theme song check
+    let is_cand_soundtrack = cand_title_lower.contains("电影主题曲")
+        || cand_title_lower.contains("电影插曲")
+        || cand_title_lower.contains("电影片尾曲")
+        || cand_title_lower.contains("电视剧主题曲")
+        || cand_title_lower.contains("影视原声");
+    let is_target_soundtrack = target_title_lower.contains("theme")
+        || target_title_lower.contains("soundtrack")
+        || target_title_lower.contains("ost")
+        || target_title_lower.contains("电影")
+        || target_title_lower.contains("主题曲")
+        || target_title_lower.contains("片尾曲")
+        || target_title_lower.contains("插曲");
+    if is_cand_soundtrack && !is_target_soundtrack {
+        score = score.saturating_sub(40);
     }
 
     score
@@ -787,5 +806,56 @@ mod tests {
             None,
         );
         assert_eq!(runway_score, 0, "Runway broadcast mix must score 0");
+    }
+
+    #[test]
+    fn test_demons_album_and_remix_preference() {
+        // 1. TELYKast remix candidate must score 0 when studio track is requested
+        let remix_score = score_track_candidate(
+            "Demons",
+            "Imagine Dragons",
+            176,
+            None,
+            Some("Night Visions"),
+            "196763238",
+            "Demons",
+            "Imagine Dragons",
+            176,
+            None,
+            Some("Demons (TELYKast Remix)"),
+        );
+        assert_eq!(remix_score, 0, "TELYKast remix must score 0 when original track requested");
+
+        // 2. Official studio album track (69494807) from Night Visions must score >= 200
+        let studio_score = score_track_candidate(
+            "Demons",
+            "Imagine Dragons",
+            176,
+            None,
+            Some("Night Visions"),
+            "69494807",
+            "Demons",
+            "Imagine Dragons",
+            177,
+            None,
+            Some("Night Visions"),
+        );
+        assert!(studio_score >= 200, "Studio album track must score >= 200, got {}", studio_score);
+
+        // 3. Movie theme cut (1136550) on Continued Silence should score significantly lower than official album track
+        let movie_cut_score = score_track_candidate(
+            "Demons",
+            "Imagine Dragons",
+            176,
+            None,
+            Some("Night Visions"),
+            "1136550",
+            "Demons-《九层妖塔》电影主题曲",
+            "Imagine Dragons",
+            175,
+            None,
+            Some("Continued Silence"),
+        );
+        assert!(studio_score > movie_cut_score + 50, "Studio album track must strongly outscore movie cut");
     }
 }

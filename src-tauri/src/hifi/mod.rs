@@ -177,11 +177,22 @@ pub async fn resolve_hifi_track(
     }
 
     let meta = script::parse_multilingual_metadata(clean_title, Some(channel_str));
-    let queries = if !meta.search_queries.is_empty() {
+    let mut queries = if !meta.search_queries.is_empty() {
         meta.search_queries
     } else {
         vec![format!("{} {}", channel_str, clean_title)]
     };
+
+    if let Some(alb) = target_album {
+        let alb_clean = alb.trim();
+        if !alb_clean.is_empty() {
+            let album_query = format!("{} {} {}", channel_str, clean_title, alb_clean);
+            if !queries.contains(&album_query) {
+                let insert_idx = 1.min(queries.len());
+                queries.insert(insert_idx, album_query);
+            }
+        }
+    }
 
     // 2. Primary Provider: flac.music.hi.cn (Kuwo lossless FLAC multi-query)
     let mut best_kuwo: Option<(kuwo::KuwoCandidateTrack, kuwo::KuwoMinfo, u32)> = None;
@@ -229,8 +240,9 @@ pub async fn resolve_hifi_track(
         }
 
         // Early exit on definitive high-confidence match
+        let early_exit_threshold = if target_album.is_some() { 185 } else { 140 };
         if let Some((_, _, s)) = &best_kuwo {
-            if *s >= 140 {
+            if *s >= early_exit_threshold {
                 break;
             }
         }

@@ -1,6 +1,6 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v9';
+const STORAGE_KEY = 'nadanada-hifi-cache-v10';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
@@ -9,10 +9,11 @@ const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache-v5',
   'nadanada-hifi-cache-v6',
   'nadanada-hifi-cache-v7',
-  'nadanada-hifi-cache-v8'
+  'nadanada-hifi-cache-v8',
+  'nadanada-hifi-cache-v9'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 9;
+export const HIFI_MATCHER_VERSION = 10;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
@@ -56,7 +57,11 @@ export const KNOWN_UPSTREAM_MISMATCHES = new Set([
   '168395054749057024', // Dewa 19 - Aku Milikmu (upstream audio is 2021 Virzha single instead of 1994 Ari Lasso master)
   '168589766881927168', // Dewa 19 feat. Virzha - Aku Milikmu (2021 Virzha remake)
   '168395069831774208', // Dewa 19 - Tak Kan Ada Cinta Yang Lain (upstream audio is 2021 Ello remake)
-  '168395062953115648'  // Dewa 19 - Mahameru (upstream audio is 2021 Virzha remake)
+  '168395062953115648', // Dewa 19 - Mahameru (upstream audio is 2021 Virzha remake)
+  '5266278',            // Maroon 5 - Animals (2015 Victoria's Secret runway music)
+  'kuwo_5266278',
+  '196763238',          // Imagine Dragons - Demons (TELYKast Remix)
+  'kuwo_196763238'
 ]);
 
 export function isUserYoutubeForced(songId) {
