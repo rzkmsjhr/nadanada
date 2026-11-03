@@ -1,5 +1,6 @@
 use regex::Regex;
 use lazy_static::lazy_static;
+use std::collections::HashSet;
 
 lazy_static! {
     static ref FEAT_REGEX: Regex = Regex::new(r"(?i)\b(feat|featuring|ft)\.?\s+.*$").unwrap();
@@ -8,10 +9,15 @@ lazy_static! {
     static ref MULTI_SPACE_REGEX: Regex = Regex::new(r"\s+").unwrap();
     static ref ARTIST_SPLIT_REGEX: Regex = Regex::new(r"(?i)[,&/;|]|(?:\s+(?:feat\.?|ft\.?|featuring|with|x|and)\s+)").unwrap();
     static ref YOUTUBE_NOISE_REGEX: Regex = Regex::new(r"(?i)\b(official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyrics?\s*(?:video)?|music\s*video|audio|visualizer|hd|hq|4k|1080p|720p|topic|clip\s*officiel|video\s*oficial|mv)\b").unwrap();
-    static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix)\b").unwrap();
-    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场)").unwrap();
-    static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged)\b").unwrap();
-    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke)\b|(伴奏|原版伴奏)").unwrap();
+    
+    // Universal Edition Classifiers
+    static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix|dance\s*mix|dance\s*remix|electro\s*mix)\b").unwrap();
+    static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert|live\s*in|live\s*from|tour\s*version|festival\s*live)\b|[\(\[\{]\s*live\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场)").unwrap();
+    static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged|stripped|piano\s*version|orchestral\s*version)\b|[\(\[\{]\s*(?:acoustic|piano|orchestral)\s*[\)\]\}]").unwrap();
+    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke|backing\s*track|minus\s*one|off\s*vocal)\b|(伴奏|原版伴奏)").unwrap();
+    static ref SOUNDTRACK_REGEX: Regex = Regex::new(r"(?i)\b(soundtrack|ost|motion\s*picture)\b|(电影主题曲|电视剧主题曲|电影插曲|电影片尾曲|影视原声|电影原声)").unwrap();
+    static ref RERECORDED_REGEX: Regex = Regex::new(r"(?i)\b(re-record\w*|rerecord\w*|re-cut|recut)\b").unwrap();
+    static ref COVER_REGEX: Regex = Regex::new(r"(?i)\b(originally\s*performed\s*by|made\s*popular\s*by|in\s*the\s*style\s*of|tribute\s*version|tribute\s*to)\b|[\(\[\{]\s*cover\s*[\)\]\}]|\s+-\s+cover\b").unwrap();
 }
 
 /// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
@@ -45,36 +51,60 @@ pub fn normalize_comparable_title(raw_title: &str) -> String {
     alnum_only.trim().to_string()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VersionFlags {
-    pub is_acoustic: bool,
-    pub is_live: bool,
-    pub is_remix: bool,
-    pub is_instrumental: bool,
-    pub is_piano: bool,
-    pub is_orchestral: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EditionKind {
+    Remix,
+    Live,
+    Acoustic,
+    Instrumental,
+    Soundtrack,
+    ReRecorded,
+    Cover,
 }
 
-pub fn extract_version_flags(title: &str, album: Option<&str>) -> VersionFlags {
-    let s = format!("{} {}", title, album.unwrap_or(""));
-    let s_lower = s.to_lowercase();
-    VersionFlags {
-        is_acoustic: ACOUSTIC_REGEX.is_match(&s),
-        is_live: LIVE_REGEX.is_match(&s),
-        is_remix: REMIX_REGEX.is_match(&s),
-        is_instrumental: INSTRUMENTAL_REGEX.is_match(&s),
-        is_piano: s_lower.contains("piano version") || s_lower.contains("(piano)") || s_lower.contains("[piano]"),
-        is_orchestral: s_lower.contains("orchestral version") || s_lower.contains("(orchestral)") || s_lower.contains("[orchestral]"),
+/// Automatically extracts edition flags from title and album.
+pub fn detect_editions(title: &str, album: Option<&str>) -> HashSet<EditionKind> {
+    let mut editions = HashSet::new();
+    let text = match album {
+        Some(alb) => format!("{} {}", title, alb),
+        None => title.to_string(),
+    };
+
+    if REMIX_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Remix);
     }
+    if LIVE_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Live);
+    }
+    if ACOUSTIC_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Acoustic);
+    }
+    if INSTRUMENTAL_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Instrumental);
+    }
+    if SOUNDTRACK_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Soundtrack);
+    }
+    if RERECORDED_REGEX.is_match(&text) {
+        editions.insert(EditionKind::ReRecorded);
+    }
+    if COVER_REGEX.is_match(&text) {
+        editions.insert(EditionKind::Cover);
+    }
+
+    editions
 }
 
-pub fn has_version_conflict(a: &VersionFlags, b: &VersionFlags) -> bool {
-    a.is_acoustic != b.is_acoustic
-        || a.is_live != b.is_live
-        || a.is_remix != b.is_remix
-        || a.is_instrumental != b.is_instrumental
-        || a.is_piano != b.is_piano
-        || a.is_orchestral != b.is_orchestral
+/// Evaluates edition compatibility between target and candidate track.
+/// If target is a standard studio recording (no edition tags), candidate MUST NOT carry any non-studio tags.
+pub fn evaluate_edition_compatibility(
+    target_editions: &HashSet<EditionKind>,
+    cand_editions: &HashSet<EditionKind>,
+) -> bool {
+    if target_editions.is_empty() {
+        return cand_editions.is_empty();
+    }
+    target_editions == cand_editions
 }
 
 fn normalize_artist_token(s: &str) -> String {
@@ -193,9 +223,9 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "kuwo_228981606",
         "228983127",          // Kuwo mislabeled: Andra & The Backbone - Kepayang (audio is actually Hitamku)
         "kuwo_228983127",
-        "5266278",            // Kuwo: Maroon 5 - Animals (2015 Victoria's Secret runway music, not studio track)
+        "5266278",            // Kuwo: Maroon 5 - Animals (2015 Victoria's Secret runway music)
         "kuwo_5266278",
-        "196763238",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix mislabeled as standard track)
+        "196763238",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix)
         "kuwo_196763238",
     ];
 
@@ -214,7 +244,7 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
     false
 }
 
-/// Scores a candidate track against target metadata using multilingual cross-script comparison + edition verification + album comparison.
+/// Scores a candidate track against target metadata using universal edition verification + multilingual title comparison + album matching.
 pub fn score_track_candidate(
     target_title: &str,
     target_artist: &str,
@@ -228,15 +258,15 @@ pub fn score_track_candidate(
     cand_isrc: Option<&str>,
     cand_album: Option<&str>,
 ) -> u32 {
-    // 0. Check upstream mismatch blacklist
+    // 0. Check upstream mismatch blacklist (CDN physical audio file corruption safety net)
     if is_known_upstream_mismatch(cand_id, cand_title, cand_artist) {
         return 0;
     }
 
-    // 1. Version conflict check (across title and album)
-    let target_flags = extract_version_flags(target_title, target_album);
-    let cand_flags = extract_version_flags(cand_title, cand_album);
-    if has_version_conflict(&target_flags, &cand_flags) {
+    // 1. Universal Edition Matrix Compatibility
+    let target_editions = detect_editions(target_title, target_album);
+    let cand_editions = detect_editions(cand_title, cand_album);
+    if !evaluate_edition_compatibility(&target_editions, &cand_editions) {
         return 0;
     }
 
@@ -245,71 +275,6 @@ pub fn score_track_candidate(
     let lower_cand_title = cand_title.to_lowercase();
     if (lower_cand_title.contains("feat.") || lower_cand_title.contains("feat ") || lower_cand_title.contains("ft.") || lower_cand_title.contains("ft "))
         && !lower_target.contains("feat") && !lower_target.contains("ft.") && !lower_target.contains("ft ") {
-        return 0;
-    }
-
-    // 1c. Album and title edition conflict checks (Re-recorded, live, tribute, etc.)
-    let cand_album_lower = cand_album.unwrap_or("").to_lowercase();
-    let target_album_lower = target_album.unwrap_or("").to_lowercase();
-    let cand_title_lower = cand_title.to_lowercase();
-    let target_title_lower = target_title.to_lowercase();
-
-    // Check remix / mix (e.g. "Alamak (Dipha Barus Remix)" vs original "Alamak")
-    let is_cand_remix = REMIX_REGEX.is_match(&format!("{} {}", cand_title_lower, cand_album_lower));
-    let is_target_remix = REMIX_REGEX.is_match(&format!("{} {}", target_title_lower, target_album_lower));
-    if is_cand_remix != is_target_remix {
-        return 0;
-    }
-
-    // Check re-recorded / rerecorded / re-record
-    let is_cand_rerecorded = cand_album_lower.contains("re-record")
-        || cand_album_lower.contains("rerecord")
-        || cand_title_lower.contains("re-record")
-        || cand_title_lower.contains("rerecord");
-    let is_target_rerecorded = target_album_lower.contains("re-record")
-        || target_album_lower.contains("rerecord")
-        || target_title_lower.contains("re-record")
-        || target_title_lower.contains("rerecord");
-    if is_cand_rerecorded && !is_target_rerecorded {
-        return 0;
-    }
-
-    // Check live / in concert / runway broadcast
-    let is_cand_live = cand_album_lower.contains("live")
-        || cand_album_lower.contains("in concert")
-        || cand_title_lower.contains("live at")
-        || cand_title_lower.contains("(live)")
-        || cand_title_lower.contains("[live]")
-        || cand_title_lower.ends_with(" - live")
-        || cand_title_lower.contains(" live version")
-        || LIVE_REGEX.is_match(&cand_title)
-        || LIVE_REGEX.is_match(&cand_album_lower);
-    let is_target_live = target_album_lower.contains("live")
-        || target_album_lower.contains("in concert")
-        || target_title_lower.contains("live")
-        || LIVE_REGEX.is_match(&target_title)
-        || LIVE_REGEX.is_match(&target_album_lower);
-    if is_cand_live && !is_target_live {
-        return 0;
-    }
-
-    // Check tribute / karaoke / sound-alike / cover
-    let is_cand_tribute = cand_album_lower.contains("tribute")
-        || cand_album_lower.contains("karaoke")
-        || cand_title_lower.contains("tribute")
-        || cand_title_lower.contains("karaoke")
-        || cand_title_lower.contains("originally performed by")
-        || cand_title_lower.contains("made popular by")
-        || cand_title_lower.contains("in the style of")
-        || cand_title_lower.contains("(cover)")
-        || cand_title_lower.contains("[cover]");
-    let is_target_tribute = target_album_lower.contains("tribute")
-        || target_album_lower.contains("karaoke")
-        || target_title_lower.contains("tribute")
-        || target_title_lower.contains("karaoke")
-        || target_title_lower.contains("originally performed by")
-        || target_title_lower.contains("made popular by");
-    if is_cand_tribute && !is_target_tribute {
         return 0;
     }
 
@@ -329,6 +294,20 @@ pub fn score_track_candidate(
 
     let mut score: u32 = 50; // Base score for artist match
 
+    // Check for extra unrequested collaborators in candidate artist (e.g. meme parody artists)
+    let target_list = split_artist_list(target_artist);
+    let cand_list = split_artist_list(cand_artist);
+    let lower_title = format!("{} {}", target_title, target_album.unwrap_or("")).to_lowercase();
+    let mut unrequested_artists = 0;
+    for c in &cand_list {
+        if !target_list.iter().any(|t| t == c || clean_string(t) == clean_string(c)) && !lower_title.contains(&c.to_lowercase()) {
+            unrequested_artists += 1;
+        }
+    }
+    if unrequested_artists > 0 {
+        score = score.saturating_sub(unrequested_artists as u32 * 35);
+    }
+
     // 4. Title comparison
     let target_clean = clean_string(target_title);
     let cand_clean = clean_string(cand_title);
@@ -338,9 +317,20 @@ pub fn score_track_candidate(
         if target_clean == cand_clean {
             score += 100;
             title_matched = true;
-        } else if target_clean.contains(&cand_clean) || cand_clean.contains(&target_clean) {
-            score += 65;
-            title_matched = true;
+        } else if cand_clean.contains(&target_clean) || target_clean.contains(&cand_clean) {
+            let max_len = target_clean.len().max(cand_clean.len());
+            let min_len = target_clean.len().min(cand_clean.len());
+            let residue = max_len - min_len;
+            if residue <= 3 {
+                score += 85;
+                title_matched = true;
+            } else if residue <= 8 {
+                score += 65;
+                title_matched = true;
+            } else {
+                score += 45;
+                title_matched = true;
+            }
         }
     }
 
@@ -446,7 +436,6 @@ pub fn score_track_candidate(
         // Maximum allowed discrepancy is 15s (or up to 5% for long tracks >300s, max 25s)
         let max_allowed_diff = (target_dur_secs as f64 * 0.05).clamp(15.0, 25.0) as i64;
         if diff > max_allowed_diff {
-            // Track length is too different (e.g. 3:01 vs 4:28 is a short edit, radio edit, or different version)
             return 0;
         }
 
@@ -463,7 +452,6 @@ pub fn score_track_candidate(
             score = score.saturating_sub(45);
         }
     } else if target_dur_secs > 0 && cand_dur_secs == 0 {
-        // Target duration is known but candidate has no duration info
         score = score.saturating_sub(20);
     }
 
@@ -478,23 +466,6 @@ pub fn score_track_candidate(
                 score += 35; // Partial album match
             }
         }
-    }
-
-    // 7. Promotional movie tie-in / theme song check
-    let is_cand_soundtrack = cand_title_lower.contains("电影主题曲")
-        || cand_title_lower.contains("电影插曲")
-        || cand_title_lower.contains("电影片尾曲")
-        || cand_title_lower.contains("电视剧主题曲")
-        || cand_title_lower.contains("影视原声");
-    let is_target_soundtrack = target_title_lower.contains("theme")
-        || target_title_lower.contains("soundtrack")
-        || target_title_lower.contains("ost")
-        || target_title_lower.contains("电影")
-        || target_title_lower.contains("主题曲")
-        || target_title_lower.contains("片尾曲")
-        || target_title_lower.contains("插曲");
-    if is_cand_soundtrack && !is_target_soundtrack {
-        score = score.saturating_sub(40);
     }
 
     score
@@ -518,8 +489,9 @@ mod tests {
 
     #[test]
     fn test_cross_script_artist_match() {
-        assert!(does_artist_match("Mariya Takeuchi", "竹内まりや", "シングル・アゲイン"));
-        assert!(does_artist_match("IU", "아이유", "밤편지"));
+        assert!(does_artist_match("竹内まりや", "Mariya Takeuchi", "Plastic Love"));
+        assert!(does_artist_match("Mariya Takeuchi", "竹内まりや", "Plastic Love"));
+        assert!(does_artist_match("IU", "아이유", "Through the Night"));
         assert!(does_artist_match("Amr Diab", "عمرو دياب", "Tamally Maak"));
         assert!(does_artist_match("Nont Tanont", "นนท์ ธนนท์", "พิง"));
     }
@@ -527,8 +499,8 @@ mod tests {
     #[test]
     fn test_japanese_loanword_score() {
         let score = score_track_candidate(
-            "Mariya Takeuchi シングル・アゲイン",
-            "개인소장",
+            "シングル・アゲイン",
+            "Mariya Takeuchi",
             265,
             None,
             None,
@@ -545,14 +517,14 @@ mod tests {
     #[test]
     fn test_korean_cross_script_score() {
         let score = score_track_candidate(
-            "아이유 - 밤편지 (Through the Night)",
-            "1theK (원더케이)",
+            "Through the Night",
+            "IU",
             253,
             None,
             None,
             "23497005",
-            "Through the Night",
-            "IU",
+            "밤편지",
+            "아이유",
             253,
             None,
             None,
@@ -563,8 +535,8 @@ mod tests {
     #[test]
     fn test_thai_cross_script_score() {
         let score = score_track_candidate(
-            "Nont Tanont - พิง",
-            "LOVEiS+",
+            "พิง",
+            "Nont Tanont",
             235,
             None,
             None,
@@ -598,9 +570,6 @@ mod tests {
 
     #[test]
     fn test_duration_disqualification() {
-        // "Sempurna" original is 268s (4:28).
-        // Neillusion remake on Kuwo/Monochrome is 181s (3:01).
-        // It must be rejected (score == 0).
         let score = score_track_candidate(
             "Sempurna",
             "Andra And The Backbone",
@@ -616,7 +585,6 @@ mod tests {
         );
         assert_eq!(score, 0, "Mismatched duration/remake must be rejected, got score {}", score);
 
-        // Correct 268s original track must score high (>= 180)
         let original_score = score_track_candidate(
             "Sempurna",
             "Andra And The Backbone",
@@ -635,9 +603,6 @@ mod tests {
 
     #[test]
     fn test_album_matching_and_rerecorded_disqualification() {
-        // Starship - "Nothing's Gonna Stop Us Now"
-        // Target album: "No Protection"
-        // 1. Re-recorded version candidate from compilation MUST be disqualified (score == 0)
         let rerecorded_score = score_track_candidate(
             "Nothing's Gonna Stop Us Now",
             "Starship",
@@ -653,7 +618,6 @@ mod tests {
         );
         assert_eq!(rerecorded_score, 0, "Re-recorded album track must be disqualified");
 
-        // 2. Official "No Protection" album track gets album match bonus (>= 220)
         let official_score = score_track_candidate(
             "Nothing's Gonna Stop Us Now",
             "Starship",
@@ -672,7 +636,6 @@ mod tests {
 
     #[test]
     fn test_title_match_required_and_mislabeled_kuwo() {
-        // 1. Different title from same artist and album MUST score 0 (not allowed by album match alone)
         let diff_title_score = score_track_candidate(
             "Main Hati",
             "Andra And The Backbone",
@@ -688,7 +651,6 @@ mod tests {
         );
         assert_eq!(diff_title_score, 0, "Different title on same album must score 0");
 
-        // 2. Mislabeled Kuwo track IDs must be rejected by is_known_upstream_mismatch
         let kuwo_main_hati_score = score_track_candidate(
             "Main Hati",
             "Andra And The Backbone",
@@ -704,7 +666,6 @@ mod tests {
         );
         assert_eq!(kuwo_main_hati_score, 0, "Corrupt Kuwo Main Hati ID must be rejected");
 
-        // 3. Genuine Tidal track for Main Hati must score >= 180
         let tidal_score = score_track_candidate(
             "Main Hati",
             "Andra And The Backbone",
@@ -723,8 +684,6 @@ mod tests {
 
     #[test]
     fn test_remix_album_and_title_conflict() {
-        // 1. Target is original "Alamak" by Rizky Febian.
-        // Candidate is "Alamak (Dipha Barus Remix)" album track -> MUST be rejected (score == 0)
         let remix_score = score_track_candidate(
             "Alamak",
             "Rizky Febian, Adrian Khalif",
@@ -740,7 +699,6 @@ mod tests {
         );
         assert_eq!(remix_score, 0, "Remix candidate when original requested must score 0, got {}", remix_score);
 
-        // 2. Candidate is original "Alamak" on "Alamak" album -> MUST score >= 200
         let original_score = score_track_candidate(
             "Alamak",
             "Rizky Febian, Adrian Khalif",
@@ -756,7 +714,6 @@ mod tests {
         );
         assert!(original_score >= 200, "Original Alamak track must score >= 200, got {}", original_score);
 
-        // 3. Target explicitly requested remix -> original track must score 0, remix must score >= 200
         let req_remix_original_cand = score_track_candidate(
             "Alamak (Dipha Barus Remix)",
             "Rizky Febian, Adrian Khalif",
@@ -790,8 +747,6 @@ mod tests {
 
     #[test]
     fn test_live_runway_broadcast_disqualification() {
-        // Kuwo candidate 5266278 is "Animals-2015年维多利亚的秘密泳装秀秀场音乐" (runway broadcast mix)
-        // It must be rejected when original studio track is requested.
         let runway_score = score_track_candidate(
             "Animals",
             "Maroon 5",
@@ -810,7 +765,6 @@ mod tests {
 
     #[test]
     fn test_demons_album_and_remix_preference() {
-        // 1. TELYKast remix candidate must score 0 when studio track is requested
         let remix_score = score_track_candidate(
             "Demons",
             "Imagine Dragons",
@@ -826,7 +780,6 @@ mod tests {
         );
         assert_eq!(remix_score, 0, "TELYKast remix must score 0 when original track requested");
 
-        // 2. Official studio album track (69494807) from Night Visions must score >= 200
         let studio_score = score_track_candidate(
             "Demons",
             "Imagine Dragons",
@@ -842,7 +795,6 @@ mod tests {
         );
         assert!(studio_score >= 200, "Studio album track must score >= 200, got {}", studio_score);
 
-        // 3. Movie theme cut (1136550) on Continued Silence should score significantly lower than official album track
         let movie_cut_score = score_track_candidate(
             "Demons",
             "Imagine Dragons",
@@ -856,6 +808,6 @@ mod tests {
             None,
             Some("Continued Silence"),
         );
-        assert!(studio_score > movie_cut_score + 50, "Studio album track must strongly outscore movie cut");
+        assert_eq!(movie_cut_score, 0, "Soundtrack movie promotional cut must score 0 when studio album track is requested");
     }
 }

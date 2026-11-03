@@ -177,20 +177,26 @@ pub async fn resolve_hifi_track(
     }
 
     let meta = script::parse_multilingual_metadata(clean_title, Some(channel_str));
-    let mut queries = if !meta.search_queries.is_empty() {
-        meta.search_queries
-    } else {
-        vec![format!("{} {}", channel_str, clean_title)]
-    };
+    let mut queries = Vec::new();
 
+    // 1. If album is known, prioritize album query first (finds the official album master immediately)
     if let Some(alb) = target_album {
         let alb_clean = alb.trim();
         if !alb_clean.is_empty() {
-            let album_query = format!("{} {} {}", channel_str, clean_title, alb_clean);
-            if !queries.contains(&album_query) {
-                let insert_idx = 1.min(queries.len());
-                queries.insert(insert_idx, album_query);
-            }
+            queries.push(format!("{} {} {}", channel_str, clean_title, alb_clean));
+        }
+    }
+
+    // 2. Base artist + title query
+    let base_query = format!("{} {}", channel_str, clean_title);
+    if !queries.contains(&base_query) {
+        queries.push(base_query);
+    }
+
+    // 3. Multilingual / script queries
+    for q in meta.search_queries {
+        if !queries.contains(&q) {
+            queries.push(q);
         }
     }
 
@@ -240,7 +246,7 @@ pub async fn resolve_hifi_track(
         }
 
         // Early exit on definitive high-confidence match
-        let early_exit_threshold = if target_album.is_some() { 185 } else { 140 };
+        let early_exit_threshold = if target_album.is_some() { 190 } else { 165 };
         if let Some((_, _, s)) = &best_kuwo {
             if *s >= early_exit_threshold {
                 break;
