@@ -14,7 +14,7 @@ lazy_static! {
     static ref REMIX_REGEX: Regex = Regex::new(r"(?i)\b(remix|remixes|club\s*mix|extended\s*mix|vip\s*mix|dub\s*mix|dance\s*mix|dance\s*remix|electro\s*mix)\b").unwrap();
     static ref LIVE_REGEX: Regex = Regex::new(r"(?i)\b(live\s*at|live\s*version|in\s*concert|live\s*in|live\s*from|tour\s*version|festival\s*live|hits\s+alive|alive\s*vol\w*|alive\s*\d{4}|live\s*sessions?|(?:london|red\s*rocks|vegas|mtv\s*unplugged|bbc|spotify|itunes|aol)\s+sessions?)\b|[\(\[\{]\s*(?:live|live\s+[^)\]\}]+)\s*[\)\]\}]|\s+-\s+live\b|(现场|演唱会|秀场音乐|秀场|现场版)").unwrap();
     static ref ACOUSTIC_REGEX: Regex = Regex::new(r"(?i)\b(acoustic|unplugged|stripped|piano\s*version|orchestral\s*version)\b|[\(\[\{]\s*(?:acoustic|piano|orchestral)\s*[\)\]\}]").unwrap();
-    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|karaoke|backing\s*track|minus\s*one|off\s*vocal)\b|(伴奏|原版伴奏)").unwrap();
+    static ref INSTRUMENTAL_REGEX: Regex = Regex::new(r"(?i)\b(instrumental|instrumen|inst\.?|karaoke|karoke|backing\s*track|minus\s*(?:one|1)|minus-one|-1|off\s*vocal|no\s*vocal|tanpa\s*vokal)\b|(伴奏|原版伴奏|纯音乐|伴唱|消音)").unwrap();
     static ref SOUNDTRACK_REGEX: Regex = Regex::new(r"(?i)\b(soundtrack|ost|motion\s*picture)\b|(电影主题曲|电视剧主题曲|电影插曲|电影片尾曲|影视原声|电影原声)").unwrap();
     static ref RERECORDED_REGEX: Regex = Regex::new(r"(?i)\b(re-record\w*|rerecord\w*|re-cut|recut)\b").unwrap();
     static ref COVER_REGEX: Regex = Regex::new(r"(?i)\b(originally\s*performed\s*by|made\s*popular\s*by|in\s*the\s*style\s*of|tribute\s*version|tribute\s*to)\b|[\(\[\{]\s*cover\s*[\)\]\}]|\s+-\s+cover\b").unwrap();

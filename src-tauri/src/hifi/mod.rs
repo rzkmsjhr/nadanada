@@ -223,13 +223,17 @@ pub async fn resolve_hifi_track(
     for (q_idx, query) in queries.iter().take(4).enumerate() {
         eprintln!("[HIFI RESOLVE] [Pass {}] Querying Kuwo for: {}", q_idx + 1, query);
         if let Ok(candidates) = kuwo::search_kuwo(query, 12).await {
-            // Count track title occurrences per album in this batch to detect untagged bonus discs
-            let mut album_title_counts: std::collections::HashMap<(String, String), usize> = std::collections::HashMap::new();
+            // Detect albums containing multiple tracks with the identical title (e.g. single releases with Track 1 = Vocal, Track 2 = Minus One/Karaoke)
+            let mut album_title_min_id: std::collections::HashMap<(String, String), u64> = std::collections::HashMap::new();
             for c in &candidates {
                 let ct = matcher::clean_string(c.name.as_deref().unwrap_or(""));
                 let ca = matcher::clean_string(c.album_name.as_deref().unwrap_or(""));
                 if !ct.is_empty() && !ca.is_empty() {
-                    *album_title_counts.entry((ct, ca)).or_insert(0) += 1;
+                    let id_num: u64 = c.get_id().parse().unwrap_or(u64::MAX);
+                    album_title_min_id
+                        .entry((ct, ca))
+                        .and_modify(|min_id| *min_id = (*min_id).min(id_num))
+                        .or_insert(id_num);
                 }
             }
 
@@ -264,16 +268,29 @@ pub async fn resolve_hifi_track(
                     continue;
                 }
 
-                // If album has multiple tracks sharing the identical title (untagged bonus disc cuts), penalize ambiguity
+                // If album has multiple tracks sharing the identical title, the primary vocal track is Track 1 (lowest numeric song ID).
+                // Any subsequent track (Track 2+, higher ID) is an unlabelled Minus-One / Accompaniment cut -> penalize heavily.
                 let ct = matcher::clean_string(cand_title);
                 let ca = matcher::clean_string(cand.album_name.as_deref().unwrap_or(""));
-                if album_title_counts.get(&(ct, ca)).copied().unwrap_or(0) > 1 {
-                    score = score.saturating_sub(25);
+                let id_num: u64 = cand_id.parse().unwrap_or(u64::MAX);
+                if let Some(&min_id) = album_title_min_id.get(&(ct, ca)) {
+                    if id_num > min_id {
+                        score = score.saturating_sub(60);
+                    }
                 }
 
                 if score >= 140 {
-                    if let Some((_, _, best_score)) = &best_kuwo {
-                        if score > *best_score {
+                    if let Some((best_cand, _, best_score)) = &best_kuwo {
+                        let is_better = if score > *best_score {
+                            true
+                        } else if score == *best_score {
+                            let curr_id: u64 = cand_id.parse().unwrap_or(u64::MAX);
+                            let best_id: u64 = best_cand.get_id().parse().unwrap_or(0);
+                            curr_id < best_id
+                        } else {
+                            false
+                        };
+                        if is_better {
                             best_kuwo = Some((cand, flac_info, score));
                         }
                     } else {
@@ -402,8 +419,17 @@ pub async fn resolve_hifi_track(
             );
 
             if score >= 140 {
-                if let Some((_, best_score)) = &best_match {
-                    if score > *best_score {
+                if let Some((best_cand, best_score)) = &best_match {
+                    let is_better = if score > *best_score {
+                        true
+                    } else if score == *best_score {
+                        let curr_id: u64 = cand_id.parse().unwrap_or(u64::MAX);
+                        let best_id: u64 = best_cand.get_id().and_then(|id| id.parse().ok()).unwrap_or(0);
+                        curr_id < best_id
+                    } else {
+                        false
+                    };
+                    if is_better {
                         best_match = Some((cand, score));
                     }
                 } else {
@@ -579,6 +605,47 @@ mod tests {
             let track = res.expect("Should resolve track");
             assert_ne!(track.hifi_id, "kuwo_162001181");
             assert_ne!(track.hifi_id, "kuwo_300232622");
+        });
+    }
+
+    #[test]
+    fn test_user_reported_three_tracks() {
+        tauri::async_runtime::block_on(async {
+            println!("\n>>> TESTING ALAMAK");
+            let alamak = resolve_hifi_track(
+                None,
+                "Alamak".to_string(),
+                Some("Rizky Febian, Adrian Khalif".to_string()),
+                Some("3:29".to_string()),
+                None,
+                None,
+                Some("Alamak".to_string()),
+            ).await.unwrap();
+            println!("ALAMAK RESULT: {:?}", alamak);
+
+            println!("\n>>> TESTING SENJA SUDUT KOTA");
+            let senja = resolve_hifi_track(
+                None,
+                "Senja Sudut Kota".to_string(),
+                Some("Samuel Cipta".to_string()),
+                Some("3:43".to_string()),
+                None,
+                None,
+                Some("Senja Sudut Kota".to_string()),
+            ).await.unwrap();
+            println!("SENJA RESULT: {:?}", senja);
+
+            println!("\n>>> TESTING MASA LALU");
+            let masa = resolve_hifi_track(
+                None,
+                "Masa Lalu".to_string(),
+                Some("Faith".to_string()),
+                Some("3:23".to_string()),
+                None,
+                None,
+                Some("Masa Lalu".to_string()),
+            ).await.unwrap();
+            println!("MASA LALU RESULT: {:?}", masa);
         });
     }
 }

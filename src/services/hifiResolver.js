@@ -1,6 +1,6 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v11';
+const STORAGE_KEY = 'nadanada-hifi-cache-v12';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
@@ -11,10 +11,11 @@ const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache-v7',
   'nadanada-hifi-cache-v8',
   'nadanada-hifi-cache-v9',
-  'nadanada-hifi-cache-v10'
+  'nadanada-hifi-cache-v10',
+  'nadanada-hifi-cache-v11'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 11;
+export const HIFI_MATCHER_VERSION = 12;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
