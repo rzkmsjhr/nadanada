@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../services/api.js';
+import { prepareTrackThroughGateSync, resolveInitialPlaylistTracks, sanitizeLegacyHifiTrack } from '../services/hifiResolver.js';
 
 export const parseDuration = (durationStr) => {
   if (!durationStr) return 0;
@@ -349,7 +350,8 @@ export function useMusicDiscovery({
   setIsAudioPlaying,
   handleAddMultiple,
   setSavedPlaylists,
-  setSuccessMessage
+  setSuccessMessage,
+  isHifiEnabled = true
 }) {
   const [isFetchingEndless, setIsFetchingEndless] = useState(false);
   const [failedEndlessFetch, setFailedEndlessFetch] = useState(false);
@@ -663,8 +665,11 @@ export function useMusicDiscovery({
             }
 
             if (picked) {
-              const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-              setPlaylist(prev => [...prev, { ...picked, queueId, isEndlessGenerated: true }]);
+              const gated = prepareTrackThroughGateSync({
+                ...picked,
+                isEndlessGenerated: true
+              }, isHifiEnabled);
+              setPlaylist(prev => [...prev, gated]);
             } else {
               setFailedEndlessFetch(true);
             }
@@ -818,7 +823,13 @@ export function useMusicDiscovery({
         if (!savedPlaylist) {
           setSavedPlaylist([...playlist]);
         }
-        setPlaylist(rankedSongs);
+        let finalRanked = rankedSongs;
+        if (isHifiEnabled) {
+          finalRanked = await resolveInitialPlaylistTracks(finalRanked, 2, 0);
+        } else {
+          finalRanked = finalRanked.map(sanitizeLegacyHifiTrack);
+        }
+        setPlaylist(finalRanked);
         setCurrentIndex(0);
         setIsAudioPlaying(true);
       } else {

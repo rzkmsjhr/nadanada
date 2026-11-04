@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack, resolveInitialPlaylistTracks, isHifiEligibleTrack } from '../services/hifiResolver';
+import { resolveHifiForTrack, getCachedHifi, HIFI_MATCHER_VERSION, sanitizeLegacyHifiTrack, resolveInitialPlaylistTracks, prepareTrackThroughGateSync, isHifiEligibleTrack } from '../services/hifiResolver';
 
 export function usePlaylistManager({
   api,
@@ -185,64 +185,81 @@ export function usePlaylistManager({
       hasAddedSongInSearchRef.current = true;
     }
 
-    let hifiFields = {};
-    if (isHifiEnabled && video && !video.is_local && !video.file_path && isHifiEligibleTrack(video)) {
-      if (video.stream_url && video.source === 'monochrome' && (!video.hifi_id || String(video.hifi_id) === String(video.id) || video._hifiVersion === HIFI_MATCHER_VERSION)) {
-        hifiFields = { _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
-      } else {
-        try {
-          const hifi = await resolveHifiForTrack(video);
-          if (hifi && hifi.stream_url) {
-            hifiFields = {
-              stream_url: hifi.stream_url,
-              source: 'monochrome',
-              hifi_id: hifi.hifi_id,
-              _hifiChecked: true,
-              _hifiVersion: HIFI_MATCHER_VERSION
-            };
-          } else {
-            hifiFields = {
-              stream_url: null,
-              source: null,
-              hifi_id: null,
-              _hifiChecked: true,
-              _hifiVersion: HIFI_MATCHER_VERSION
-            };
-          }
-        } catch (e) {
-          hifiFields = { _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
-        }
-      }
-    }
-
-    const queueId = Date.now().toString() + Math.random().toString(36).substr(2, 9);
-    const newSong = {
-      ...video,
-      ...hifiFields,
-      queueId
-    };
+    const gatedSong = prepareTrackThroughGateSync(video, isHifiEnabled);
     const afterCurrent = Boolean(options?.afterCurrent);
     const currIdx = currentIndexRef.current;
 
+    // If queue is empty, resolve eagerly before play begins
+    const shouldEagerResolve = isHifiEnabled && playlist.length === 0 && !gatedSong._hifiChecked && isHifiEligibleTrack(gatedSong);
+
+    if (shouldEagerResolve) {
+      try {
+        const hifi = await resolveHifiForTrack(gatedSong);
+        if (hifi && hifi.stream_url) {
+          gatedSong.stream_url = hifi.stream_url;
+          gatedSong.source = hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome');
+          gatedSong.hifi_id = hifi.hifi_id;
+        } else {
+          gatedSong.stream_url = null;
+          gatedSong.source = null;
+          gatedSong.hifi_id = null;
+        }
+      } catch (e) {
+        // Fallback to youtube
+      }
+      gatedSong._hifiChecked = true;
+      gatedSong._hifiVersion = HIFI_MATCHER_VERSION;
+    }
+
+    // Insert into state immediately (instant UI responsiveness)
     if (savedPlaylist) {
       setSavedPlaylist(prev => {
         if (afterCurrent && currIdx >= 0 && currIdx < prev.length) {
           const next = [...prev];
-          next.splice(currIdx + 1, 0, newSong);
+          next.splice(currIdx + 1, 0, gatedSong);
           return next;
         }
-        return [...prev, newSong];
+        return [...prev, gatedSong];
       });
     }
 
     setPlaylist(prev => {
       if (afterCurrent && currIdx >= 0 && currIdx < prev.length) {
         const next = [...prev];
-        next.splice(currIdx + 1, 0, newSong);
+        next.splice(currIdx + 1, 0, gatedSong);
         return next;
       }
-      return [...prev, newSong];
+      return [...prev, gatedSong];
     });
+
+    // If inserted into an active queue, resolve in background immediately
+    if (isHifiEnabled && !gatedSong._hifiChecked && isHifiEligibleTrack(gatedSong)) {
+      resolveHifiForTrack(gatedSong).then(hifi => {
+        const source = hifi?.source || (hifi?.hifi_id && String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome');
+        const updateFn = prev => prev.map(s => s.queueId === gatedSong.queueId ? {
+          ...s,
+          stream_url: hifi?.stream_url || null,
+          source: hifi?.stream_url ? source : null,
+          hifi_id: hifi?.hifi_id || null,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        } : s);
+        setPlaylist(updateFn);
+        if (savedPlaylist) {
+          setSavedPlaylist(updateFn);
+        }
+      }).catch(() => {
+        const updateFn = prev => prev.map(s => s.queueId === gatedSong.queueId ? {
+          ...s,
+          _hifiChecked: true,
+          _hifiVersion: HIFI_MATCHER_VERSION
+        } : s);
+        setPlaylist(updateFn);
+        if (savedPlaylist) {
+          setSavedPlaylist(updateFn);
+        }
+      });
+    }
   };
 
   const handleAddSongAfterCurrent = async video => {

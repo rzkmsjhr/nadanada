@@ -332,6 +332,36 @@ pub fn get_stream_upstream(
     Err(String::from("No upstream instances available"))
 }
 
+/// Quickly verifies that a track can be streamed from at least one Monochrome instance.
+pub async fn check_stream_availability_pool(track_id: &str) -> bool {
+    let client = match create_async_client() {
+        Ok(c) => c,
+        Err(_) => return true,
+    };
+
+    for instance in INSTANCE_POOL.iter() {
+        let url = format!("{}/track/{}", instance.base_url, track_id);
+        match client.get(&url).header("Range", "bytes=0-100").send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if status.is_success() || status.as_u16() == 206 {
+                    instance.record_success();
+                    return true;
+                } else if status.as_u16() == 404 || status.as_u16() == 410 {
+                    return false;
+                } else if status.as_u16() == 429 {
+                    instance.record_failure(true);
+                }
+            }
+            Err(_) => {
+                continue;
+            }
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -27,16 +27,51 @@ function needsHifiCheck(s, inFlightSet) {
   return true;
 }
 
+function applyHifiToTrack(track, hifi) {
+  const source = hifi?.source || (hifi?.hifi_id && String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome');
+  if (hifi && hifi.stream_url) {
+    return {
+      ...track,
+      stream_url: hifi.stream_url,
+      source,
+      hifi_id: hifi.hifi_id,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _resolvedWithAlbum: hifi._resolvedWithAlbum ?? false
+    };
+  } else if (!isMonochromeCoolingDown()) {
+    return {
+      ...track,
+      stream_url: null,
+      source: null,
+      hifi_id: null,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _resolvedWithAlbum: false
+    };
+  }
+  return track;
+}
+
 /**
- * Automatically inspects songs in the active playlist queue and upgrades them
- * in-place with lossless FLAC stream URLs from Monochrome when available.
+ * Automatically inspects songs in the active playlist queue and background playlist,
+ * upgrading them in-place with lossless FLAC stream URLs (Kuwo primary -> Monochrome fallback).
  * 
  * Strictness:
  * - Only runs when isHifiEnabled is true.
- * - Operates on the active playback playlist.
- * - Prioritizes currentSong (currentIndex) and nextSong (currentIndex + 1) for immediate playback & crossfade.
+ * - Tier 1: Current playing track (currentIndex) + true upcoming track (nextIndex).
+ * - Tier 2: Near lookahead (currentIndex + 2, currentIndex + 3).
+ * - Tier 3: Full-queue progressive sweep (drains all remaining unresolved items across playlist and savedPlaylist).
  */
-export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEnabled, savedPlaylist }) {
+export function useHifiResolver({
+  playlist,
+  setPlaylist,
+  currentIndex,
+  nextIndex,
+  isHifiEnabled,
+  savedPlaylist,
+  setSavedPlaylist
+}) {
   const inFlightRef = useRef(new Set());
   const isHifiEnabledRef = useRef(isHifiEnabled);
   isHifiEnabledRef.current = isHifiEnabled;
@@ -48,10 +83,11 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
     let isCancelled = false;
 
-    // Debounce resolver by 150ms during rapid track skipping to avoid triggering Monochrome rate limits
     const timer = setTimeout(async () => {
-      // 1. Resolve immediate top priorities (current + next song) in parallel first!
-      const immediateIndices = [currentIndex, currentIndex + 1].filter(idx => {
+      const activeNext = (nextIndex !== undefined && nextIndex !== null) ? nextIndex : currentIndex + 1;
+
+      // 1. Tier 1: Immediate priorities (current + upcoming song)
+      const immediateIndices = [currentIndex, activeNext].filter(idx => {
         if (idx < 0 || idx >= playlist.length) return false;
         const s = playlist[idx];
         return needsHifiCheck(s, inFlightRef.current);
@@ -76,8 +112,6 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
         if (isCancelled) return;
 
-        // Always commit completed in-flight resolutions to playlist so concurrent playlist updates
-        // (such as Endless Play appending a track) never drop an already-resolved song!
         if (isHifiEnabledRef.current) {
           setPlaylist(prev => {
             let changed = false;
@@ -86,33 +120,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
               const matchIdx = updated.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
               if (matchIdx !== -1 && (updated[matchIdx]._hifiVersion !== HIFI_MATCHER_VERSION || !updated[matchIdx]._hifiChecked || (updated[matchIdx]._resolvedWithAlbum === false && hifi?._resolvedWithAlbum))) {
                 changed = true;
-                if (hifi && hifi.stream_url) {
-                  console.log(`[HIFI-QUEUE] Upgraded "${song.title}" to Hi-Fi FLAC stream`);
-                  updated[matchIdx] = {
-                    ...updated[matchIdx],
-                    stream_url: hifi.stream_url,
-                    source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
-                    hifi_id: hifi.hifi_id,
-                    _hifiChecked: true,
-                    _hifiVersion: HIFI_MATCHER_VERSION,
-                    _resolvedWithAlbum: hifi._resolvedWithAlbum ?? false
-                  };
-                } else {
-                  if (isMonochromeCoolingDown()) {
-                    console.log(`[HIFI-QUEUE] Skipped Hi-Fi check for "${song.title}" (Monochrome cooling down). Preserving YouTube temporarily.`);
-                  } else {
-                    console.log(`[HIFI-QUEUE] Checked "${song.title}": No Hi-Fi stream available, keeping YouTube source.`);
-                    updated[matchIdx] = {
-                      ...updated[matchIdx],
-                      stream_url: null,
-                      source: null,
-                      hifi_id: null,
-                      _hifiChecked: true,
-                      _hifiVersion: HIFI_MATCHER_VERSION,
-                      _resolvedWithAlbum: false
-                    };
-                  }
-                }
+                updated[matchIdx] = applyHifiToTrack(updated[matchIdx], hifi);
               }
             }
             return changed ? updated : prev;
@@ -122,14 +130,12 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
 
       if (isCancelled) return;
 
-      // 2. Prepare next 2 upcoming tracks in queue ahead of time (resolved sequentially)
+      // 2. Tier 2: Near lookahead (next 2 upcoming tracks)
       const lookaheadIndices = [currentIndex + 2, currentIndex + 3].filter(idx => {
         if (idx < 0 || idx >= playlist.length) return false;
         const s = playlist[idx];
         return needsHifiCheck(s, inFlightRef.current);
       });
-
-      if (lookaheadIndices.length === 0) return;
 
       for (const idx of lookaheadIndices) {
         if (isCancelled || isMonochromeCoolingDown()) break;
@@ -141,7 +147,7 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
         try {
           hifi = await resolveHifiForTrack(song);
         } catch (e) {
-          console.warn('[HIFI] Resolution error for:', song.title, e);
+          console.warn('[HIFI] Lookahead resolution error for:', song.title, e);
         } finally {
           inFlightRef.current.delete(song.id);
         }
@@ -152,34 +158,90 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
           setPlaylist(prev => {
             const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
             if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION && (prev[matchIdx]._resolvedWithAlbum !== false || !hifi?._resolvedWithAlbum))) return prev;
-
             const updated = [...prev];
-            if (hifi && hifi.stream_url) {
-              updated[matchIdx] = {
-                ...updated[matchIdx],
-                stream_url: hifi.stream_url,
-                source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
-                hifi_id: hifi.hifi_id,
-                _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION,
-                _resolvedWithAlbum: hifi._resolvedWithAlbum ?? false
-              };
-            } else if (!isMonochromeCoolingDown()) {
-              updated[matchIdx] = {
-                ...updated[matchIdx],
-                stream_url: null,
-                source: null,
-                hifi_id: null,
-                _hifiChecked: true,
-                _hifiVersion: HIFI_MATCHER_VERSION,
-                _resolvedWithAlbum: false
-              };
-            }
+            updated[matchIdx] = applyHifiToTrack(updated[matchIdx], hifi);
             return updated;
           });
         }
 
+        await new Promise(r => setTimeout(r, 200));
         if (isCancelled) break;
+      }
+
+      if (isCancelled) return;
+
+      // 3. Tier 3: Full-Queue Progressive Sweep (sweeps remaining playlist, then savedPlaylist)
+      const remainingPlaylistIndices = [];
+      for (let i = currentIndex + 4; i < playlist.length; i++) {
+        if (needsHifiCheck(playlist[i], inFlightRef.current)) remainingPlaylistIndices.push(i);
+      }
+      for (let i = 0; i < currentIndex - 1; i++) {
+        if (needsHifiCheck(playlist[i], inFlightRef.current)) remainingPlaylistIndices.push(i);
+      }
+
+      for (const idx of remainingPlaylistIndices) {
+        if (isCancelled || isMonochromeCoolingDown()) break;
+        const song = playlist[idx];
+        if (!needsHifiCheck(song, inFlightRef.current)) continue;
+
+        inFlightRef.current.add(song.id);
+        let hifi = null;
+        try {
+          hifi = await resolveHifiForTrack(song);
+        } catch (e) {
+          console.warn('[HIFI] Queue drain error for:', song.title, e);
+        } finally {
+          inFlightRef.current.delete(song.id);
+        }
+
+        if (isCancelled) break;
+
+        if (isHifiEnabledRef.current) {
+          setPlaylist(prev => {
+            const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
+            if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION && (prev[matchIdx]._resolvedWithAlbum !== false || !hifi?._resolvedWithAlbum))) return prev;
+            const updated = [...prev];
+            updated[matchIdx] = applyHifiToTrack(updated[matchIdx], hifi);
+            return updated;
+          });
+        }
+
+        await new Promise(r => setTimeout(r, 300));
+        if (isCancelled) break;
+      }
+
+      if (!isCancelled && savedPlaylist && Array.isArray(savedPlaylist) && setSavedPlaylist) {
+        const unresolvedSaved = savedPlaylist.filter(s => needsHifiCheck(s, inFlightRef.current));
+        for (const song of unresolvedSaved) {
+          if (isCancelled || isMonochromeCoolingDown()) break;
+          if (!needsHifiCheck(song, inFlightRef.current)) continue;
+
+          inFlightRef.current.add(song.id);
+          let hifi = null;
+          try {
+            hifi = await resolveHifiForTrack(song);
+          } catch (e) {
+            console.warn('[HIFI] SavedPlaylist drain error for:', song.title, e);
+          } finally {
+            inFlightRef.current.delete(song.id);
+          }
+
+          if (isCancelled) break;
+
+          if (isHifiEnabledRef.current) {
+            setSavedPlaylist(prev => {
+              if (!prev) return prev;
+              const matchIdx = prev.findIndex(s => (s.queueId && s.queueId === song.queueId) || s.id === song.id);
+              if (matchIdx === -1 || (prev[matchIdx]._hifiChecked && prev[matchIdx]._hifiVersion === HIFI_MATCHER_VERSION && (prev[matchIdx]._resolvedWithAlbum !== false || !hifi?._resolvedWithAlbum))) return prev;
+              const updated = [...prev];
+              updated[matchIdx] = applyHifiToTrack(updated[matchIdx], hifi);
+              return updated;
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 300));
+          if (isCancelled) break;
+        }
       }
     }, 150);
 
@@ -187,5 +249,5 @@ export function useHifiResolver({ playlist, setPlaylist, currentIndex, isHifiEna
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [playlist, currentIndex, isHifiEnabled, setPlaylist]);
+  }, [playlist, currentIndex, nextIndex, isHifiEnabled, setPlaylist, savedPlaylist, setSavedPlaylist]);
 }

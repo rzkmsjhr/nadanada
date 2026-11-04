@@ -453,31 +453,103 @@ export async function resolveHifiForTrack(song, options = {}) {
 }
 
 /**
- * Resolves initial tracks of a playlist eagerly before playback.
- * Defaults to count = 1 so only the current playing song is resolved upfront,
- * preventing upstream burst rate limits while guaranteeing instant playback.
+ * Synchronous gate normalization (0ms) applied to any track entering the playlist or queue.
+ * Ensures:
+ * - Legacy format sanitization
+ * - Consistent queueId assignment
+ * - Album metadata preservation from albumCache if missing
+ * - Instant synchronous cache attachment (Kuwo / Monochrome)
+ * - Immediate disqualification of ineligible tracks / user-forced YouTube
  */
-export async function resolveInitialPlaylistTracks(tracks, count = 1) {
+export function prepareTrackThroughGateSync(song, isHifiEnabled = true, albumCache = null) {
+  if (!song) return song;
+  const sanitized = sanitizeLegacyHifiTrack(song);
+  if (sanitized.is_local || sanitized.file_path) return sanitized;
+
+  let enriched = { ...sanitized };
+  if (!enriched.album && enriched.id && albumCache?.[enriched.id]?.album) {
+    enriched.album = albumCache[enriched.id].album;
+  }
+
+  if (!enriched.queueId) {
+    enriched.queueId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  if (!isHifiEnabled || !isHifiEligibleTrack(enriched)) {
+    return {
+      ...enriched,
+      stream_url: null,
+      source: null,
+      hifi_id: null,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION
+    };
+  }
+
+  if ((enriched.id && isUserYoutubeForced(enriched.id)) || enriched._userForcedYoutube) {
+    return {
+      ...enriched,
+      stream_url: null,
+      source: null,
+      hifi_id: null,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _userForcedYoutube: true
+    };
+  }
+
+  if (enriched._hifiChecked && enriched._hifiVersion === HIFI_MATCHER_VERSION) {
+    return enriched;
+  }
+
+  const cached = getCachedHifi(enriched);
+  if (cached && cached.stream_url) {
+    return {
+      ...enriched,
+      stream_url: cached.stream_url,
+      source: cached.source || (String(cached.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
+      hifi_id: cached.hifi_id,
+      _hifiChecked: true,
+      _hifiVersion: HIFI_MATCHER_VERSION
+    };
+  }
+
+  return enriched;
+}
+
+/**
+ * Resolves initial tracks of a playlist eagerly before playback.
+ * Defaults to count = 1 so only the target playing song (and immediate next) is resolved upfront,
+ * preventing upstream burst rate limits while guaranteeing instant playback.
+ * All other tracks pass through prepareTrackThroughGateSync so cached tracks attach instantly.
+ */
+export async function resolveInitialPlaylistTracks(tracks, count = 1, startIndex = 0) {
   if (!Array.isArray(tracks) || tracks.length === 0) return tracks || [];
 
-  const sanitized = tracks.map(sanitizeLegacyHifiTrack);
-  const targetCount = Math.min(count, sanitized.length);
+  const gated = tracks.map(t => prepareTrackThroughGateSync(t, true));
+  const validStart = Math.max(0, Math.min(startIndex, gated.length - 1));
+  const targetIndices = [];
+  for (let i = 0; i < count && (validStart + i) < gated.length; i++) {
+    targetIndices.push(validStart + i);
+  }
 
-  const initialBatch = sanitized.slice(0, targetCount);
-  const resolvedBatch = await Promise.all(
-    initialBatch.map(async (song) => {
-      if (!song || song.is_local || song.file_path) return song;
+  await Promise.all(
+    targetIndices.map(async (idx) => {
+      const song = gated[idx];
+      if (!song || song.is_local || song.file_path) return;
       if (!isHifiEligibleTrack(song)) {
-        return { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+        return;
       }
       if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
-        return { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _userForcedYoutube: true };
+        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _userForcedYoutube: true };
+        return;
       }
-      if (song._hifiChecked && song._hifiVersion === HIFI_MATCHER_VERSION) return song;
+      if (song._hifiChecked && song._hifiVersion === HIFI_MATCHER_VERSION) return;
 
       const cached = getCachedHifi(song);
       if (cached && cached.stream_url) {
-        return {
+        gated[idx] = {
           ...song,
           stream_url: cached.stream_url,
           source: cached.source || (String(cached.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
@@ -485,12 +557,13 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1) {
           _hifiChecked: true,
           _hifiVersion: HIFI_MATCHER_VERSION
         };
+        return;
       }
 
       try {
         const hifi = await resolveHifiForTrack(song);
         if (hifi && hifi.stream_url) {
-          return {
+          gated[idx] = {
             ...song,
             stream_url: hifi.stream_url,
             source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
@@ -499,7 +572,7 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1) {
             _hifiVersion: HIFI_MATCHER_VERSION
           };
         } else {
-          return {
+          gated[idx] = {
             ...song,
             stream_url: null,
             source: null,
@@ -509,33 +582,10 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1) {
           };
         }
       } catch (e) {
-        return { ...song, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+        gated[idx] = { ...song, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
       }
     })
   );
 
-  const remainingBatch = sanitized.slice(targetCount).map((song) => {
-    if (!song || song.is_local || song.file_path) return song;
-    if (!isHifiEligibleTrack(song)) {
-      return { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
-    }
-    if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
-      return { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _userForcedYoutube: true };
-    }
-    if (song.stream_url) return song;
-    const cached = getCachedHifi(song);
-    if (cached && cached.stream_url) {
-      return {
-        ...song,
-        stream_url: cached.stream_url,
-        source: cached.source || (String(cached.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
-        hifi_id: cached.hifi_id,
-        _hifiChecked: true,
-        _hifiVersion: HIFI_MATCHER_VERSION
-      };
-    }
-    return song;
-  });
-
-  return [...resolvedBatch, ...remainingBatch];
+  return gated;
 }

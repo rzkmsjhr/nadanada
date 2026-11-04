@@ -347,95 +347,125 @@ pub async fn resolve_hifi_track(
         eprintln!("[HIFI RESOLVE] Kuwo search returned no qualifying lossless studio candidate >= 140. Falling back to Monochrome.");
     }
 
-    // 3. Fallback Provider: Monochrome Instance Pool
-    let fallback_query = queries.first().map(|s| s.as_str()).unwrap_or(clean_title);
-    eprintln!("[HIFI RESOLVE] Searching fallback Monochrome instance pool for: {}", fallback_query);
-
-    let candidates = match instances::search_tracks_pool(fallback_query, 12).await {
-        Ok(tracks) => tracks,
-        Err(e) => {
-            eprintln!("[HIFI RESOLVE] Monochrome upstream search failed: {}", e);
-            if !id_key.is_empty() {
-                cache::mark_unmatched(id_key.to_string());
-            }
-            cache::mark_unmatched(text_key);
-            return Ok(None);
+    // 3. Fallback Provider: Monochrome Instance Pool (Multi-query fallback)
+    let mut mono_queries = Vec::new();
+    let base_mono = format!("{} {}", channel_str, clean_title);
+    mono_queries.push(base_mono);
+    let de_mono = format!(
+        "{} {}",
+        script::strip_latin_diacritics(channel_str),
+        script::strip_latin_diacritics(clean_title)
+    );
+    if de_mono != mono_queries[0] {
+        mono_queries.push(de_mono);
+    }
+    for q in &queries {
+        if !mono_queries.contains(q) {
+            mono_queries.push(q.clone());
         }
-    };
+    }
 
     let mut best_match: Option<(instances::RawCandidateTrack, u32)> = None;
 
-    for cand in candidates {
-        let cand_id = match cand.get_id() {
-            Some(id) if !id.trim().is_empty() => id,
-            _ => continue,
+    for (m_idx, mono_query) in mono_queries.iter().take(3).enumerate() {
+        eprintln!("[HIFI RESOLVE] [Monochrome Pass {}] Querying pool for: {}", m_idx + 1, mono_query);
+        let candidates = match instances::search_tracks_pool(mono_query, 12).await {
+            Ok(tracks) => tracks,
+            Err(e) => {
+                eprintln!("[HIFI RESOLVE] Monochrome upstream search failed on '{}': {}", mono_query, e);
+                continue;
+            }
         };
-        let cand_title = cand.title.as_deref().unwrap_or("");
-        let cand_artist = cand.get_artist_name();
-        let cand_dur = cand.get_duration_secs();
-        let cand_isrc = cand.isrc.as_deref();
 
-        let score = matcher::score_track_candidate(
-            clean_title,
-            channel_str,
-            dur_secs,
-            isrc.as_deref(),
-                    target_album,
-            &cand_id,
-            cand_title,
-            &cand_artist,
-            cand_dur,
-            cand_isrc,
-            cand.get_album_name(),
-        );
+        for cand in candidates {
+            let cand_id = match cand.get_id() {
+                Some(id) if !id.trim().is_empty() => id,
+                _ => continue,
+            };
+            let cand_title = cand.title.as_deref().unwrap_or("");
+            let cand_artist = cand.get_artist_name();
+            let cand_dur = cand.get_duration_secs();
+            let cand_isrc = cand.isrc.as_deref();
 
-        if score >= 140 {
-            if let Some((_, best_score)) = &best_match {
-                if score > *best_score {
+            let score = matcher::score_track_candidate(
+                clean_title,
+                channel_str,
+                dur_secs,
+                isrc.as_deref(),
+                target_album,
+                &cand_id,
+                cand_title,
+                &cand_artist,
+                cand_dur,
+                cand_isrc,
+                cand.get_album_name(),
+            );
+
+            if score >= 140 {
+                if let Some((_, best_score)) = &best_match {
+                    if score > *best_score {
+                        best_match = Some((cand, score));
+                    }
+                } else {
                     best_match = Some((cand, score));
                 }
-            } else {
-                best_match = Some((cand, score));
+            }
+        }
+
+        if let Some((_, s)) = &best_match {
+            if *s >= 170 {
+                break;
             }
         }
     }
 
     if let Some((matched, score)) = best_match {
         let hifi_id = matched.get_id().unwrap();
-        let matched_title = matched.title.clone().unwrap_or_else(|| clean_title.to_string());
-        let matched_artist = matched.get_artist_name();
-        let matched_dur = matched.get_duration_secs();
         let is_cached = cache::is_track_cached(&hifi_id);
 
-        let info = cache::ResolvedHifiInfo {
-            hifi_id: hifi_id.clone(),
-            title: matched_title.clone(),
-            artist: matched_artist.clone(),
-            duration: matched_dur,
-            is_cached,
-            source: Some("monochrome".to_string()),
+        let is_streamable = if is_cached {
+            true
+        } else {
+            instances::check_stream_availability_pool(&hifi_id).await
         };
 
-        if !id_key.is_empty() {
-            cache::set_cached_resolution(id_key.to_string(), info.clone());
+        if !is_streamable {
+            eprintln!("[HIFI RESOLVE] Monochrome candidate {} failed stream availability check. Rejecting.", hifi_id);
+        } else {
+            let matched_title = matched.title.clone().unwrap_or_else(|| clean_title.to_string());
+            let matched_artist = matched.get_artist_name();
+            let matched_dur = matched.get_duration_secs();
+
+            let info = cache::ResolvedHifiInfo {
+                hifi_id: hifi_id.clone(),
+                title: matched_title.clone(),
+                artist: matched_artist.clone(),
+                duration: matched_dur,
+                is_cached,
+                source: Some("monochrome".to_string()),
+            };
+
+            if !id_key.is_empty() {
+                cache::set_cached_resolution(id_key.to_string(), info.clone());
+            }
+            cache::set_cached_resolution(text_key.clone(), info);
+
+            eprintln!(
+                "[HIFI RESOLVE] [MONOCHROME FALLBACK] MATCH SUCCESS: \"{}\" -> \"{}\" by {} (ID: {}, score: {}, cached: {})",
+                clean_title, matched_title, matched_artist, hifi_id, score, is_cached
+            );
+
+            return Ok(Some(HifiTrackResult {
+                stream_url: format!("http://127.0.0.1:{}/hifi/stream?id={}", port, hifi_id),
+                source: "monochrome".to_string(),
+                hifi_id,
+                title: matched_title,
+                artist: matched_artist,
+                duration: matched_dur,
+                is_cached,
+                match_score: score,
+            }));
         }
-        cache::set_cached_resolution(text_key, info);
-
-        eprintln!(
-            "[HIFI RESOLVE] [MONOCHROME FALLBACK] MATCH SUCCESS: \"{}\" -> \"{}\" by {} (ID: {}, score: {}, cached: {})",
-            clean_title, matched_title, matched_artist, hifi_id, score, is_cached
-        );
-
-        return Ok(Some(HifiTrackResult {
-            stream_url: format!("http://127.0.0.1:{}/hifi/stream?id={}", port, hifi_id),
-            source: "monochrome".to_string(),
-            hifi_id,
-            title: matched_title,
-            artist: matched_artist,
-            duration: matched_dur,
-            is_cached,
-            match_score: score,
-        }));
     }
 
     // No valid match found on either provider
