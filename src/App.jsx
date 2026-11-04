@@ -358,17 +358,6 @@ function App() {
     }
   }, [currentIndex, playlist]);
 
-  
-  useHifiResolver({
-    playlist,
-    setPlaylist,
-    currentIndex,
-    nextIndex: trueNextSongIndex,
-    isHifiEnabled,
-    savedPlaylist,
-    setSavedPlaylist
-  });
-
   const { albumInfo, isLoadingAlbum, albumCache } = useAlbumInfo(playlist, currentIndex);
 
   const handleAlbumClick = async (info, clickedVideoId) => {
@@ -506,6 +495,16 @@ function App() {
 
   const trueNextSongIndex = isShuffle ? upcomingShuffleIndex : currentIndex + 1;
   const trueNextSong = trueNextSongIndex !== null && trueNextSongIndex < playlist.length ? playlist[trueNextSongIndex] : null;
+
+  useHifiResolver({
+    playlist,
+    setPlaylist,
+    currentIndex,
+    nextIndex: trueNextSongIndex,
+    isHifiEnabled,
+    savedPlaylist,
+    setSavedPlaylist
+  });
 
   const handleCloseArtistPage = useCallback(() => {
     closeArtistPage();
