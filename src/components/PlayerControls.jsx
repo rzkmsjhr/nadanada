@@ -128,12 +128,14 @@ export default function PlayerControls({
                   );
                 }
 
-                if (isForcedYt || isUpstreamMismatch || currentSong._hifiFailed) {
+                if (!isHiFi) {
                   const tooltipText = isUpstreamMismatch
                     ? 'Playing original master from YouTube (Modern remake avoided). Click to switch to 2021 remake (FLAC).'
                     : (currentSong._hifiFailed
                       ? 'Playing YouTube audio (Lossless FLAC stream was temporarily unavailable). Click to retry Hi-Fi (FLAC).'
-                      : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).');
+                      : (currentSong.stream_url
+                        ? 'Playing YouTube audio (Lossless FLAC ready). Click to switch to Hi-Fi (FLAC).'
+                        : 'Playing YouTube audio. Click to switch to Hi-Fi (FLAC).'));
                   const labelText = 'YouTube';
 
                   return (
