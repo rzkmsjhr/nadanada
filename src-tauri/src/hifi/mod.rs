@@ -132,6 +132,36 @@ pub async fn resolve_hifi_track(
             return Ok(None);
         }
         if let Some(cached) = cache::get_cached_resolution(id_key) {
+            let needs_album_upgrade = !cached.resolved_with_album && target_album.is_some();
+            if !needs_album_upgrade {
+                let source = cached.source.unwrap_or_else(|| {
+                    if cached.hifi_id.starts_with("kuwo_") {
+                        "kuwo".to_string()
+                    } else {
+                        "monochrome".to_string()
+                    }
+                });
+                return Ok(Some(HifiTrackResult {
+                    stream_url: format!("http://127.0.0.1:{}/hifi/stream?id={}", port, cached.hifi_id),
+                    source,
+                    hifi_id: cached.hifi_id,
+                    title: cached.title,
+                    artist: cached.artist,
+                    duration: cached.duration,
+                    is_cached: cached.is_cached,
+                    match_score: 100,
+                }));
+            }
+        }
+    }
+
+    let text_key = format!("{}:::{}", channel_str.to_lowercase(), clean_title.to_lowercase());
+    if cache::is_marked_unmatched(&text_key) {
+        return Ok(None);
+    }
+    if let Some(cached) = cache::get_cached_resolution(&text_key) {
+        let needs_album_upgrade = !cached.resolved_with_album && target_album.is_some();
+        if !needs_album_upgrade {
             let source = cached.source.unwrap_or_else(|| {
                 if cached.hifi_id.starts_with("kuwo_") {
                     "kuwo".to_string()
@@ -150,30 +180,6 @@ pub async fn resolve_hifi_track(
                 match_score: 100,
             }));
         }
-    }
-
-    let text_key = format!("{}:::{}", channel_str.to_lowercase(), clean_title.to_lowercase());
-    if cache::is_marked_unmatched(&text_key) {
-        return Ok(None);
-    }
-    if let Some(cached) = cache::get_cached_resolution(&text_key) {
-        let source = cached.source.unwrap_or_else(|| {
-            if cached.hifi_id.starts_with("kuwo_") {
-                "kuwo".to_string()
-            } else {
-                "monochrome".to_string()
-            }
-        });
-        return Ok(Some(HifiTrackResult {
-            stream_url: format!("http://127.0.0.1:{}/hifi/stream?id={}", port, cached.hifi_id),
-            source,
-            hifi_id: cached.hifi_id,
-            title: cached.title,
-            artist: cached.artist,
-            duration: cached.duration,
-            is_cached: cached.is_cached,
-            match_score: 100,
-        }));
     }
 
     let meta = script::parse_multilingual_metadata(clean_title, Some(channel_str));
@@ -333,6 +339,7 @@ pub async fn resolve_hifi_track(
                             duration: matched_dur,
                             is_cached,
                             source: Some("kuwo".to_string()),
+                            resolved_with_album: target_album.is_some(),
                         };
 
                         if !id_key.is_empty() {
@@ -469,6 +476,7 @@ pub async fn resolve_hifi_track(
                 duration: matched_dur,
                 is_cached,
                 source: Some("monochrome".to_string()),
+                resolved_with_album: target_album.is_some(),
             };
 
             if !id_key.is_empty() {
@@ -646,6 +654,21 @@ mod tests {
                 Some("Masa Lalu".to_string()),
             ).await.unwrap();
             println!("MASA LALU RESULT: {:?}", masa);
+
+            println!("\n>>> TESTING BON JOVI - IT'S MY LIFE");
+            let bon_jovi = resolve_hifi_track(
+                None,
+                "It's My Life".to_string(),
+                Some("Bon Jovi".to_string()),
+                Some("3:44".to_string()),
+                None,
+                None,
+                Some("Crush".to_string()),
+            ).await.unwrap();
+            println!("BON JOVI RESULT: {:?}", bon_jovi);
+            let bj = bon_jovi.expect("Bon Jovi - It's My Life should resolve");
+            assert_eq!(bj.hifi_id, "kuwo_290811", "Should match original Crush studio master");
+            assert_ne!(bj.hifi_id, "kuwo_662121810", "Must NOT match piano version on Himnos Millennials");
         });
     }
 }

@@ -55,6 +55,7 @@ export function usePlayerCore({
   const hasPreloadedNextRef = useRef(false);
   const isTransitioningSongRef = useRef(true);
   const needsSeekFixRef = useRef(false);
+  const lastProcessedManualSwitchRef = useRef(null);
   
   const [internalCrossfadeDuration, setInternalCrossfadeDuration] = useState(() => {
     const saved = localStorage.getItem('nadanada-crossfade-duration');
@@ -693,11 +694,13 @@ export function usePlayerCore({
       }
 
       prevSongIdRef.current = songId;
+      lastProcessedManualSwitchRef.current = null;
       hasTriggeredEndCrossfadeRef.current = false;
       isTransitioningSongRef.current = true;
       needsSeekFixRef.current = false;
     } else {
       prevSongIdRef.current = null;
+      lastProcessedManualSwitchRef.current = null;
       hasTriggeredEndCrossfadeRef.current = false;
       isTransitioningSongRef.current = false;
       setDeck0Song(null);
@@ -722,9 +725,13 @@ export function usePlayerCore({
     if (!currentSong?.id || prevSongIdRef.current !== currentSong.id) return;
     if (isCrossfadingRef.current || isCrossfadeRampingRef.current) return;
 
-    const isManualSwitch = Boolean(currentSong._manualSourceSwitch);
+    const isManualSwitch = Boolean(
+      currentSong._manualSourceSwitch &&
+      currentSong._manualSourceSwitch !== lastProcessedManualSwitchRef.current
+    );
 
     if (isManualSwitch) {
+      lastProcessedManualSwitchRef.current = currentSong._manualSourceSwitch;
       if (currentSong._userForcedYoutube) {
         // User explicitly switched to YouTube version
         const audioEl = document.getElementById(activeDeckRef.current === 0 ? 'deck-0-audio' : 'deck-1-audio');
@@ -1304,12 +1311,16 @@ export function usePlayerCore({
     if (deckIndex !== activeDeckRef.current) return;
     if (isCrossfadingRef.current || isCrossfadeRampingRef.current) return;
     if (e?.target?.ended) return;
+    const activeSong = deckIndex === 0 ? deck0Song : deck1Song;
+    if (!isAudioElementPlayback(activeSong || currentSong)) return;
     setIsPlaying(false);
     if (onPlayStateChange) onPlayStateChange(false);
   };
 
   const handleAudioDeckEnded = (deckIndex) => {
     if (deckIndex !== activeDeckRef.current) return;
+    const activeSong = deckIndex === 0 ? deck0Song : deck1Song;
+    if (!isAudioElementPlayback(activeSong || currentSong)) return;
     if (bufferingTimeoutRef.current) {
       clearTimeout(bufferingTimeoutRef.current);
       bufferingTimeoutRef.current = null;

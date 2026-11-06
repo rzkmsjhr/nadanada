@@ -1,6 +1,6 @@
 import { api } from './api.js';
 
-const STORAGE_KEY = 'nadanada-hifi-cache-v12';
+const STORAGE_KEY = 'nadanada-hifi-cache-v13';
 const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache',
   'nadanada-hifi-cache-v2',
@@ -12,10 +12,11 @@ const LEGACY_STORAGE_KEYS = [
   'nadanada-hifi-cache-v8',
   'nadanada-hifi-cache-v9',
   'nadanada-hifi-cache-v10',
-  'nadanada-hifi-cache-v11'
+  'nadanada-hifi-cache-v11',
+  'nadanada-hifi-cache-v12'
 ];
 const MAX_CACHE_ENTRIES = 3000;
-export const HIFI_MATCHER_VERSION = 12;
+export const HIFI_MATCHER_VERSION = 13;
 
 export const TRACKS_BASE_URL = 'https://tracks.monochrome.st';
 
@@ -511,7 +512,8 @@ export function prepareTrackThroughGateSync(song, isHifiEnabled = true, albumCac
       source: cached.source || (String(cached.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
       hifi_id: cached.hifi_id,
       _hifiChecked: true,
-      _hifiVersion: HIFI_MATCHER_VERSION
+      _hifiVersion: HIFI_MATCHER_VERSION,
+      _resolvedWithAlbum: cached._resolvedWithAlbum ?? Boolean(enriched.album)
     };
   }
 
@@ -539,11 +541,11 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1, startIndex
       const song = gated[idx];
       if (!song || song.is_local || song.file_path) return;
       if (!isHifiEligibleTrack(song)) {
-        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION };
+        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _resolvedWithAlbum: false };
         return;
       }
       if ((song.id && isUserYoutubeForced(song.id)) || song._userForcedYoutube) {
-        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _userForcedYoutube: true };
+        gated[idx] = { ...song, stream_url: null, source: null, hifi_id: null, _hifiChecked: true, _hifiVersion: HIFI_MATCHER_VERSION, _userForcedYoutube: true, _resolvedWithAlbum: false };
         return;
       }
       if (song._hifiChecked && song._hifiVersion === HIFI_MATCHER_VERSION) return;
@@ -556,7 +558,8 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1, startIndex
           source: cached.source || (String(cached.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
           hifi_id: cached.hifi_id,
           _hifiChecked: true,
-          _hifiVersion: HIFI_MATCHER_VERSION
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _resolvedWithAlbum: cached._resolvedWithAlbum ?? Boolean(song.album)
         };
         return;
       }
@@ -570,7 +573,8 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1, startIndex
             source: hifi.source || (String(hifi.hifi_id).startsWith('kuwo_') ? 'kuwo' : 'monochrome'),
             hifi_id: hifi.hifi_id,
             _hifiChecked: true,
-            _hifiVersion: HIFI_MATCHER_VERSION
+            _hifiVersion: HIFI_MATCHER_VERSION,
+            _resolvedWithAlbum: hifi._resolvedWithAlbum ?? Boolean(song.album)
           };
         } else {
           gated[idx] = {
@@ -579,7 +583,8 @@ export async function resolveInitialPlaylistTracks(tracks, count = 1, startIndex
             source: null,
             hifi_id: null,
             _hifiChecked: true,
-            _hifiVersion: HIFI_MATCHER_VERSION
+            _hifiVersion: HIFI_MATCHER_VERSION,
+            _resolvedWithAlbum: false
           };
         }
       } catch (e) {

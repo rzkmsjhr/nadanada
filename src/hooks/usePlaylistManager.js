@@ -209,6 +209,7 @@ export function usePlaylistManager({
       }
       gatedSong._hifiChecked = true;
       gatedSong._hifiVersion = HIFI_MATCHER_VERSION;
+      gatedSong._resolvedWithAlbum = Boolean(gatedSong.album);
     }
 
     // Insert into state immediately (instant UI responsiveness)
@@ -242,7 +243,8 @@ export function usePlaylistManager({
           source: hifi?.stream_url ? source : null,
           hifi_id: hifi?.hifi_id || null,
           _hifiChecked: true,
-          _hifiVersion: HIFI_MATCHER_VERSION
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _resolvedWithAlbum: hifi?._resolvedWithAlbum ?? Boolean(s.album || gatedSong.album)
         } : s);
         setPlaylist(updateFn);
         if (savedPlaylist) {
@@ -252,7 +254,8 @@ export function usePlaylistManager({
         const updateFn = prev => prev.map(s => s.queueId === gatedSong.queueId ? {
           ...s,
           _hifiChecked: true,
-          _hifiVersion: HIFI_MATCHER_VERSION
+          _hifiVersion: HIFI_MATCHER_VERSION,
+          _resolvedWithAlbum: false
         } : s);
         setPlaylist(updateFn);
         if (savedPlaylist) {

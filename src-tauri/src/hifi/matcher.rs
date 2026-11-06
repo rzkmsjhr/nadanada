@@ -20,12 +20,14 @@ lazy_static! {
     static ref COVER_REGEX: Regex = Regex::new(r"(?i)\b(originally\s*performed\s*by|made\s*popular\s*by|in\s*the\s*style\s*of|tribute\s*version|tribute\s*to)\b|[\(\[\{]\s*cover\s*[\)\]\}]|\s+-\s+cover\b").unwrap();
     static ref DELUXE_ALBUM_REGEX: Regex = Regex::new(r"(?i)\b(expanded(\s*edition)?|super\s*deluxe(\s*edition)?|deluxe(\s*edition)?|special\s*edition|bonus\s*track\s*edition|anniversary(\s*edition)?|collector('?s)?\s*edition|tour\s*edition)\b").unwrap();
     static ref COMPILATION_ALBUM_REGEX: Regex = Regex::new(r"(?i)\b(greatest\s*hits|best\s*of|hits\s*vol\w*|volume\s*\d+|vol\.\s*\d+|the\s*collection|anthology|compilation|various\s*artists|essential)\b").unwrap();
+    static ref CN_MEDIA_TIE_IN_REGEX: Regex = Regex::new(r"(?i)(?:\s*[-—–]\s*)?《[^》]+》\s*(?:动画|电影|电视剧|网剧|动漫|游戏|影视|综艺|纪录片|舞台剧|音乐剧|广播剧)?\s*(?:主题曲|插曲|片尾曲|片头曲|推广曲|宣传曲|原声|配乐|背景音乐|概念曲|印象曲|片中曲|同名曲|ost)*").unwrap();
 }
 
 /// Normalizes string for fuzzy title/artist matching across all languages (Unicode-aware).
 pub fn clean_string(str: &str) -> String {
     let lower = str.to_lowercase();
-    let without_feat = FEAT_REGEX.replace_all(&lower, "");
+    let without_tie_in = CN_MEDIA_TIE_IN_REGEX.replace_all(&lower, "");
+    let without_feat = FEAT_REGEX.replace_all(&without_tie_in, "");
     let without_brackets = BRACKETS_REGEX.replace_all(&without_feat, "");
     let deaccented = crate::hifi::script::strip_latin_diacritics(&without_brackets);
     let normalized = if crate::hifi::script::contains_arabic(&deaccented) {
@@ -42,7 +44,8 @@ pub fn clean_string(str: &str) -> String {
 /// Normalizes diacritics and symbols for comparable title matching while preserving musical version indicators.
 pub fn normalize_comparable_title(raw_title: &str) -> String {
     let lower = raw_title.to_lowercase();
-    let without_noise = YOUTUBE_NOISE_REGEX.replace_all(&lower, " ");
+    let without_tie_in = CN_MEDIA_TIE_IN_REGEX.replace_all(&lower, " ");
+    let without_noise = YOUTUBE_NOISE_REGEX.replace_all(&without_tie_in, " ");
     let deaccented = crate::hifi::script::strip_latin_diacritics(&without_noise);
     let normalized = if crate::hifi::script::contains_arabic(&deaccented) {
         crate::hifi::script::normalize_arabic(&deaccented)
@@ -69,9 +72,15 @@ pub enum EditionKind {
 /// Automatically extracts edition flags from title and album.
 pub fn detect_editions(title: &str, album: Option<&str>) -> HashSet<EditionKind> {
     let mut editions = HashSet::new();
+    let is_album_soundtrack = album.map(|a| SOUNDTRACK_REGEX.is_match(a)).unwrap_or(false);
+    let effective_title = if !is_album_soundtrack {
+        CN_MEDIA_TIE_IN_REGEX.replace_all(title, "").to_string()
+    } else {
+        title.to_string()
+    };
     let text = match album {
-        Some(alb) => format!("{} {}", title, alb),
-        None => title.to_string(),
+        Some(alb) => format!("{} {}", effective_title, alb),
+        None => effective_title,
     };
 
     if REMIX_REGEX.is_match(&text) {
@@ -238,6 +247,8 @@ pub fn is_known_upstream_mismatch(id: &str, title: &str, _artist: &str) -> bool 
         "kuwo_238687094",
         "238687044",          // Kuwo: Imagine Dragons - Demons (TELYKast Remix on Night Visions Super Deluxe)
         "kuwo_238687044",
+        "662121810",          // Kuwo: Bon Jovi - It's My Life (2003 acoustic/piano remake mislabeled as original on Himnos Millennials)
+        "kuwo_662121810",
     ];
 
     if mismatches.contains(&id) {
@@ -500,6 +511,9 @@ pub fn score_track_candidate(
                     } else {
                         score += 35; // Partial album match
                     }
+                } else {
+                    // Candidate is from a completely unrelated album when a specific album was targeted
+                    score = score.saturating_sub(25);
                 }
             }
         }

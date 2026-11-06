@@ -642,13 +642,15 @@ function App() {
             source: hifi?.stream_url ? source : null,
             hifi_id: hifi?.hifi_id || null,
             _hifiChecked: true,
-            _hifiVersion: HIFI_MATCHER_VERSION
+            _hifiVersion: HIFI_MATCHER_VERSION,
+            _resolvedWithAlbum: hifi?._resolvedWithAlbum ?? Boolean(t.album || newTrack.album)
           } : t));
         }).catch(() => {
           setSavedPlaylist(prev => prev.map(t => t.queueId === newTrack.queueId ? {
             ...t,
             _hifiChecked: true,
-            _hifiVersion: HIFI_MATCHER_VERSION
+            _hifiVersion: HIFI_MATCHER_VERSION,
+            _resolvedWithAlbum: false
           } : t));
         });
       }

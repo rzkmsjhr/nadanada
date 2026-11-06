@@ -15,6 +15,8 @@ pub struct ResolvedHifiInfo {
     pub is_cached: bool,
     #[serde(default)]
     pub source: Option<String>,
+    #[serde(default)]
+    pub resolved_with_album: bool,
 }
 
 lazy_static! {

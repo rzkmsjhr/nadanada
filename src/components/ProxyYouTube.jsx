@@ -7,12 +7,12 @@ const WORKER_EMBED_URL = 'https://nadanada-yt.kdmp.workers.dev';
 const captionsCache = new Map();
 
 const ProxyYouTube = ({ videoId, opts, onReady, onStateChange, onError, onCaptionsReceived, style, iframeClassName }) => {
-  const iframeRef = useRef(null);
-  const latestTime = useRef(0);
-  const latestDuration = useRef(0);
-
   const playerVars = opts?.playerVars || {};
   const startSecs = playerVars.start || 0;
+
+  const iframeRef = useRef(null);
+  const latestTime = useRef(startSecs || 0);
+  const latestDuration = useRef(0);
 
   const [initialVideoId] = useState(videoId);
   const [initialStartSecs] = useState(startSecs);
